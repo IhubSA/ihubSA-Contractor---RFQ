@@ -222,7 +222,13 @@ function promptAdminLogin() {
 function showAdminView() {
   document.getElementById('public-view').style.display = 'none';
   document.getElementById('admin-view').style.display = 'block';
-  switchAdminTab('create');
+  
+  // Set create tab as active
+  document.getElementById('create-tab').style.display = 'block';
+  document.getElementById('submissions-tab').style.display = 'none';
+  document.querySelectorAll('.tab-btn').forEach((btn, idx) => {
+    btn.classList.toggle('active', idx === 0);
+  });
 }
 
 function logoutAdmin() {
@@ -231,12 +237,12 @@ function logoutAdmin() {
   location.reload();
 }
 
-function switchAdminTab(tabName) {
+function switchAdminTab(tabName, button) {
   document.querySelectorAll('.admin-tab').forEach(tab => tab.style.display = 'none');
   document.querySelectorAll('.tab-btn').forEach(btn => btn.classList.remove('active'));
   
   document.getElementById(tabName + '-tab').style.display = 'block';
-  event.target.classList.add('active');
+  if (button) button.classList.add('active');
 
   if (tabName === 'submissions') {
     loadSubmissions();
@@ -400,27 +406,100 @@ function showGeneratedLinks(rfqId, invitations) {
 }
 
 async function loadSubmissions() {
-  console.log('Load submissions');
+  try {
+    console.log('Loading submissions...');
+    
+    const { data: submissions, error } = await client
+      .from('rfq_submissions')
+      .select(`
+        id,
+        rfq_id,
+        contractor_name,
+        contractor_email,
+        status,
+        created_at,
+        rfqs(rfq_name)
+      `)
+      .order('created_at', { ascending: false });
+
+    if (error) {
+      console.error('Error loading submissions:', error);
+      throw error;
+    }
+
+    console.log('Submissions loaded:', submissions);
+
+    // Populate RFQ filter dropdown
+    const rfqs = new Map();
+    if (submissions && submissions.length > 0) {
+      submissions.forEach(sub => {
+        if (sub.rfqs) rfqs.set(sub.rfq_id, sub.rfqs.rfq_name);
+      });
+    }
+
+    const filterSelect = document.getElementById('rfq-filter');
+    if (filterSelect) {
+      filterSelect.innerHTML = '<option value="">All RFQs</option>';
+      rfqs.forEach((name, id) => {
+        const option = document.createElement('option');
+        option.value = id;
+        option.textContent = name;
+        filterSelect.appendChild(option);
+      });
+    }
+
+    // Display submissions
+    const container = document.getElementById('submissions-list');
+    if (!submissions || submissions.length === 0) {
+      container.innerHTML = '<p style="text-align:center; color:var(--ink-2);">No submissions yet</p>';
+      return;
+    }
+
+    container.innerHTML = submissions.map(sub => `
+      <div class="submission-card" onclick="openSubmissionDetail('${sub.id}')">
+        <div class="submission-card-info">
+          <h4>${sub.contractor_name}</h4>
+          <p><strong>Email:</strong> ${sub.contractor_email}</p>
+          <p><strong>RFQ:</strong> ${sub.rfqs?.rfq_name || 'Unknown'}</p>
+          <p><strong>Submitted:</strong> ${new Date(sub.created_at).toLocaleString('en-ZA')}</p>
+        </div>
+        <div class="submission-status ${sub.status}">${sub.status}</div>
+      </div>
+    `).join('');
+
+  } catch (err) {
+    console.error('Error in loadSubmissions:', err);
+    showToast('Error loading submissions: ' + err.message, 'error');
+  }
 }
 
 function filterSubmissions() {
-  console.log('Filter submissions');
+  console.log('Filtering submissions...');
+  loadSubmissions();
 }
 
 async function openSubmissionDetail(id) {
   console.log('Open submission:', id);
+  showToast('Feature coming soon', 'info');
 }
 
 async function updateSubmissionStatus() {
   console.log('Update status');
+  showToast('Feature coming soon', 'info');
 }
 
 async function downloadDocument(path, name) {
   console.log('Download:', name);
+  showToast('Feature coming soon', 'info');
 }
 
 function copyAllLinks() {
-  console.log('Copy links');
+  const text = document.getElementById('generated-links-list').textContent;
+  navigator.clipboard.writeText(text).then(() => {
+    showToast('Links copied to clipboard!', 'success');
+  }).catch(() => {
+    showToast('Could not copy to clipboard', 'error');
+  });
 }
 
 // Initialize when DOM is ready
