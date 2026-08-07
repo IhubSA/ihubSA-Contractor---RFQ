@@ -2,10 +2,10 @@
 
 :root {
   /* CNWE Brand Colors */
-  --primary: #1B5E5E;           /* Dark Teal */
-  --primary-light: #0F3B3B;     /* Darker Teal */
-  --accent: #00A86B;            /* Green */
-  --gold: #B8860B;              /* Gold for buttons */
+  --primary: #0066CC;           /* CNWE Blue */
+  --primary-light: #004A99;     /* Darker Blue */
+  --accent: #00A86B;            /* CNWE Green */
+  --gold: #00A86B;              /* Use green as primary button color */
   
   /* Neutral Colors */
   --ink: #1A1A1A;               /* Dark text */
@@ -88,13 +88,13 @@ h4 { font-size: 18px; }
 }
 
 .btn.gold {
-  background: var(--gold);
+  background: #00A86B;
   color: white;
 }
 
 .btn.gold:hover {
-  background: #9d6b0a;
-  box-shadow: 0 2px 8px rgba(184, 134, 11, 0.3);
+  background: #008555;
+  box-shadow: 0 2px 8px rgba(0, 168, 107, 0.3);
 }
 
 .btn.secondary {
