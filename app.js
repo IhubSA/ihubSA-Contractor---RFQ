@@ -306,6 +306,7 @@ function resetSubmissionForm() {
 }
 
 let isSubmittingRFQ = false;
+let lastInvitations = [];
 
 async function createNewRFQ() {
   // Prevent double submission
@@ -480,6 +481,9 @@ function generateToken() {
 function showGeneratedLinks(rfqId, invitations) {
   console.log('Showing generated links for RFQ:', rfqId);
   
+  // Store for copy function
+  window.lastInvitations = invitations;
+  
   const baseUrl = window.location.origin + window.location.pathname;
   console.log('Base URL:', baseUrl);
   
@@ -599,9 +603,20 @@ async function downloadDocument(path, name) {
 }
 
 function copyAllLinks() {
-  const text = document.getElementById('generated-links-list').textContent;
-  navigator.clipboard.writeText(text).then(() => {
-    showToast('Links copied to clipboard!', 'success');
+  if (!window.lastInvitations || window.lastInvitations.length === 0) {
+    showToast('No links to copy', 'error');
+    return;
+  }
+
+  const baseUrl = window.location.origin + window.location.pathname;
+  
+  // Copy only the URLs, one per line
+  const links = window.lastInvitations.map(inv => {
+    return `${baseUrl}?rfq=${inv.invitation_token}`;
+  }).join('\n');
+
+  navigator.clipboard.writeText(links).then(() => {
+    showToast('✅ URLs copied to clipboard!', 'success');
   }).catch(() => {
     showToast('Could not copy to clipboard', 'error');
   });
