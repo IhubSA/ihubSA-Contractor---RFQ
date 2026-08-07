@@ -1,0 +1,125 @@
+═══════════════════════════════════════════════════════════════════════════════
+                       RFQ HUB — QUICK REFERENCE CARD
+═══════════════════════════════════════════════════════════════════════════════
+
+SUPABASE PROJECT CREDENTIALS
+─────────────────────────────────────────────────────────────────────────────
+Project URL:    https://zilumoopwnrtrtnsmjhr.supabase.co
+Project ID:     zilumoopwnrtrtnsmjhr
+Region:         eu-west-1 (Ireland)
+Status:         ✅ LIVE & CONFIGURED
+
+API KEY (Anon):
+eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InppbHVtb29wd25ydHJ0bnNtamhyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODYwOTU2MzgsImV4cCI6MjEwMTY3MTYzOH0.t8aQkOU29pwG9fwW9BlTwd4oie2jxkZa43mb3yc55kg
+
+✅ Already added to app.js — No manual entry needed!
+
+═══════════════════════════════════════════════════════════════════════════════
+
+ADMIN LOGIN
+─────────────────────────────────────────────────────────────────────────────
+Password:       CNWE2026
+
+⚠️  CHANGE THIS! Edit app.js, find promptAdminLogin() function, change password
+
+═══════════════════════════════════════════════════════════════════════════════
+
+TEST LINKS (for demo/testing)
+─────────────────────────────────────────────────────────────────────────────
+
+Replace YOUR_DOMAIN with your actual domain (e.g., https://mysite.com)
+
+Contractor 1:   YOUR_DOMAIN/rfq/index.html?rfq=test-token-001
+Contractor 2:   YOUR_DOMAIN/rfq/index.html?rfq=test-token-002
+Contractor 3:   YOUR_DOMAIN/rfq/index.html?rfq=test-token-003
+
+Test RFQ:       "Test RFQ - Safety Equipment"
+Deadline:       14 days from now
+Budget:         R50,000 - R100,000
+
+═══════════════════════════════════════════════════════════════════════════════
+
+FILES TO DEPLOY
+─────────────────────────────────────────────────────────────────────────────
+1. rfq-index.html       → Rename to: index.html
+2. rfq-styles.css       → Keep name: styles.css  
+3. rfq-app.js           → Keep name: app.js
+
+Upload all to: /your-domain/rfq/
+
+✅ App.js already has Supabase credentials — Ready to deploy!
+
+═══════════════════════════════════════════════════════════════════════════════
+
+DATABASE TABLES
+─────────────────────────────────────────────────────────────────────────────
+✅ rfqs                          — RFQ records
+✅ rfq_invitations               — Contractor links
+✅ rfq_submissions               — Contractor submissions
+✅ rfq_submission_documents      — Uploaded files
+
+Row Level Security: ENABLED
+
+═══════════════════════════════════════════════════════════════════════════════
+
+STILL TODO (2 minutes)
+─────────────────────────────────────────────────────────────────────────────
+1. Create storage bucket "rfq-documents" in Supabase dashboard
+   → Go to: Storage > Create new bucket > Name: rfq-documents > Private
+
+2. Upload files to web server
+   → Upload index.html, styles.css, app.js to /rfq/ folder
+
+═══════════════════════════════════════════════════════════════════════════════
+
+HOW TO USE
+─────────────────────────────────────────────────────────────────────────────
+
+FOR CONTRACTORS:
+  1. Receive email with unique RFQ link
+  2. Click link → View RFQ details
+  3. Enter company details
+  4. Upload required documents
+  5. Submit
+
+FOR ADMINS:
+  1. Go to site → Click "Staff login"
+  2. Enter password: CNWE2026
+  3. Create RFQ:
+     - Fill in RFQ name, project, description, deadline
+     - Specify required documents
+     - Enter contractor emails
+     - System generates unique links
+     - Copy and send via email
+  4. Review Submissions:
+     - Filter by RFQ or status
+     - Download documents
+     - Update status (submitted → reviewed)
+
+═══════════════════════════════════════════════════════════════════════════════
+
+TROUBLESHOOTING
+─────────────────────────────────────────────────────────────────────────────
+Issue: "No RFQ Found" message
+  → Check URL has correct ?rfq=TOKEN
+  → Verify token hasn't been used (you can only use a link once)
+
+Issue: Files won't upload
+  → Check rfq-documents bucket exists in Storage
+  → Verify it's set to Private
+  → Check file format (PDF, Word, Excel only)
+
+Issue: Styling looks wrong
+  → Hard refresh browser (Ctrl+Shift+R)
+  → Check styles.css is in same folder as index.html
+  → Clear browser cache
+
+═══════════════════════════════════════════════════════════════════════════════
+
+LINKS
+─────────────────────────────────────────────────────────────────────────────
+Supabase Dashboard:  https://supabase.com/dashboard/org/vxwnsqrhjzupghvjwkqd
+Your Project:        https://zilumoopwnrtrtnsmjhr.supabase.co
+Documentation:       https://supabase.com/docs
+
+═══════════════════════════════════════════════════════════════════════════════
