@@ -317,41 +317,38 @@ async function createNewRFQ() {
   isSubmittingRFQ = true;
 
   try {
-    console.log('=== FORM SUBMISSION STARTED ===');
+    console.log('=== CREATE RFQ STARTED ===');
     
-    // Get the form object
-    const form = document.getElementById('create-rfq-form');
-    if (!form) {
-      console.error('❌ Form not found');
-      showToast('Error: Form not found', 'error');
-      isSubmittingRFQ = false;
-      return;
-    }
+    // Get fields by name attribute (not ID)
+    const nameInput = document.querySelector('input[name="rfq_name"]');
+    const projectInput = document.querySelector('input[name="rfq_project"]');
+    const descInput = document.querySelector('textarea[name="rfq_description"]');
+    const deadlineInput = document.querySelector('input[name="rfq_deadline"]');
+    const budgetInput = document.querySelector('input[name="rfq_budget"]');
+    const emailInput = document.querySelector('textarea[name="contractor_emails"]');
 
-    console.log('✅ Form found, getting values from form.elements...');
-    
-    // Use FormData to get all values
-    const formData = new FormData(form);
-    
-    const name = formData.get('rfq_name') ? formData.get('rfq_name').trim() : '';
-    const project = formData.get('rfq_project') ? formData.get('rfq_project').trim() : '';
-    const description = formData.get('rfq_description') ? formData.get('rfq_description').trim() : '';
-    const deadline = formData.get('rfq_deadline') ? formData.get('rfq_deadline').trim() : '';
-    const budget = formData.get('rfq_budget') ? formData.get('rfq_budget').trim() : '';
-    const emailsText = formData.get('contractor_emails') ? formData.get('contractor_emails').trim() : '';
+    console.log('✅ Found all input fields by name');
+
+    const name = nameInput?.value?.trim() || '';
+    const project = projectInput?.value?.trim() || '';
+    const description = descInput?.value?.trim() || '';
+    const deadline = deadlineInput?.value?.trim() || '';
+    const budget = budgetInput?.value?.trim() || '';
+    const emailsText = emailInput?.value?.trim() || '';
+
+    console.log('📋 Values captured:');
+    console.log('  Name:', name);
+    console.log('  Project:', project);
+    console.log('  Description:', description);
+    console.log('  Deadline:', deadline);
+    console.log('  Emails:', emailsText);
 
     const contractorEmails = emailsText
       .split('\n')
       .map(e => e.trim())
       .filter(e => e.length > 0);
 
-    console.log('📝 FORM VALUES FROM FormData:');
-    console.log('  Name:', JSON.stringify(name));
-    console.log('  Project:', JSON.stringify(project));
-    console.log('  Description:', JSON.stringify(description));
-    console.log('  Deadline:', JSON.stringify(deadline));
-    console.log('  Budget:', JSON.stringify(budget));
-    console.log('  Emails:', contractorEmails);
+    console.log('  Email count:', contractorEmails.length);
 
     // Get required documents
     const docInputs = document.querySelectorAll('.doc-field');
