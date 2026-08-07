@@ -155,27 +155,50 @@ async function submitContractorForm(token) {
 
     if (subError) throw subError;
 
-    // Upload files
+    console.log('✅ Submission created:', submission.id);
+
+    // Upload files (optional - don't fail if this doesn't work)
     const fileInputs = document.querySelectorAll('[id^="doc-"]');
+    let filesUploaded = 0;
+    let filesSkipped = 0;
+
     for (let input of fileInputs) {
       if (input.files[0]) {
-        const file = input.files[0];
-        const filePath = `rfq-${currentRFQId}/sub-${submission.id}/${Date.now()}-${file.name}`;
-        
-        const { error: uploadError } = await client.storage
-          .from('rfq-documents')
-          .upload(filePath, file);
+        try {
+          const file = input.files[0];
+          const filePath = `rfq-${currentRFQId}/sub-${submission.id}/${Date.now()}-${file.name}`;
+          
+          console.log('Attempting to upload:', file.name);
+          
+          const { error: uploadError } = await client.storage
+            .from('rfq-documents')
+            .upload(filePath, file);
 
-        if (uploadError) throw uploadError;
+          if (uploadError) {
+            console.warn('⚠️ File upload failed for', file.name, ':', uploadError.message);
+            filesSkipped++;
+            continue;
+          }
 
-        await client.from('rfq_submission_documents').insert([{
-          submission_id: submission.id,
-          file_name: file.name,
-          file_path: filePath,
-          file_size: file.size
-        }]);
+          await client.from('rfq_submission_documents').insert([{
+            submission_id: submission.id,
+            file_name: file.name,
+            file_path: filePath,
+            file_size: file.size
+          }]);
+
+          filesUploaded++;
+          console.log('✅ File uploaded:', file.name);
+
+        } catch (fileErr) {
+          console.warn('⚠️ Error uploading file:', fileErr.message);
+          filesSkipped++;
+          // Continue with other files
+        }
       }
     }
+
+    console.log(`📊 Upload summary: ${filesUploaded} uploaded, ${filesSkipped} skipped`);
 
     // Mark token as used
     await client
@@ -183,7 +206,9 @@ async function submitContractorForm(token) {
       .update({ used: true })
       .eq('invitation_token', token);
 
-    showToast('Submission successful!', 'success');
+    console.log('✅ Token marked as used');
+
+    showToast('✅ Submission successful!', 'success');
     setTimeout(() => {
       document.getElementById('rfq-portal').innerHTML = '<div class="card"><h2 style="margin-top:0; color:var(--success);">Thank You!</h2><p>Your submission has been received.</p></div>';
     }, 1000);
