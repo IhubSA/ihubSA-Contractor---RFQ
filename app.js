@@ -305,7 +305,17 @@ function resetSubmissionForm() {
   document.getElementById('submission-form').reset();
 }
 
+let isSubmittingRFQ = false;
+
 async function createNewRFQ() {
+  // Prevent double submission
+  if (isSubmittingRFQ) {
+    console.log('⏳ Already submitting, please wait...');
+    return;
+  }
+
+  isSubmittingRFQ = true;
+
   try {
     console.log('Creating RFQ...');
 
@@ -416,6 +426,8 @@ async function createNewRFQ() {
   } catch (err) {
     console.error('Error creating RFQ:', err);
     showToast('Error: ' + err.message, 'error');
+  } finally {
+    isSubmittingRFQ = false;
   }
 }
 
