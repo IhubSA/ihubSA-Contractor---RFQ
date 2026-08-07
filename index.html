@@ -106,6 +106,7 @@
       </div>
       <div class="tab-nav">
         <button class="tab-btn active" onclick="switchAdminTab('create', this)">Create RFQ</button>
+        <button class="tab-btn" onclick="switchAdminTab('console', this)">RFQ Console</button>
         <button class="tab-btn" onclick="switchAdminTab('submissions', this)">Review Submissions</button>
       </div>
     </div>
@@ -160,6 +161,20 @@
             <button type="submit" class="btn gold">Create RFQ & Generate Links</button>
           </div>
         </form>
+      </div>
+    </div>
+
+    <!-- RFQ CONSOLE TAB -->
+    <div id="console-tab" class="admin-tab" style="display:none;">
+      <div class="card">
+        <h2 style="margin-top:0;">Active RFQs</h2>
+        <p style="color: var(--border); font-size: 14px; margin-bottom: 20px;">View all active RFQs and manage contractor invitation links</p>
+        
+        <div id="rfq-console-list" style="display: flex; flex-direction: column; gap: 20px;">
+          <div style="text-align: center; padding: 40px; color: var(--border);">
+            <p>Loading RFQs...</p>
+          </div>
+        </div>
       </div>
     </div>
 

@@ -269,7 +269,9 @@ function switchAdminTab(tabName, button) {
   document.getElementById(tabName + '-tab').style.display = 'block';
   if (button) button.classList.add('active');
 
-  if (tabName === 'submissions') {
+  if (tabName === 'console') {
+    loadRFQConsole();
+  } else if (tabName === 'submissions') {
     loadSubmissions();
   }
 }
@@ -604,6 +606,147 @@ async function loadSubmissions() {
   } catch (err) {
     console.error('Error in loadSubmissions:', err);
     showToast('Error loading submissions: ' + err.message, 'error');
+  }
+}
+
+async function loadRFQConsole() {
+  try {
+    console.log('Loading RFQ Console...');
+    
+    // Fetch all RFQs
+    const { data: rfqs, error: rfqError } = await client
+      .from('rfqs')
+      .select('*')
+      .order('created_at', { ascending: false });
+
+    if (rfqError) {
+      console.error('Error loading RFQs:', rfqError);
+      showToast('Error loading RFQs', 'error');
+      return;
+    }
+
+    console.log('RFQs loaded:', rfqs.length);
+
+    if (!rfqs || rfqs.length === 0) {
+      document.getElementById('rfq-console-list').innerHTML = 
+        '<div style="text-align: center; padding: 40px; color: var(--border);"><p>No active RFQs yet. <strong>Create one to get started!</strong></p></div>';
+      return;
+    }
+
+    // Build console HTML
+    let consoleHtml = '';
+    const baseUrl = window.location.origin + window.location.pathname;
+
+    for (const rfq of rfqs) {
+      // Fetch invitations for this RFQ
+      const { data: invitations } = await client
+        .from('rfq_invitations')
+        .select('*')
+        .eq('rfq_id', rfq.id);
+
+      const deadlineDate = new Date(rfq.deadline);
+      const isExpired = deadlineDate < new Date();
+      const daysLeft = Math.ceil((deadlineDate - new Date()) / (1000 * 60 * 60 * 24));
+
+      consoleHtml += `
+        <div class="card" style="border-left: 4px solid ${isExpired ? 'var(--warning)' : 'var(--accent)'};">
+          <div style="display: flex; justify-content: space-between; align-items: start; margin-bottom: 15px;">
+            <div>
+              <h3 style="margin: 0 0 5px 0; color: var(--ink);">${rfq.rfq_name}</h3>
+              <p style="margin: 0 0 5px 0; font-size: 14px; color: var(--border);">Project: ${rfq.project_name}</p>
+              <p style="margin: 0; font-size: 14px; color: var(--border);">Deadline: ${deadlineDate.toLocaleDateString()} 
+                <span style="color: ${isExpired ? 'var(--warning)' : 'var(--success)'}; font-weight: bold;">
+                  ${isExpired ? '❌ Expired' : `📅 ${daysLeft} days left`}
+                </span>
+              </p>
+            </div>
+            <div style="text-align: right;">
+              <div style="background: var(--bg-2); padding: 8px 12px; border-radius: 4px;">
+                <p style="margin: 0; font-size: 12px; color: var(--border);">Invitations Sent</p>
+                <p style="margin: 0; font-size: 24px; font-weight: bold; color: var(--accent);">${invitations ? invitations.length : 0}</p>
+              </div>
+            </div>
+          </div>
+
+          <div style="background: var(--bg-2); padding: 15px; border-radius: 4px; margin-bottom: 15px;">
+            <h4 style="margin-top: 0; margin-bottom: 10px; color: var(--ink);">Contractor Links (${invitations ? invitations.length : 0})</h4>
+            <div style="display: flex; flex-direction: column; gap: 8px;">
+              ${invitations && invitations.length > 0 ? invitations.map((inv, idx) => `
+                <div style="display: flex; justify-content: space-between; align-items: center; padding: 8px; background: white; border: 1px solid var(--border); border-radius: 3px;">
+                  <div style="flex: 1; min-width: 0;">
+                    <p style="margin: 0 0 3px 0; font-size: 12px; color: var(--border);">${idx + 1}. ${inv.contractor_email}</p>
+                    <code style="font-size: 11px; color: var(--border); display: block; word-break: break-all;">${baseUrl}?rfq=${inv.invitation_token}</code>
+                  </div>
+                  <button onclick="copyToClipboard('${baseUrl}?rfq=${inv.invitation_token}')" 
+                    class="btn" style="margin-left: 10px; padding: 4px 8px; font-size: 12px; white-space: nowrap;">
+                    Copy Link
+                  </button>
+                </div>
+              `).join('') : '<p style="margin: 0; color: var(--border); font-style: italic;">No invitations sent yet</p>'}
+            </div>
+          </div>
+
+          <div>
+            <button onclick="showAddContractorForm('${rfq.id}')" class="btn secondary" style="width: 100%; padding: 10px;">
+              + Add New Contractor
+            </button>
+          </div>
+        </div>
+      `;
+    }
+
+    document.getElementById('rfq-console-list').innerHTML = consoleHtml;
+
+  } catch (err) {
+    console.error('Error in loadRFQConsole:', err);
+    showToast('Error: ' + err.message, 'error');
+  }
+}
+
+function copyToClipboard(text) {
+  navigator.clipboard.writeText(text).then(() => {
+    showToast('✅ Link copied!', 'success');
+  }).catch(() => {
+    showToast('Error copying to clipboard', 'error');
+  });
+}
+
+async function showAddContractorForm(rfqId) {
+  const email = prompt('Enter contractor email:');
+  if (!email) return;
+
+  try {
+    console.log('Adding contractor to RFQ:', rfqId);
+    
+    const { data: inv, error } = await client
+      .from('rfq_invitations')
+      .insert([{
+        rfq_id: rfqId,
+        contractor_email: email,
+        invitation_token: generateToken(),
+        used: false
+      }])
+      .select()
+      .single();
+
+    if (error) {
+      console.error('Error adding contractor:', error);
+      showToast('Error: ' + error.message, 'error');
+      return;
+    }
+
+    const baseUrl = window.location.origin + window.location.pathname;
+    const link = `${baseUrl}?rfq=${inv.invitation_token}`;
+    
+    showToast('✅ Contractor added! Link copied to clipboard.', 'success');
+    navigator.clipboard.writeText(link);
+    
+    // Reload console
+    loadRFQConsole();
+
+  } catch (err) {
+    console.error('Error:', err);
+    showToast('Error: ' + err.message, 'error');
   }
 }
 
