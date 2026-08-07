@@ -644,51 +644,92 @@ async function loadRFQConsole() {
         .select('*')
         .eq('rfq_id', rfq.id);
 
+      // Fetch submissions for this RFQ
+      const { data: submissions } = await client
+        .from('rfq_submissions')
+        .select('*')
+        .eq('rfq_id', rfq.id);
+
       const deadlineDate = new Date(rfq.deadline);
       const isExpired = deadlineDate < new Date();
       const daysLeft = Math.ceil((deadlineDate - new Date()) / (1000 * 60 * 60 * 24));
+      const submissionCount = submissions ? submissions.length : 0;
+      const invitationCount = invitations ? invitations.length : 0;
+      const responseRate = invitationCount > 0 ? Math.round((submissionCount / invitationCount) * 100) : 0;
 
       consoleHtml += `
         <div class="card" style="border-left: 4px solid ${isExpired ? 'var(--warning)' : 'var(--accent)'};">
-          <div style="display: flex; justify-content: space-between; align-items: start; margin-bottom: 15px;">
-            <div>
+          <!-- Header -->
+          <div style="display: flex; justify-content: space-between; align-items: start; margin-bottom: 20px;">
+            <div style="flex: 1;">
               <h3 style="margin: 0 0 5px 0; color: var(--ink);">${rfq.rfq_name}</h3>
-              <p style="margin: 0 0 5px 0; font-size: 14px; color: var(--border);">Project: ${rfq.project_name}</p>
-              <p style="margin: 0; font-size: 14px; color: var(--border);">Deadline: ${deadlineDate.toLocaleDateString()} 
-                <span style="color: ${isExpired ? 'var(--warning)' : 'var(--success)'}; font-weight: bold;">
+              <p style="margin: 0 0 8px 0; font-size: 14px; color: var(--border);">Project: <strong>${rfq.project_name}</strong></p>
+              <p style="margin: 0; font-size: 14px; color: var(--border);">
+                Deadline: ${deadlineDate.toLocaleDateString()} at ${deadlineDate.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}
+                <span style="color: ${isExpired ? 'var(--warning)' : 'var(--success)'}; font-weight: bold; margin-left: 8px;">
                   ${isExpired ? '❌ Expired' : `📅 ${daysLeft} days left`}
                 </span>
               </p>
             </div>
-            <div style="text-align: right;">
-              <div style="background: var(--bg-2); padding: 8px 12px; border-radius: 4px;">
-                <p style="margin: 0; font-size: 12px; color: var(--border);">Invitations Sent</p>
-                <p style="margin: 0; font-size: 24px; font-weight: bold; color: var(--accent);">${invitations ? invitations.length : 0}</p>
-              </div>
+            <div style="text-align: center; background: var(--bg-2); padding: 12px 16px; border-radius: 4px;">
+              <p style="margin: 0; font-size: 11px; text-transform: uppercase; color: var(--border); font-weight: bold;">Response Rate</p>
+              <p style="margin: 5px 0 0 0; font-size: 28px; font-weight: bold; color: var(--accent);">${responseRate}%</p>
+              <p style="margin: 5px 0 0 0; font-size: 12px; color: var(--border);">${submissionCount}/${invitationCount} responses</p>
             </div>
           </div>
 
+          <!-- Description & Budget -->
           <div style="background: var(--bg-2); padding: 15px; border-radius: 4px; margin-bottom: 15px;">
-            <h4 style="margin-top: 0; margin-bottom: 10px; color: var(--ink);">Contractor Links (${invitations ? invitations.length : 0})</h4>
-            <div style="display: flex; flex-direction: column; gap: 8px;">
+            <div style="margin-bottom: 15px;">
+              <h4 style="margin: 0 0 8px 0; font-size: 12px; text-transform: uppercase; color: var(--border); font-weight: bold;">Description</h4>
+              <p style="margin: 0; color: var(--ink); line-height: 1.5;">${rfq.description}</p>
+            </div>
+            
+            ${rfq.budget ? `
+              <div style="padding-top: 15px; border-top: 1px solid var(--border); margin-top: 15px;">
+                <h4 style="margin: 0 0 8px 0; font-size: 12px; text-transform: uppercase; color: var(--border); font-weight: bold;">Budget</h4>
+                <p style="margin: 0; color: var(--ink); font-size: 18px; font-weight: bold;">R${rfq.budget.toLocaleString()}</p>
+              </div>
+            ` : ''}
+          </div>
+
+          <!-- Required Documents -->
+          ${rfq.required_documents && rfq.required_documents.length > 0 ? `
+            <div style="background: var(--bg-2); padding: 15px; border-radius: 4px; margin-bottom: 15px;">
+              <h4 style="margin: 0 0 10px 0; font-size: 12px; text-transform: uppercase; color: var(--border); font-weight: bold;">Required Documents</h4>
+              <ul style="margin: 0; padding-left: 20px; color: var(--ink);">
+                ${rfq.required_documents.map(doc => `<li style="margin-bottom: 5px;">${doc}</li>`).join('')}
+              </ul>
+            </div>
+          ` : ''}
+
+          <!-- Contractor Links -->
+          <div style="background: var(--bg-2); padding: 15px; border-radius: 4px; margin-bottom: 15px;">
+            <h4 style="margin-top: 0; margin-bottom: 10px; color: var(--ink);">Contractor Links (${invitationCount})</h4>
+            <div style="display: flex; flex-direction: column; gap: 8px; max-height: 300px; overflow-y: auto;">
               ${invitations && invitations.length > 0 ? invitations.map((inv, idx) => `
-                <div style="display: flex; justify-content: space-between; align-items: center; padding: 8px; background: white; border: 1px solid var(--border); border-radius: 3px;">
+                <div style="display: flex; justify-content: space-between; align-items: center; padding: 10px; background: white; border: 1px solid var(--border); border-radius: 3px;">
                   <div style="flex: 1; min-width: 0;">
-                    <p style="margin: 0 0 3px 0; font-size: 12px; color: var(--border);">${idx + 1}. ${inv.contractor_email}</p>
-                    <code style="font-size: 11px; color: var(--border); display: block; word-break: break-all;">${baseUrl}?rfq=${inv.invitation_token}</code>
+                    <p style="margin: 0 0 4px 0; font-size: 13px; font-weight: bold; color: var(--ink);">${idx + 1}. ${inv.contractor_email}</p>
+                    <code style="font-size: 11px; color: var(--border); display: block; word-break: break-all; font-family: var(--mono);">${baseUrl}?rfq=${inv.invitation_token}</code>
+                    <p style="margin: 4px 0 0 0; font-size: 11px; color: var(--border);">${inv.used ? '✅ Submitted' : '⏳ Pending'}</p>
                   </div>
                   <button onclick="copyToClipboard('${baseUrl}?rfq=${inv.invitation_token}')" 
-                    class="btn" style="margin-left: 10px; padding: 4px 8px; font-size: 12px; white-space: nowrap;">
-                    Copy Link
+                    class="btn" style="margin-left: 10px; padding: 6px 10px; font-size: 12px; white-space: nowrap; flex-shrink: 0;">
+                    Copy
                   </button>
                 </div>
               `).join('') : '<p style="margin: 0; color: var(--border); font-style: italic;">No invitations sent yet</p>'}
             </div>
           </div>
 
-          <div>
-            <button onclick="showAddContractorForm('${rfq.id}')" class="btn secondary" style="width: 100%; padding: 10px;">
-              + Add New Contractor
+          <!-- Actions -->
+          <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">
+            <button onclick="showAddContractorForm('${rfq.id}')" class="btn secondary" style="padding: 10px;">
+              + Add Contractor
+            </button>
+            <button onclick="copyAllRFQLinks('${rfq.id}')" class="btn" style="padding: 10px;">
+              Copy All Links
             </button>
           </div>
         </div>
@@ -709,6 +750,32 @@ function copyToClipboard(text) {
   }).catch(() => {
     showToast('Error copying to clipboard', 'error');
   });
+}
+
+async function copyAllRFQLinks(rfqId) {
+  try {
+    const { data: invitations } = await client
+      .from('rfq_invitations')
+      .select('*')
+      .eq('rfq_id', rfqId);
+
+    if (!invitations || invitations.length === 0) {
+      showToast('No contractor links to copy', 'info');
+      return;
+    }
+
+    const baseUrl = window.location.origin + window.location.pathname;
+    const allLinks = invitations.map(inv => `${baseUrl}?rfq=${inv.invitation_token}`).join('\n');
+
+    navigator.clipboard.writeText(allLinks).then(() => {
+      showToast(`✅ ${invitations.length} links copied!`, 'success');
+    }).catch(() => {
+      showToast('Error copying to clipboard', 'error');
+    });
+  } catch (err) {
+    console.error('Error:', err);
+    showToast('Error: ' + err.message, 'error');
+  }
 }
 
 async function showAddContractorForm(rfqId) {
