@@ -347,25 +347,43 @@ async function createNewRFQ() {
 
     // Get required documents
     const docInputs = document.querySelectorAll('.doc-field');
+    console.log('🔍 Document fields search:');
+    console.log('  - Elements with .doc-field class:', docInputs.length);
+    Array.from(docInputs).forEach((input, idx) => {
+      console.log(`    Doc ${idx}: value="${input.value}", trimmed="${input.value ? input.value.trim() : ''}"`);
+    });
+
     const requiredDocs = Array.from(docInputs)
       .map(input => input.value ? input.value.trim() : '')
       .filter(val => val.length > 0);
 
-    console.log('Required docs:', requiredDocs);
+    console.log('📋 Final required docs array:', requiredDocs, '(length:', requiredDocs.length + ')');
 
     // Validate
-    if (!name || !project || !description || !deadline) {
-      showToast('Please fill in all RFQ details (name, project, description, deadline)', 'error');
+    if (!name) {
+      showToast('❌ Please enter RFQ Name', 'error');
+      return;
+    }
+    if (!project) {
+      showToast('❌ Please enter Project Name', 'error');
+      return;
+    }
+    if (!description) {
+      showToast('❌ Please enter Description', 'error');
+      return;
+    }
+    if (!deadline) {
+      showToast('❌ Please select a Deadline', 'error');
       return;
     }
 
     if (requiredDocs.length === 0) {
-      showToast('Please add at least one required document type', 'error');
+      showToast('❌ Please add at least one Required Document type by clicking "+ Add Document Type"', 'error');
       return;
     }
 
     if (contractorEmails.length === 0) {
-      showToast('Please enter at least one contractor email', 'error');
+      showToast('❌ Please enter at least one Contractor Email', 'error');
       return;
     }
 
@@ -455,15 +473,36 @@ function generateToken() {
 }
 
 function showGeneratedLinks(rfqId, invitations) {
+  console.log('Showing generated links for RFQ:', rfqId);
+  
   const baseUrl = window.location.origin + window.location.pathname;
-  const linksHtml = invitations.map(inv => {
+  console.log('Base URL:', baseUrl);
+  
+  let linksHtml = '<div style="font-family: monospace; font-size: 12px; line-height: 1.8;">';
+  
+  invitations.forEach((inv, idx) => {
     const link = `${baseUrl}?rfq=${inv.invitation_token}`;
-    return `<strong>${inv.contractor_email}</strong><br>${link}<br><br>`;
-  }).join('');
+    linksHtml += `
+      <div style="margin-bottom: 20px; padding-bottom: 15px; border-bottom: 1px solid var(--border);">
+        <strong style="color: var(--ink);">${idx + 1}. ${inv.contractor_email}</strong><br>
+        <code style="background: var(--bg-2); padding: 8px; display: block; word-break: break-all; margin-top: 5px; border-radius: 4px;">${link}</code>
+      </div>
+    `;
+  });
+  
+  linksHtml += '</div>';
 
-  document.getElementById('generated-links-list').innerHTML = linksHtml;
+  const linksContainer = document.getElementById('generated-links-list');
+  if (linksContainer) {
+    linksContainer.innerHTML = linksHtml;
+    console.log('✅ Links HTML set in modal');
+  } else {
+    console.error('❌ generated-links-list container not found');
+    return;
+  }
+
   openModal('generated-links-modal');
-  showToast('✅ RFQ created successfully!', 'success');
+  console.log('✅ Modal opened');
 }
 
 async function loadSubmissions() {
