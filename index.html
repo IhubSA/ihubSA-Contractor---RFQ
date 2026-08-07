@@ -11,24 +11,26 @@
   <div style="background: white; padding: 20px 40px; border-bottom: 3px solid #00A86B; display: flex; justify-content: space-between; align-items: center;">
     <div style="display: flex; align-items: center; gap: 15px;">
       <!-- CNWE Logo SVG -->
-      <svg width="60" height="60" viewBox="0 0 60 60" style="flex-shrink: 0;">
+      <svg width="60" height="60" viewBox="0 0 100 100" style="flex-shrink: 0;">
         <!-- Blue circle background -->
-        <circle cx="30" cy="30" r="28" fill="#0066CC"/>
-        <!-- Green leaf/swoosh -->
-        <path d="M 30 8 Q 45 15 48 30 Q 45 35 35 38 Q 28 25 30 8" fill="#00A86B"/>
-        <path d="M 30 8 Q 35 12 38 22 Q 35 28 30 28 Q 28 18 30 8" fill="#00D46E"/>
+        <circle cx="50" cy="50" r="46" fill="#004D5C"/>
+        <!-- Green swoosh/leaf shape -->
+        <path d="M 50 15 C 65 20, 75 35, 72 50 C 70 60, 60 65, 50 62 C 45 45, 45 30, 50 15 Z" fill="#2E9B47"/>
+        <path d="M 50 20 C 58 25, 63 35, 60 45 C 58 50, 52 52, 48 48 C 46 38, 47 28, 50 20 Z" fill="#4CAF50"/>
+        <!-- Circular arrow element -->
+        <path d="M 25 45 A 25 25 0 1 1 30 65" fill="none" stroke="#00A86B" stroke-width="4" stroke-linecap="round"/>
       </svg>
       <div>
-        <h1 style="margin: 0; font-size: 24px; font-weight: bold; color: #0066CC; font-family: 'Source Serif 4', serif;">CNWE ENERGY (PTY) LTD</h1>
+        <h1 style="margin: 0; font-size: 24px; font-weight: bold; color: #004D5C; font-family: 'Source Serif 4', serif;">CNWE ENERGY (PTY) LTD</h1>
         <p style="margin: 0; font-size: 12px; color: #666; font-family: 'IBM Plex Sans', sans-serif;">Request for Quotation Management System</p>
       </div>
     </div>
   </div>
 
   <!-- HERO SECTION -->
-  <div style="background: linear-gradient(135deg, #0066CC 0%, #004A99 100%); padding: 60px 40px; text-align: left;">
+  <div style="background: linear-gradient(135deg, #004D5C 0%, #003340 100%); padding: 60px 40px; text-align: left;">
     <h1 style="margin: 0 0 15px 0; font-size: 48px; font-weight: bold; color: white; font-family: 'Source Serif 4', serif;">RFQ Hub</h1>
-    <p style="margin: 0; font-size: 18px; color: #CCE5FF; font-family: 'IBM Plex Sans', sans-serif; line-height: 1.6; max-width: 600px;">Open requests for quotation. Apply directly online — you'll get a reference number and a confirmation the moment your application is received.</p>
+    <p style="margin: 0; font-size: 18px; color: #B8DDE3; font-family: 'IBM Plex Sans', sans-serif; line-height: 1.6; max-width: 600px;">Open requests for quotation. Apply directly online — you'll get a reference number and a confirmation the moment your application is received.</p>
   </div>
 
   <div id="app-container" style="min-height: 100vh; background: #F5F5F5;">
@@ -42,7 +44,7 @@
     <div id="admin-view" style="display:none;">
       <div style="background: white; border-bottom: 1px solid #E0E0E0; padding: 20px 40px;">
         <div style="display: flex; justify-content: space-between; align-items: center; max-width: 1200px; margin: 0 auto;">
-          <h2 style="margin: 0; color: #0066CC; font-family: 'Source Serif 4', serif;">RFQ Management</h2>
+          <h2 style="margin: 0; color: #004D5C; font-family: 'Source Serif 4', serif;">RFQ Management</h2>
           <button onclick="logoutAdmin()" class="btn secondary" style="padding: 8px 16px;">Logout</button>
         </div>
       </div>
