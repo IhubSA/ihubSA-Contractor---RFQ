@@ -317,6 +317,21 @@ async function createNewRFQ() {
   isSubmittingRFQ = true;
 
   try {
+    console.log('=== FORM SUBMISSION STARTED ===');
+    
+    // IMMEDIATE FIELD VALUE CHECK
+    console.log('📝 RAW FIELD VALUES (before any processing):');
+    console.log('rfq-name field:', document.getElementById('rfq-name'));
+    console.log('rfq-name VALUE:', document.getElementById('rfq-name')?.value);
+    console.log('rfq-project field:', document.getElementById('rfq-project'));
+    console.log('rfq-project VALUE:', document.getElementById('rfq-project')?.value);
+    console.log('rfq-description field:', document.getElementById('rfq-description'));
+    console.log('rfq-description VALUE:', document.getElementById('rfq-description')?.value);
+    console.log('rfq-deadline field:', document.getElementById('rfq-deadline'));
+    console.log('rfq-deadline VALUE:', document.getElementById('rfq-deadline')?.value);
+    console.log('contractor-emails field:', document.getElementById('contractor-emails'));
+    console.log('contractor-emails VALUE:', document.getElementById('contractor-emails')?.value);
+    
     console.log('Creating RFQ...');
 
     // Get form values with safety checks
