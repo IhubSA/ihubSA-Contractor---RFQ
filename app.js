@@ -319,46 +319,39 @@ async function createNewRFQ() {
   try {
     console.log('=== FORM SUBMISSION STARTED ===');
     
-    // IMMEDIATE FIELD VALUE CHECK
-    console.log('📝 RAW FIELD VALUES (before any processing):');
-    console.log('rfq-name field:', document.getElementById('rfq-name'));
-    console.log('rfq-name VALUE:', document.getElementById('rfq-name')?.value);
-    console.log('rfq-project field:', document.getElementById('rfq-project'));
-    console.log('rfq-project VALUE:', document.getElementById('rfq-project')?.value);
-    console.log('rfq-description field:', document.getElementById('rfq-description'));
-    console.log('rfq-description VALUE:', document.getElementById('rfq-description')?.value);
-    console.log('rfq-deadline field:', document.getElementById('rfq-deadline'));
-    console.log('rfq-deadline VALUE:', document.getElementById('rfq-deadline')?.value);
-    console.log('contractor-emails field:', document.getElementById('contractor-emails'));
-    console.log('contractor-emails VALUE:', document.getElementById('contractor-emails')?.value);
-    
-    console.log('Creating RFQ...');
-
-    // Get form values with safety checks
-    const nameField = document.getElementById('rfq-name');
-    const projectField = document.getElementById('rfq-project');
-    const descField = document.getElementById('rfq-description');
-    const deadlineField = document.getElementById('rfq-deadline');
-    const budgetField = document.getElementById('rfq-budget');
-    const emailsField = document.getElementById('contractor-emails');
-
-    if (!nameField || !projectField || !descField || !deadlineField || !emailsField) {
-      console.error('Form fields not found!');
-      showToast('Error: Form fields not found', 'error');
+    // Get the form object
+    const form = document.getElementById('create-rfq-form');
+    if (!form) {
+      console.error('❌ Form not found');
+      showToast('Error: Form not found', 'error');
+      isSubmittingRFQ = false;
       return;
     }
 
-    const name = nameField.value ? nameField.value.trim() : '';
-    const project = projectField.value ? projectField.value.trim() : '';
-    const description = descField.value ? descField.value.trim() : '';
-    const deadline = deadlineField.value ? deadlineField.value.trim() : '';
-    const budget = budgetField ? budgetField.value.trim() : '';
+    console.log('✅ Form found, getting values from form.elements...');
     
-    const contractorEmails = emailsField.value
-      ? emailsField.value.split('\n').map(e => e.trim()).filter(e => e.length > 0)
-      : [];
+    // Use FormData to get all values
+    const formData = new FormData(form);
+    
+    const name = formData.get('rfq_name') ? formData.get('rfq_name').trim() : '';
+    const project = formData.get('rfq_project') ? formData.get('rfq_project').trim() : '';
+    const description = formData.get('rfq_description') ? formData.get('rfq_description').trim() : '';
+    const deadline = formData.get('rfq_deadline') ? formData.get('rfq_deadline').trim() : '';
+    const budget = formData.get('rfq_budget') ? formData.get('rfq_budget').trim() : '';
+    const emailsText = formData.get('contractor_emails') ? formData.get('contractor_emails').trim() : '';
 
-    console.log('Form data:', { name, project, description, deadline, budget, emailCount: contractorEmails.length });
+    const contractorEmails = emailsText
+      .split('\n')
+      .map(e => e.trim())
+      .filter(e => e.length > 0);
+
+    console.log('📝 FORM VALUES FROM FormData:');
+    console.log('  Name:', JSON.stringify(name));
+    console.log('  Project:', JSON.stringify(project));
+    console.log('  Description:', JSON.stringify(description));
+    console.log('  Deadline:', JSON.stringify(deadline));
+    console.log('  Budget:', JSON.stringify(budget));
+    console.log('  Emails:', contractorEmails);
 
     // Get required documents
     const docInputs = document.querySelectorAll('.doc-field');
