@@ -307,25 +307,45 @@ function resetSubmissionForm() {
 
 async function createNewRFQ() {
   try {
-    const name = document.getElementById('rfq-name').value.trim();
-    const project = document.getElementById('rfq-project').value.trim();
-    const description = document.getElementById('rfq-description').value.trim();
-    const deadline = document.getElementById('rfq-deadline').value;
-    const budget = document.getElementById('rfq-budget').value.trim();
-    const contractorEmails = document.getElementById('contractor-emails').value
-      .split('\n')
-      .map(e => e.trim())
-      .filter(e => e.length > 0);
+    console.log('Creating RFQ...');
 
-    // Get required documents from form
+    // Get form values with safety checks
+    const nameField = document.getElementById('rfq-name');
+    const projectField = document.getElementById('rfq-project');
+    const descField = document.getElementById('rfq-description');
+    const deadlineField = document.getElementById('rfq-deadline');
+    const budgetField = document.getElementById('rfq-budget');
+    const emailsField = document.getElementById('contractor-emails');
+
+    if (!nameField || !projectField || !descField || !deadlineField || !emailsField) {
+      console.error('Form fields not found!');
+      showToast('Error: Form fields not found', 'error');
+      return;
+    }
+
+    const name = nameField.value ? nameField.value.trim() : '';
+    const project = projectField.value ? projectField.value.trim() : '';
+    const description = descField.value ? descField.value.trim() : '';
+    const deadline = deadlineField.value ? deadlineField.value.trim() : '';
+    const budget = budgetField ? budgetField.value.trim() : '';
+    
+    const contractorEmails = emailsField.value
+      ? emailsField.value.split('\n').map(e => e.trim()).filter(e => e.length > 0)
+      : [];
+
+    console.log('Form data:', { name, project, description, deadline, budget, emailCount: contractorEmails.length });
+
+    // Get required documents
     const docInputs = document.querySelectorAll('.doc-field');
     const requiredDocs = Array.from(docInputs)
-      .map(input => input.value.trim())
+      .map(input => input.value ? input.value.trim() : '')
       .filter(val => val.length > 0);
+
+    console.log('Required docs:', requiredDocs);
 
     // Validate
     if (!name || !project || !description || !deadline) {
-      showToast('Please fill in all RFQ details', 'error');
+      showToast('Please fill in all RFQ details (name, project, description, deadline)', 'error');
       return;
     }
 
@@ -339,6 +359,7 @@ async function createNewRFQ() {
       return;
     }
 
+    console.log('✅ All validations passed');
     showToast('Creating RFQ...', 'success');
 
     // Create RFQ in database
@@ -356,7 +377,10 @@ async function createNewRFQ() {
       .select()
       .single();
 
-    if (rfqError) throw rfqError;
+    if (rfqError) {
+      console.error('RFQ creation error:', rfqError);
+      throw rfqError;
+    }
 
     console.log('✅ RFQ created:', rfq.id);
 
@@ -368,11 +392,16 @@ async function createNewRFQ() {
       used: false
     }));
 
+    console.log('Creating invitations for:', contractorEmails);
+
     const { error: invError } = await client
       .from('rfq_invitations')
       .insert(invitations);
 
-    if (invError) throw invError;
+    if (invError) {
+      console.error('Invitation creation error:', invError);
+      throw invError;
+    }
 
     console.log('✅ Invitations created');
 
@@ -381,7 +410,8 @@ async function createNewRFQ() {
 
     // Reset form
     document.getElementById('create-rfq-form').reset();
-    document.getElementById('required-docs-builder').innerHTML = '';
+    const builderContainer = document.getElementById('required-docs-builder');
+    if (builderContainer) builderContainer.innerHTML = '';
 
   } catch (err) {
     console.error('Error creating RFQ:', err);
@@ -504,20 +534,30 @@ function copyAllLinks() {
 
 // Initialize when DOM is ready
 if (document.readyState === 'loading') {
-  document.addEventListener('DOMContentLoaded', initApp);
+  document.addEventListener('DOMContentLoaded', () => {
+    console.log('DOMContentLoaded - starting app initialization');
+    initApp();
+    setupCreateRFQForm();
+  });
 } else {
+  console.log('DOM already loaded - starting app initialization');
   initApp();
+  setupCreateRFQForm();
 }
 
 // Set up Create RFQ form listener
 function setupCreateRFQForm() {
-  const form = document.getElementById('create-rfq-form');
-  if (form) {
-    form.onsubmit = async (e) => {
-      e.preventDefault();
-      await createNewRFQ();
-    };
-  }
+  setTimeout(() => {
+    const form = document.getElementById('create-rfq-form');
+    if (form) {
+      console.log('✅ Create RFQ form found and hooked up');
+      form.onsubmit = async (e) => {
+        e.preventDefault();
+        console.log('Form submitted - calling createNewRFQ');
+        await createNewRFQ();
+      };
+    } else {
+      console.error('❌ Create RFQ form NOT found in DOM');
+    }
+  }, 100);
 }
-
-setTimeout(setupCreateRFQForm, 100);
