@@ -370,9 +370,19 @@ async function createNewRFQ() {
     }
 
     console.log('✅ All validations passed');
-    showToast('Creating RFQ...', 'success');
+    showToast('Creating RFQ in database...', 'success');
 
     // Create RFQ in database
+    console.log('Attempting to insert RFQ:', {
+      rfq_name: name,
+      project_name: project,
+      description: description,
+      deadline: deadline,
+      budget: budget || null,
+      required_documents: requiredDocs,
+      created_by: 'admin'
+    });
+
     const { data: rfq, error: rfqError } = await client
       .from('rfqs')
       .insert([{
@@ -388,11 +398,17 @@ async function createNewRFQ() {
       .single();
 
     if (rfqError) {
-      console.error('RFQ creation error:', rfqError);
-      throw rfqError;
+      console.error('❌ RFQ creation error:', rfqError);
+      throw new Error('Failed to create RFQ: ' + JSON.stringify(rfqError));
     }
 
-    console.log('✅ RFQ created:', rfq.id);
+    if (!rfq || !rfq.id) {
+      console.error('❌ RFQ created but no ID returned');
+      throw new Error('RFQ created but no ID returned');
+    }
+
+    console.log('✅ RFQ created successfully:', rfq.id);
+    showToast('RFQ created! Now creating invitations...', 'success');
 
     // Generate unique tokens and create invitations
     const invitations = contractorEmails.map(email => ({
@@ -402,18 +418,19 @@ async function createNewRFQ() {
       used: false
     }));
 
-    console.log('Creating invitations for:', contractorEmails);
+    console.log('Attempting to insert invitations:', invitations);
 
     const { error: invError } = await client
       .from('rfq_invitations')
       .insert(invitations);
 
     if (invError) {
-      console.error('Invitation creation error:', invError);
-      throw invError;
+      console.error('❌ Invitation creation error:', invError);
+      throw new Error('Failed to create invitations: ' + JSON.stringify(invError));
     }
 
-    console.log('✅ Invitations created');
+    console.log('✅ Invitations created successfully');
+    showToast('✅ RFQ and invitations created!', 'success');
 
     // Show generated links
     showGeneratedLinks(rfq.id, invitations);
@@ -423,8 +440,10 @@ async function createNewRFQ() {
     const builderContainer = document.getElementById('required-docs-builder');
     if (builderContainer) builderContainer.innerHTML = '';
 
+    console.log('✅ RFQ creation process completed successfully');
+
   } catch (err) {
-    console.error('Error creating RFQ:', err);
+    console.error('❌ Error creating RFQ:', err);
     showToast('Error: ' + err.message, 'error');
   } finally {
     isSubmittingRFQ = false;
