@@ -1,273 +1,223 @@
 <!DOCTYPE html>
-<!-- RFQ Hub — Construction Site RFQ Management System (2026-08-07) -->
 <html lang="en">
 <head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=Source+Serif+4:opsz,wght@8..60,400;8..60,600;8..60,700&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="styles.css">
-<title>CNWE Energy (Pty) Ltd — RFQ Hub</title>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>RFQ Hub - CNWE Energy</title>
+  <link rel="stylesheet" href="styles.css">
 </head>
 <body>
-
-<!-- PUBLIC CONTRACTOR VIEW -->
-<div id="public-view" style="display:block; width:100%;">
-  <div class="top-role-bar">
-    <span id="public-topbar-msg">RFQ Submission Portal</span>
-    <a id="public-topbar-link" href="#" onclick="goToAdminLogin(event)">Staff login</a>
-  </div>
-
-  <div class="container">
-    <header class="site-header">
-      <div class="logo-section">
-        <h1 class="site-title">CNWE Energy</h1>
-        <p class="site-subtitle">Request for Quotation Portal</p>
-      </div>
-    </header>
-
-    <!-- Show RFQ if contractor has a link -->
-    <div id="rfq-portal" style="display:none;">
-      <div class="card">
-        <h2 id="rfq-title" style="margin-top:0;">Loading RFQ...</h2>
-        <div id="rfq-details" class="rfq-info">
-          <p><strong>Project:</strong> <span id="rfq-project"></span></p>
-          <p><strong>Description:</strong> <span id="rfq-description"></span></p>
-          <p><strong>Deadline:</strong> <span id="rfq-deadline"></span></p>
-          <p><strong>Required Documents:</strong></p>
-          <div id="required-docs-list" style="margin-left:20px; margin-bottom:20px;"></div>
-        </div>
-
-        <form id="submission-form">
-          <fieldset>
-            <legend>Your Information</legend>
-            <div class="form-row">
-              <div class="form-group">
-                <label for="contractor-name">Company Name *</label>
-                <input type="text" id="contractor-name" name="contractor_name" required>
-              </div>
-              <div class="form-group">
-                <label for="contractor-email">Email Address *</label>
-                <input type="email" id="contractor-email" name="contractor_email" required>
-              </div>
-            </div>
-            <div class="form-row">
-              <div class="form-group">
-                <label for="contractor-phone">Phone Number</label>
-                <input type="tel" id="contractor-phone" name="contractor_phone">
-              </div>
-              <div class="form-group">
-                <label for="contractor-reg">Company Registration Number</label>
-                <input type="text" id="contractor-reg" name="contractor_reg">
-              </div>
-            </div>
-          </fieldset>
-
-          <fieldset>
-            <legend>Upload Documents</legend>
-            <div id="document-uploads-container"></div>
-          </fieldset>
-
-          <div class="form-actions">
-            <button type="button" class="btn secondary" onclick="resetSubmissionForm()">Clear</button>
-            <button type="submit" class="btn gold">Submit Documents</button>
-          </div>
-        </form>
-      </div>
-
-      <div class="popia-notice" style="margin-top:40px; padding:20px; background:var(--bg-2); border-left:4px solid var(--accent); font-size:13px; color:var(--ink-2); line-height:1.6;">
-        <strong>Privacy Notice:</strong> Your information is collected by CNWE Energy (Pty) Ltd for procurement purposes and handled in accordance with South Africa's Protection of Personal Information Act (POPIA).
-      </div>
-    </div>
-
-    <!-- Show message if no valid RFQ link -->
-    <div id="no-rfq-message" style="display:none;">
-      <div class="card">
-        <h2 style="margin-top:0; color:var(--warning);">No RFQ Found</h2>
-        <p>The RFQ link you're accessing is invalid or has expired. Please check your email for a valid RFQ link from CNWE Energy.</p>
-        <p style="margin-bottom:0; color:var(--ink-2); font-size:13px;">If you believe this is an error, please contact your project manager.</p>
-      </div>
-    </div>
-  </div>
-</div>
-
-<!-- ADMIN VIEW -->
-<div id="admin-view" style="display:none; width:100%;">
-  <div class="top-role-bar">
-    <span>RFQ Management System</span>
-    <button class="btn-text" onclick="logoutAdmin()">Log out</button>
-  </div>
-
-  <div class="container">
-    <div class="admin-header">
+  <!-- CNWE HEADER BRANDING -->
+  <div style="background: white; padding: 20px 40px; border-bottom: 3px solid #00A86B; display: flex; justify-content: space-between; align-items: center;">
+    <div style="display: flex; align-items: center; gap: 15px;">
+      <!-- Logo Placeholder - Replace with actual logo -->
+      <div style="width: 50px; height: 50px; background: linear-gradient(135deg, #1B5E5E 0%, #00A86B 100%); border-radius: 4px; display: flex; align-items: center; justify-content: center; color: white; font-weight: bold; font-size: 24px;">C</div>
       <div>
-        <h1 class="site-title">RFQ Management</h1>
-        <p class="site-subtitle">Create and review construction site quotations</p>
-      </div>
-      <div class="tab-nav">
-        <button class="tab-btn active" onclick="switchAdminTab('create', this)">Create RFQ</button>
-        <button class="tab-btn" onclick="switchAdminTab('console', this)">RFQ Console</button>
-        <button class="tab-btn" onclick="switchAdminTab('submissions', this)">Review Submissions</button>
+        <h1 style="margin: 0; font-size: 24px; font-weight: bold; color: #1B5E5E; font-family: 'Source Serif 4', serif;">CNWE ENERGY (PTY) LTD</h1>
+        <p style="margin: 0; font-size: 12px; color: #666; font-family: 'IBM Plex Sans', sans-serif;">Request for Quotation Management System</p>
       </div>
     </div>
+  </div>
 
-    <!-- CREATE RFQ TAB -->
-    <div id="create-tab" class="admin-tab" style="display:block;">
-      <div class="card">
-        <h2 style="margin-top:0;">Create New RFQ</h2>
-        <form id="create-rfq-form">
-          <div class="form-row">
-            <div class="form-group">
-              <label for="rfq-name">RFQ Name/Title *</label>
-              <input type="text" id="rfq-name" name="rfq_name" placeholder="e.g., Safety Equipment Q3 2026" required>
+  <!-- HERO SECTION -->
+  <div style="background: linear-gradient(135deg, #1B5E5E 0%, #0F3B3B 100%); padding: 60px 40px; text-align: left;">
+    <h1 style="margin: 0 0 15px 0; font-size: 48px; font-weight: bold; color: white; font-family: 'Source Serif 4', serif;">RFQ Hub</h1>
+    <p style="margin: 0; font-size: 18px; color: #B8D4D4; font-family: 'IBM Plex Sans', sans-serif; line-height: 1.6; max-width: 600px;">Open requests for quotation. Apply directly online — you'll get a reference number and a confirmation the moment your application is received.</p>
+  </div>
+
+  <div id="app-container" style="min-height: 100vh; background: #F5F5F5;">
+    <!-- PUBLIC VIEW (Contractor Portal) -->
+    <div id="public-view" style="display:none; padding: 40px;">
+      <div id="rfq-portal" style="display:none;"></div>
+      <div id="no-rfq-message" style="display:none;"></div>
+    </div>
+
+    <!-- ADMIN VIEW -->
+    <div id="admin-view" style="display:none;">
+      <div style="background: white; border-bottom: 1px solid #E0E0E0; padding: 20px 40px;">
+        <div style="display: flex; justify-content: space-between; align-items: center; max-width: 1200px; margin: 0 auto;">
+          <h2 style="margin: 0; color: #1B5E5E; font-family: 'Source Serif 4', serif;">RFQ Management</h2>
+          <button onclick="logoutAdmin()" class="btn secondary" style="padding: 8px 16px;">Logout</button>
+        </div>
+      </div>
+
+      <div style="padding: 40px; max-width: 1200px; margin: 0 auto;">
+        <!-- Tab Navigation -->
+        <div style="display: flex; gap: 10px; margin-bottom: 30px; border-bottom: 2px solid #E0E0E0;">
+          <button class="tab-btn active" onclick="switchAdminTab('create', this)" style="padding: 12px 20px; border: none; background: none; cursor: pointer; font-weight: bold; color: #666; border-bottom: 3px solid transparent; margin-bottom: -2px;">Create RFQ</button>
+          <button class="tab-btn" onclick="switchAdminTab('console', this)" style="padding: 12px 20px; border: none; background: none; cursor: pointer; font-weight: bold; color: #666; border-bottom: 3px solid transparent; margin-bottom: -2px;">RFQ Console</button>
+          <button class="tab-btn" onclick="switchAdminTab('submissions', this)" style="padding: 12px 20px; border: none; background: none; cursor: pointer; font-weight: bold; color: #666; border-bottom: 3px solid transparent; margin-bottom: -2px;">Review Submissions</button>
+        </div>
+
+        <!-- CREATE RFQ TAB -->
+        <div id="create-tab" class="admin-tab" style="display:block;">
+          <div class="card">
+            <h2 style="margin-top:0;">Create New RFQ</h2>
+            <form id="create-rfq-form" onsubmit="return false;" style="display:flex; flex-direction:column; gap:20px;">
+              <div style="display:grid; grid-template-columns:1fr 1fr; gap:20px;">
+                <div>
+                  <label style="font-weight:bold; display:block; margin-bottom:8px;">RFQ Name/Title *</label>
+                  <input type="text" name="rfq_name" placeholder="e.g., Safety Equipment Quotes" style="width:100%; padding:10px; border:1px solid var(--border); border-radius:4px; box-sizing:border-box;">
+                </div>
+                <div>
+                  <label style="font-weight:bold; display:block; margin-bottom:8px;">Project Name *</label>
+                  <input type="text" name="rfq_project" placeholder="e.g., Table Bay Construction Site" style="width:100%; padding:10px; border:1px solid var(--border); border-radius:4px; box-sizing:border-box;">
+                </div>
+              </div>
+
+              <div>
+                <label style="font-weight:bold; display:block; margin-bottom:8px;">Description *</label>
+                <textarea name="rfq_description" placeholder="Describe what you're looking for..." style="width:100%; padding:10px; border:1px solid var(--border); border-radius:4px; min-height:100px; box-sizing:border-box; font-family:inherit;"></textarea>
+              </div>
+
+              <div style="display:grid; grid-template-columns:1fr 1fr; gap:20px;">
+                <div>
+                  <label style="font-weight:bold; display:block; margin-bottom:8px;">Submission Deadline *</label>
+                  <input type="datetime-local" name="rfq_deadline" style="width:100%; padding:10px; border:1px solid var(--border); border-radius:4px; box-sizing:border-box;">
+                </div>
+                <div>
+                  <label style="font-weight:bold; display:block; margin-bottom:8px;">Budget (optional)</label>
+                  <input type="number" name="rfq_budget" placeholder="e.g., 50000" style="width:100%; padding:10px; border:1px solid var(--border); border-radius:4px; box-sizing:border-box;">
+                </div>
+              </div>
+
+              <div>
+                <label style="font-weight:bold; display:block; margin-bottom:8px;">Required Documents *</label>
+                <p style="font-size:14px; color:var(--border); margin:0 0 10px 0;">Click the button below to add document types contractors must submit</p>
+                <div id="required-docs-builder" style="margin-bottom:10px;"></div>
+                <button type="button" onclick="addDocumentField()" class="btn secondary" style="padding:8px 16px;">+ Add Document Type</button>
+              </div>
+
+              <div>
+                <label style="font-weight:bold; display:block; margin-bottom:8px;">Contractor Email Addresses *</label>
+                <p style="font-size:14px; color:var(--border); margin:0 0 10px 0;">Enter email addresses (one per line). You'll receive unique links for each contractor.</p>
+                <textarea name="contractor_emails" placeholder="contractor1@example.com&#10;contractor2@example.com" style="width:100%; padding:10px; border:1px solid var(--border); border-radius:4px; min-height:80px; box-sizing:border-box; font-family:inherit;"></textarea>
+              </div>
+
+              <div style="display:flex; gap:10px; justify-content:flex-end;">
+                <button type="button" onclick="resetCreateForm()" class="btn secondary" style="padding:10px 20px;">Clear</button>
+                <button type="submit" class="btn gold" style="padding:10px 20px; background:#B8860B; color:white; border:none; cursor:pointer; font-weight:bold; border-radius:4px;">Create RFQ & Generate Links</button>
+              </div>
+            </form>
+          </div>
+        </div>
+
+        <!-- RFQ CONSOLE TAB -->
+        <div id="console-tab" class="admin-tab" style="display:none;">
+          <div class="card">
+            <h2 style="margin-top:0;">Active RFQs</h2>
+            <p style="color: var(--border); font-size: 14px; margin-bottom: 20px;">View all active RFQs and manage contractor invitation links</p>
+            <div id="rfq-console-list" style="display: flex; flex-direction: column; gap: 20px;">
+              <div style="text-align: center; padding: 40px; color: var(--border);">
+                <p>Loading RFQs...</p>
+              </div>
             </div>
-            <div class="form-group">
-              <label for="rfq-project">Project Name *</label>
-              <input type="text" id="rfq-project" name="rfq_project" placeholder="e.g., Table Bay Construction Site" required>
+          </div>
+        </div>
+
+        <!-- SUBMISSIONS TAB -->
+        <div id="submissions-tab" class="admin-tab" style="display:none;">
+          <div class="card">
+            <h2 style="margin-top:0;">RFQ Submissions</h2>
+            <div style="margin-bottom:20px; display:grid; grid-template-columns:200px 200px; gap:10px;">
+              <select id="rfq-filter" onchange="filterSubmissions()" style="padding:10px; border:1px solid var(--border); border-radius:4px;">
+                <option value="">All RFQs</option>
+              </select>
+              <select id="status-filter" onchange="filterSubmissions()" style="padding:10px; border:1px solid var(--border); border-radius:4px;">
+                <option value="">All Statuses</option>
+                <option value="submitted">Submitted</option>
+                <option value="under_review">Under Review</option>
+                <option value="approved">Approved</option>
+                <option value="rejected">Rejected</option>
+              </select>
             </div>
+            <div id="submissions-list" style="display:flex; flex-direction:column; gap:15px;"></div>
           </div>
-
-          <div class="form-group">
-            <label for="rfq-description">Description *</label>
-            <textarea id="rfq-description" name="rfq_description" placeholder="Describe the scope and requirements..." rows="4" required></textarea>
-          </div>
-
-          <div class="form-row">
-            <div class="form-group">
-              <label for="rfq-deadline">Submission Deadline *</label>
-              <input type="datetime-local" id="rfq-deadline" name="rfq_deadline" required>
-            </div>
-            <div class="form-group">
-              <label for="rfq-budget">Budget (optional)</label>
-              <input type="text" id="rfq-budget" name="rfq_budget" placeholder="e.g., R50,000 - R100,000">
-            </div>
-          </div>
-
-          <fieldset>
-            <legend>Required Documents</legend>
-            <p style="font-size:13px; color:var(--ink-2); margin-top:0;">Specify which documents contractors must submit</p>
-            <div id="required-docs-builder"></div>
-            <button type="button" class="btn secondary" onclick="addDocumentField()">+ Add Document Type</button>
-          </fieldset>
-
-          <fieldset>
-            <legend>Contractor Email Addresses</legend>
-            <p style="font-size:13px; color:var(--ink-2); margin-top:0;">Enter email addresses (one per line). You'll receive unique links to send to each contractor.</p>
-            <textarea id="contractor-emails" name="contractor_emails" placeholder="contractor1@company.com&#10;contractor2@company.com&#10;contractor3@company.com" rows="6" required></textarea>
-          </fieldset>
-
-          <div class="form-actions">
-            <button type="button" class="btn secondary" onclick="resetCreateForm()">Clear</button>
-            <button type="submit" class="btn gold">Create RFQ & Generate Links</button>
-          </div>
-        </form>
-      </div>
-    </div>
-
-    <!-- RFQ CONSOLE TAB -->
-    <div id="console-tab" class="admin-tab" style="display:none;">
-      <div class="card">
-        <h2 style="margin-top:0;">Active RFQs</h2>
-        <p style="color: var(--border); font-size: 14px; margin-bottom: 20px;">View all active RFQs and manage contractor invitation links</p>
-        
-        <div id="rfq-console-list" style="display: flex; flex-direction: column; gap: 20px;">
-          <div style="text-align: center; padding: 40px; color: var(--border);">
-            <p>Loading RFQs...</p>
-          </div>
-        </div>
-      </div>
-    </div>
-
-    <!-- SUBMISSIONS TAB -->
-    <div id="submissions-tab" class="admin-tab" style="display:none;">
-      <div class="card">
-        <h2 style="margin-top:0;">RFQ Submissions</h2>
-        
-        <div class="filter-bar">
-          <select id="rfq-filter" onchange="filterSubmissions()">
-            <option value="">All RFQs</option>
-          </select>
-          <select id="status-filter" onchange="filterSubmissions()">
-            <option value="">All Statuses</option>
-            <option value="submitted">Submitted</option>
-            <option value="reviewed">Reviewed</option>
-          </select>
-        </div>
-
-        <div id="submissions-list" style="margin-top:20px;"></div>
-      </div>
-    </div>
-
-    <!-- SUBMISSION DETAIL MODAL -->
-    <div id="submission-detail-modal" class="modal" style="display:none;">
-      <div class="modal-content">
-        <div class="modal-head">
-          <h3 id="submission-title">Submission Details</h3>
-          <button class="drawer-close" onclick="closeModal('submission-detail-modal')">✕</button>
-        </div>
-        <div class="modal-body">
-          <div id="submission-details-content"></div>
-          <div style="margin-top:30px; padding-top:20px; border-top:1px solid var(--border);">
-            <h4>Uploaded Documents</h4>
-            <div id="submission-documents-list"></div>
-          </div>
-        </div>
-        <div class="modal-foot">
-          <button type="button" class="btn secondary" onclick="closeModal('submission-detail-modal')">Close</button>
-          <select id="submission-status-update" style="padding:8px 12px; border:1px solid var(--border); border-radius:4px;">
-            <option value="submitted">Submitted</option>
-            <option value="under_review">Under Review</option>
-            <option value="approved">Approved</option>
-            <option value="rejected">Rejected</option>
-          </select>
-          <button type="button" class="btn gold" onclick="updateSubmissionStatus()">Update Status</button>
-        </div>
-      </div>
-    </div>
-
-    <!-- GENERATED LINKS MODAL -->
-    <div id="generated-links-modal" class="modal" style="display:none;">
-      <div class="modal-content" style="max-width:700px;">
-        <div class="modal-head">
-          <h3>RFQ Links Created</h3>
-          <button class="drawer-close" onclick="closeModal('generated-links-modal')">✕</button>
-        </div>
-        <div class="modal-body">
-          <p>Below are the unique submission links for each contractor. Copy and send these via email:</p>
-          <div id="generated-links-list" style="background:var(--bg-2); padding:20px; border-radius:4px; font-family:var(--mono); font-size:12px; line-height:1.8; word-break:break-all; color:var(--ink-2);">
-          </div>
-          <p style="font-size:13px; color:var(--ink-2); margin-top:20px; margin-bottom:0;">
-            <strong>Note:</strong> Each link is unique to a contractor and can only be used once to prevent duplicate submissions.
-          </p>
-        </div>
-        <div class="modal-foot">
-          <button type="button" class="btn secondary" onclick="copyAllLinks()">Copy All Links</button>
-          <button type="button" class="btn gold" onclick="closeModal('generated-links-modal')">Done</button>
         </div>
       </div>
     </div>
   </div>
-</div>
 
-<!-- POPIA MODAL -->
-<div id="popia-modal" class="modal" style="display:none;">
-  <div class="modal-content" style="max-width:600px;">
-    <div class="modal-head"><h3>Your information is protected</h3><button class="drawer-close" onclick="closeModal('popia-modal')">✕</button></div>
-    <div class="modal-body" style="font-size:13px; color:var(--ink-2); line-height:1.6;">
-      <p style="margin-top:0;">Before you submit, please note: the personal and business information you provide — including your contact details, company registration number, and any documents you upload — is collected by CNWE Energy (Pty) Ltd to evaluate this RFQ response.</p>
-      <p style="margin-bottom:0;">Your information is handled in accordance with South Africa's <strong>Protection of Personal Information Act (POPIA)</strong>. It is used only for procurement-related purposes and is not shared with unauthorised third parties.</p>
-    </div>
-    <div class="modal-foot">
-      <button class="btn gold" onclick="acknowledgePopia()">I understand — continue</button>
+  <!-- SUBMISSION DETAIL MODAL -->
+  <div id="submission-detail-modal" class="modal" style="display:none;">
+    <div class="modal-content">
+      <div class="modal-head">
+        <h3 id="submission-title">Submission Details</h3>
+        <button class="drawer-close" onclick="closeModal('submission-detail-modal')">✕</button>
+      </div>
+      <div class="modal-body">
+        <div id="submission-details-content"></div>
+        <div style="margin-top:30px; padding-top:20px; border-top:1px solid var(--border);">
+          <h4>Uploaded Documents</h4>
+          <div id="submission-documents-list"></div>
+        </div>
+      </div>
+      <div class="modal-foot">
+        <button type="button" class="btn secondary" onclick="closeModal('submission-detail-modal')">Close</button>
+        <select id="submission-status-update" style="padding:8px 12px; border:1px solid var(--border); border-radius:4px;">
+          <option value="submitted">Submitted</option>
+          <option value="under_review">Under Review</option>
+          <option value="approved">Approved</option>
+          <option value="rejected">Rejected</option>
+        </select>
+        <button type="button" class="btn gold" onclick="updateSubmissionStatus()">Update Status</button>
+      </div>
     </div>
   </div>
-</div>
 
-<!-- TOAST NOTIFICATIONS -->
-<div id="toast-wrap"></div>
+  <!-- GENERATED LINKS MODAL -->
+  <div id="generated-links-modal" class="modal" style="display:none;">
+    <div class="modal-content" style="max-width:600px;">
+      <div class="modal-head">
+        <h3>RFQ Links Created</h3>
+        <button class="drawer-close" onclick="closeModal('generated-links-modal')">✕</button>
+      </div>
+      <div class="modal-body">
+        <p style="color:var(--border); margin-bottom:15px;">Below are the unique submission links for each contractor. Copy and send these via email:</p>
+        <div id="generated-links-list"></div>
+        <p style="font-size:12px; color:var(--border); margin-top:15px; font-style:italic;">Each link is unique to a contractor and can only be used once to prevent duplicate submissions.</p>
+      </div>
+      <div class="modal-foot">
+        <button type="button" class="btn secondary" onclick="closeModal('generated-links-modal')">Done</button>
+        <button type="button" class="btn gold" onclick="copyAllLinks()">Copy All Links</button>
+      </div>
+    </div>
+  </div>
 
-<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
-<script src="app.js"></script>
-<script>initApp();</script>
+  <!-- POPIA CONSENT MODAL -->
+  <div id="popia-modal" class="modal" style="display:none;">
+    <div class="modal-content">
+      <div class="modal-head">
+        <h3>Privacy Notice</h3>
+      </div>
+      <div class="modal-body">
+        <p>This RFQ system collects your company information to process your quotation submission. Your data will be handled in accordance with applicable privacy laws.</p>
+        <p>By proceeding, you consent to the processing of your personal and company information.</p>
+      </div>
+      <div class="modal-foot">
+        <button type="button" class="btn gold" onclick="acceptPOPIA()">Accept & Continue</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- TOAST NOTIFICATIONS -->
+  <div id="toast-wrap" style="position:fixed; top:20px; right:20px; z-index:9999; max-width:400px;"></div>
+
+  <!-- Supabase SDK -->
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  
+  <!-- Application Scripts -->
+  <link rel="stylesheet" href="styles.css">
+  <script src="app.js"></script>
+  
+  <script>
+    // Initialize app on page load
+    window.addEventListener('load', () => {
+      initApp();
+    });
+
+    // Setup form on DOM ready
+    document.addEventListener('DOMContentLoaded', setupCreateRFQForm);
+  </script>
 </body>
 </html>
