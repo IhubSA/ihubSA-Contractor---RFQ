@@ -588,18 +588,180 @@ function filterSubmissions() {
 }
 
 async function openSubmissionDetail(id) {
-  console.log('Open submission:', id);
-  showToast('Feature coming soon', 'info');
+  console.log('Opening submission:', id);
+  
+  try {
+    // Fetch submission details
+    const { data: submission, error: subError } = await client
+      .from('rfq_submissions')
+      .select('*')
+      .eq('id', id)
+      .single();
+
+    if (subError || !submission) {
+      console.error('Error loading submission:', subError);
+      showToast('Error loading submission', 'error');
+      return;
+    }
+
+    console.log('Submission loaded:', submission);
+
+    // Fetch RFQ details
+    const { data: rfq } = await client
+      .from('rfqs')
+      .select('*')
+      .eq('id', submission.rfq_id)
+      .single();
+
+    // Fetch submission documents
+    const { data: documents } = await client
+      .from('rfq_submission_documents')
+      .select('*')
+      .eq('submission_id', id);
+
+    console.log('Documents:', documents);
+
+    // Build HTML for submission details
+    let detailsHtml = `
+      <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px; margin-bottom: 20px;">
+        <div>
+          <label style="font-weight: bold; font-size: 12px; text-transform: uppercase; color: var(--ink);">Company Name</label>
+          <p style="margin: 5px 0; font-size: 16px; color: var(--ink);">${submission.contractor_name}</p>
+        </div>
+        <div>
+          <label style="font-weight: bold; font-size: 12px; text-transform: uppercase; color: var(--ink);">Email</label>
+          <p style="margin: 5px 0; font-size: 16px; color: var(--ink);">${submission.contractor_email}</p>
+        </div>
+        <div>
+          <label style="font-weight: bold; font-size: 12px; text-transform: uppercase; color: var(--ink);">Phone</label>
+          <p style="margin: 5px 0; font-size: 16px; color: var(--ink);">${submission.contractor_phone}</p>
+        </div>
+        <div>
+          <label style="font-weight: bold; font-size: 12px; text-transform: uppercase; color: var(--ink);">Reg Number</label>
+          <p style="margin: 5px 0; font-size: 16px; color: var(--ink);">${submission.contractor_reg}</p>
+        </div>
+      </div>
+
+      ${rfq ? `
+        <div style="background: var(--bg-2); padding: 15px; border-radius: 4px; margin-bottom: 20px;">
+          <h4 style="margin: 0 0 10px 0; color: var(--ink);">RFQ: ${rfq.rfq_name}</h4>
+          <p style="margin: 5px 0; font-size: 14px; color: var(--border);">Project: ${rfq.project_name}</p>
+          <p style="margin: 5px 0; font-size: 14px; color: var(--border);">Deadline: ${new Date(rfq.deadline).toLocaleDateString()}</p>
+        </div>
+      ` : ''}
+
+      <div>
+        <label style="font-weight: bold; font-size: 12px; text-transform: uppercase; color: var(--ink);">Submitted</label>
+        <p style="margin: 5px 0; font-size: 14px; color: var(--border);">${new Date(submission.created_at).toLocaleString()}</p>
+      </div>
+    `;
+
+    // Build documents HTML
+    let docsHtml = '';
+    if (documents && documents.length > 0) {
+      docsHtml = documents.map(doc => `
+        <div style="padding: 8px; border: 1px solid var(--border); border-radius: 4px; margin-bottom: 8px; display: flex; justify-content: space-between; align-items: center;">
+          <span style="color: var(--ink);">📄 ${doc.file_name}</span>
+          <button onclick="downloadDocument('${doc.file_path}', '${doc.file_name}')" 
+            class="btn" style="padding: 4px 12px; font-size: 12px;">
+            Download
+          </button>
+        </div>
+      `).join('');
+    } else {
+      docsHtml = '<p style="color: var(--border); font-style: italic;">No documents submitted</p>';
+    }
+
+    // Set content in modals
+    const detailsContent = document.getElementById('submission-details-content');
+    if (detailsContent) detailsContent.innerHTML = detailsHtml;
+
+    const docsContent = document.getElementById('submission-documents-list');
+    if (docsContent) docsContent.innerHTML = docsHtml;
+
+    // Set status dropdown
+    const statusSelect = document.getElementById('submission-status-update');
+    if (statusSelect) {
+      statusSelect.value = submission.status;
+      // Store ID for update function
+      statusSelect.dataset.submissionId = id;
+    }
+
+    // Update modal title
+    const title = document.getElementById('submission-title');
+    if (title) title.textContent = submission.contractor_name;
+
+    openModal('submission-detail-modal');
+    
+  } catch (err) {
+    console.error('Error opening submission detail:', err);
+    showToast('Error: ' + err.message, 'error');
+  }
 }
 
 async function updateSubmissionStatus() {
-  console.log('Update status');
-  showToast('Feature coming soon', 'info');
+  try {
+    const statusSelect = document.getElementById('submission-status-update');
+    if (!statusSelect || !statusSelect.dataset.submissionId) {
+      showToast('Error: submission ID not found', 'error');
+      return;
+    }
+
+    const id = statusSelect.dataset.submissionId;
+    const newStatus = statusSelect.value;
+    console.log('Updating submission', id, 'to status:', newStatus);
+
+    const { error } = await client
+      .from('rfq_submissions')
+      .update({ status: newStatus, updated_at: new Date().toISOString() })
+      .eq('id', id);
+
+    if (error) {
+      console.error('Error updating status:', error);
+      showToast('Error updating status', 'error');
+      return;
+    }
+
+    showToast('✅ Status updated successfully!', 'success');
+    closeModal('submission-detail-modal');
+    
+    // Reload submissions to show updated status
+    loadSubmissions();
+
+  } catch (err) {
+    console.error('Error in updateSubmissionStatus:', err);
+    showToast('Error: ' + err.message, 'error');
+  }
 }
 
 async function downloadDocument(path, name) {
-  console.log('Download:', name);
-  showToast('Feature coming soon', 'info');
+  try {
+    console.log('Downloading document:', name, 'from path:', path);
+    
+    // Try to get public URL from storage
+    try {
+      const { data } = client.storage.from('rfq-documents').getPublicUrl(path);
+      if (data && data.publicUrl) {
+        // Create a link and click it to download
+        const link = document.createElement('a');
+        link.href = data.publicUrl;
+        link.download = name;
+        link.click();
+        showToast('✅ Download started', 'success');
+        return;
+      }
+    } catch (storageErr) {
+      console.log('Storage download attempt failed, trying alternative...');
+    }
+
+    // Fallback: show message
+    showToast('Document: ' + name, 'info');
+    console.log('Document path:', path);
+
+  } catch (err) {
+    console.error('Error downloading document:', err);
+    showToast('Error downloading document', 'error');
+  }
 }
 
 function copyAllLinks() {
