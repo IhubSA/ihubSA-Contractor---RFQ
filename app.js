@@ -1,57 +1,291 @@
-// CNWE RFQ System - Application Logic
+// RFQ Hub - Multi-company Application Logic
 
 const SUPABASE_URL = 'https://zilumoopwnrtrtnsmjhr.supabase.co';
 const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InppbHVtb29wd25ydHJ0bnNtamhyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODYwOTU2MzgsImV4cCI6MjEwMTY3MTYzOH0.t8aQkOU29pwG9fwW9BlTwd4oie2jxkZa43mb3yc55kg';
 
 let client = null;
 let currentUser = null;
+let currentCompany = null;
+let isSuperAdmin = false;
 let currentRFQId = null;
 let isSubmittingRFQ = false;
 window.lastInvitations = [];
 
+const DEFAULT_HERO_SUBTITLE = "Open requests for quotation. Apply directly online — you'll get a reference number and a confirmation the moment your application is received.";
+
 // ===== INITIALIZATION =====
-function initApp() {
-  console.log('Initializing RFQ System...');
-  
-  // Initialize Supabase
+async function initApp() {
+  console.log('Initializing RFQ Hub...');
+
   client = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
   console.log('✅ Supabase connected');
-  
-  // Check for admin login
-  const adminLoggedIn = localStorage.getItem('cnwe_admin_logged_in');
-  
-  // Check URL for contractor token
+
+  setupStaticForms();
+
   const params = new URLSearchParams(window.location.search);
   const rfqToken = params.get('rfq');
-  
+  const wantsAdmin = params.has('admin');
+
   if (rfqToken) {
-    // Load contractor view
     console.log('Loading RFQ with token:', rfqToken);
-    loadContractorView(rfqToken);
-  } else if (adminLoggedIn) {
-    // Load admin view
-    showAdminView();
-  } else {
-    // Show public view with login option
-    checkAdminLogin();
+    applyDefaultBranding();
+    setHeaderActions('contractor');
+    await loadContractorView(rfqToken);
+    return;
   }
 
-  console.log('DOM loaded - starting app initialization');
-  document.addEventListener('DOMContentLoaded', () => {
-    console.log('DOMContentLoaded triggered');
+  try {
+    const { data: { session } } = await client.auth.getSession();
+    if (session && session.user) {
+      currentUser = session.user;
+      await loadCurrentCompanyAndRoute(wantsAdmin);
+      return;
+    }
+  } catch (err) {
+    console.error('Error checking session:', err);
+  }
+
+  applyDefaultBranding();
+  if (wantsAdmin) {
+    showLoginForm();
+  } else {
+    showLandingView();
+  }
+}
+
+function setupStaticForms() {
+  const loginForm = document.getElementById('login-form');
+  if (loginForm && !loginForm.dataset.wired) {
+    loginForm.addEventListener('submit', handleLoginSubmit);
+    loginForm.dataset.wired = 'true';
+  }
+
+  const signupForm = document.getElementById('signup-form');
+  if (signupForm && !signupForm.dataset.wired) {
+    signupForm.addEventListener('submit', handleSignupSubmit);
+    signupForm.dataset.wired = 'true';
+  }
+
+  const settingsForm = document.getElementById('settings-form');
+  if (settingsForm && !settingsForm.dataset.wired) {
+    settingsForm.addEventListener('submit', handleSettingsSubmit);
+    settingsForm.dataset.wired = 'true';
+  }
+
+  const logoFile = document.getElementById('settings-logo-file');
+  if (logoFile && !logoFile.dataset.wired) {
+    logoFile.addEventListener('change', handleLogoFileChange);
+    logoFile.dataset.wired = 'true';
+  }
+}
+
+// ===== VIEW SWITCHING =====
+function hideAllTopLevelViews() {
+  document.getElementById('public-view').style.display = 'none';
+  document.getElementById('admin-view').style.display = 'none';
+  document.getElementById('super-admin-view').style.display = 'none';
+}
+
+function hideAllPublicSections() {
+  ['rfq-portal', 'no-rfq-message', 'landing-section', 'login-section', 'signup-section'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.style.display = 'none';
   });
+}
+
+function setHeaderActions(mode) {
+  const el = document.getElementById('header-actions');
+  if (!el) return;
+  if (mode === 'loggedOut') {
+    el.innerHTML = `
+      <button onclick="showLoginForm()" class="btn secondary" style="padding:8px 16px;">Log In</button>
+      <button onclick="showSignupForm()" class="btn gold" style="padding:8px 16px;">Sign Up</button>
+    `;
+  } else {
+    el.innerHTML = '';
+  }
+}
+
+function showLandingView() {
+  hideAllTopLevelViews();
+  document.getElementById('public-view').style.display = 'block';
+  hideAllPublicSections();
+  document.getElementById('landing-section').style.display = 'block';
+  setHeaderActions('loggedOut');
+}
+
+function showLoginForm() {
+  hideAllTopLevelViews();
+  document.getElementById('public-view').style.display = 'block';
+  hideAllPublicSections();
+  document.getElementById('login-section').style.display = 'block';
+  setHeaderActions('form');
+}
+
+function showSignupForm() {
+  hideAllTopLevelViews();
+  document.getElementById('public-view').style.display = 'block';
+  hideAllPublicSections();
+  document.getElementById('signup-section').style.display = 'block';
+  setHeaderActions('form');
+}
+
+// ===== BRANDING =====
+function applyDefaultBranding() {
+  document.getElementById('brand-title').textContent = 'RFQ Hub';
+  document.getElementById('brand-subtitle').textContent = 'Request for Quotation Management System';
+  document.getElementById('hero-title').textContent = 'RFQ Hub';
+  document.getElementById('hero-subtitle').textContent = DEFAULT_HERO_SUBTITLE;
+  document.getElementById('brand-logo-img').style.display = 'none';
+  document.getElementById('brand-logo-default').style.display = 'block';
+}
+
+function applyCompanyBranding(company, opts = {}) {
+  if (!company) { applyDefaultBranding(); return; }
+
+  document.getElementById('brand-title').textContent = company.name || 'RFQ Hub';
+  document.getElementById('brand-subtitle').textContent = opts.subtitle || 'Request for Quotation Management System';
+  document.getElementById('hero-title').textContent = opts.heroTitle || company.name || 'RFQ Hub';
+  document.getElementById('hero-subtitle').textContent = opts.heroSubtitle || DEFAULT_HERO_SUBTITLE;
+
+  const img = document.getElementById('brand-logo-img');
+  const def = document.getElementById('brand-logo-default');
+  if (company.logo_url) {
+    img.src = company.logo_url;
+    img.style.display = 'block';
+    def.style.display = 'none';
+  } else {
+    img.style.display = 'none';
+    def.style.display = 'block';
+  }
+}
+
+// ===== AUTH =====
+async function handleLoginSubmit(e) {
+  e.preventDefault();
+  const email = document.getElementById('login-email').value.trim();
+  const password = document.getElementById('login-password').value;
+  if (!email || !password) return;
+
+  try {
+    const { data, error } = await client.auth.signInWithPassword({ email, password });
+    if (error) throw error;
+    currentUser = data.user;
+    showToast('Welcome back!', 'success');
+    await loadCurrentCompanyAndRoute(false);
+  } catch (err) {
+    console.error('Login error:', err);
+    showToast('Login failed: ' + err.message, 'error');
+  }
+}
+
+async function handleSignupSubmit(e) {
+  e.preventDefault();
+  const companyName = document.getElementById('signup-company-name').value.trim();
+  const email = document.getElementById('signup-email').value.trim();
+  const password = document.getElementById('signup-password').value;
+  const confirmPassword = document.getElementById('signup-password-confirm').value;
+
+  if (!companyName || !email || !password) {
+    showToast('Please fill in all required fields', 'error');
+    return;
+  }
+  if (password !== confirmPassword) {
+    showToast('Passwords do not match', 'error');
+    return;
+  }
+  if (password.length < 6) {
+    showToast('Password must be at least 6 characters', 'error');
+    return;
+  }
+
+  try {
+    showToast('Creating your account...', 'info');
+    const { data, error } = await client.auth.signUp({
+      email,
+      password,
+      options: { data: { company_name: companyName } }
+    });
+    if (error) throw error;
+
+    if (data.session) {
+      currentUser = data.user;
+      showToast('✅ Account created!', 'success');
+      await loadCurrentCompanyAndRoute(false);
+    } else {
+      showToast('✅ Account created! Check your email to confirm, then log in.', 'success');
+      showLoginForm();
+    }
+  } catch (err) {
+    console.error('Signup error:', err);
+    showToast('Signup failed: ' + err.message, 'error');
+  }
+}
+
+async function loadCurrentCompanyAndRoute(wantsAdmin) {
+  try {
+    const { data: membership, error } = await client
+      .from('company_members')
+      .select('company_id, role, companies(*)')
+      .eq('user_id', currentUser.id)
+      .limit(1)
+      .maybeSingle();
+
+    if (error || !membership || !membership.companies) {
+      console.error('Error loading company membership:', error);
+      showToast('Could not find a company for this account', 'error');
+      await client.auth.signOut();
+      applyDefaultBranding();
+      showLandingView();
+      return;
+    }
+
+    currentCompany = membership.companies;
+
+    if (currentCompany.status === 'suspended') {
+      showToast('This account has been suspended. Contact the platform admin.', 'error');
+      await client.auth.signOut();
+      currentCompany = null;
+      applyDefaultBranding();
+      showLandingView();
+      return;
+    }
+
+    const { data: adminCheck } = await client
+      .from('super_admins')
+      .select('email')
+      .eq('email', currentUser.email)
+      .maybeSingle();
+    isSuperAdmin = !!adminCheck;
+
+    if (wantsAdmin && isSuperAdmin) {
+      showSuperAdminView();
+    } else {
+      showAdminView();
+    }
+  } catch (err) {
+    console.error('Error routing after login:', err);
+    showToast('Error loading account: ' + err.message, 'error');
+  }
+}
+
+async function logoutAdmin() {
+  await client.auth.signOut();
+  currentUser = null;
+  currentCompany = null;
+  isSuperAdmin = false;
+  window.location.href = window.location.pathname;
 }
 
 // ===== CONTRACTOR VIEW =====
 async function loadContractorView(token) {
   try {
     console.log('Loading contractor view for token:', token);
-    
-    // Hide admin view
+
+    hideAllTopLevelViews();
     document.getElementById('public-view').style.display = 'block';
-    document.getElementById('admin-view').style.display = 'none';
-    
-    // Find invitation
+    hideAllPublicSections();
+
     const { data: invitation, error: invError } = await client
       .from('rfq_invitations')
       .select('*')
@@ -69,7 +303,6 @@ async function loadContractorView(token) {
     currentRFQId = invitation.rfq_id;
     console.log('✅ Invitation found for RFQ:', currentRFQId);
 
-    // Load RFQ details
     await loadRFQDetails(currentRFQId);
     document.getElementById('rfq-portal').style.display = 'block';
     document.getElementById('no-rfq-message').style.display = 'none';
@@ -93,15 +326,35 @@ async function loadRFQDetails(rfqId) {
 
     console.log('RFQ loaded:', rfq.rfq_name);
 
+    let company = null;
+    if (rfq.company_id) {
+      const { data: companyData } = await client
+        .from('companies')
+        .select('*')
+        .eq('id', rfq.company_id)
+        .maybeSingle();
+      company = companyData || null;
+    }
+
+    if (company) {
+      applyCompanyBranding(company, {
+        subtitle: 'Request for Quotation Portal',
+        heroTitle: company.name,
+        heroSubtitle: `You've been invited to submit a quotation to ${company.name}.`
+      });
+    } else {
+      applyDefaultBranding();
+    }
+
     // Build contractor form
     let formHtml = `
       <div class="card">
         <h2 style="margin-top:0;">${rfq.rfq_name}</h2>
         <p style="color: var(--border); margin-bottom: 20px;">${rfq.description}</p>
-        
+
         ${rfq.budget ? `<p><strong>Budget:</strong> R${rfq.budget.toLocaleString()}</p>` : ''}
         ${rfq.deadline ? `<p><strong>Deadline:</strong> ${new Date(rfq.deadline).toLocaleDateString()}</p>` : ''}
-        
+
         ${rfq.required_documents && rfq.required_documents.length > 0 ? `
           <div style="margin: 20px 0;">
             <h4>Required Documents:</h4>
@@ -113,7 +366,7 @@ async function loadRFQDetails(rfqId) {
 
         <form id="contractor-form" style="margin-top: 30px;">
           <h3>Your Company Information</h3>
-          
+
           <div style="margin-bottom: 15px;">
             <label>Company Name *</label>
             <input type="text" id="contractor-name" required style="width:100%;">
@@ -152,7 +405,6 @@ async function loadRFQDetails(rfqId) {
 
     document.getElementById('rfq-portal').innerHTML = formHtml;
 
-    // Attach form handler
     document.getElementById('contractor-form').addEventListener('submit', (e) => {
       e.preventDefault();
       const token = new URLSearchParams(window.location.search).get('rfq');
@@ -179,23 +431,26 @@ async function submitContractorForm(token) {
 
     showToast('Submitting...', 'success');
 
-    // Create submission
-    const { data: submission, error: subError } = await client
+    // Generate the submission id client-side so we don't need to read the row
+    // back after insert (contractors are unauthenticated, and submissions are
+    // only readable by the owning company under RLS).
+    const submissionId = generateUUID();
+
+    const { error: subError } = await client
       .from('rfq_submissions')
       .insert([{
+        id: submissionId,
         rfq_id: currentRFQId,
         contractor_name: name,
         contractor_email: email,
         contractor_phone: phone,
         contractor_reg: reg,
         status: 'submitted'
-      }])
-      .select()
-      .single();
+      }]);
 
     if (subError) throw subError;
 
-    console.log('✅ Submission created:', submission.id);
+    console.log('✅ Submission created:', submissionId);
 
     // Upload files (optional - don't fail if this doesn't work)
     const fileInputs = document.querySelectorAll('[id^="doc-"]');
@@ -205,8 +460,8 @@ async function submitContractorForm(token) {
       if (input.files[0]) {
         try {
           const file = input.files[0];
-          const filePath = `rfq-${currentRFQId}/sub-${submission.id}/${Date.now()}-${file.name}`;
-          
+          const filePath = `rfq-${currentRFQId}/sub-${submissionId}/${Date.now()}-${file.name}`;
+
           const { error: uploadError } = await client.storage
             .from('rfq-documents')
             .upload(filePath, file);
@@ -217,7 +472,7 @@ async function submitContractorForm(token) {
           }
 
           await client.from('rfq_submission_documents').insert([{
-            submission_id: submission.id,
+            submission_id: submissionId,
             file_name: file.name,
             file_path: filePath,
             file_size: file.size
@@ -249,55 +504,34 @@ async function submitContractorForm(token) {
   }
 }
 
-// ===== ADMIN VIEW =====
-function checkAdminLogin() {
-  document.getElementById('public-view').style.display = 'block';
-  document.getElementById('admin-view').style.display = 'none';
-  document.getElementById('rfq-portal').style.display = 'none';
-  document.getElementById('no-rfq-message').style.display = 'block';
-  document.getElementById('no-rfq-message').innerHTML = `
-    <div class="card" style="text-align: center;">
-      <h2 style="margin-top:0;">RFQ Management System</h2>
-      <p style="margin-bottom: 20px;">Click below to access the admin panel</p>
-      <button onclick="promptAdminLogin()" class="btn gold" style="padding: 12px 24px;">Staff Login</button>
-    </div>
-  `;
-}
-
-function promptAdminLogin() {
-  const password = prompt('Enter admin password:');
-  if (password === 'CNWE2026') {
-    currentUser = { id: 'admin' };
-    localStorage.setItem('cnwe_admin_logged_in', 'true');
-    showAdminView();
-  } else if (password) {
-    showToast('Incorrect password', 'error');
-  }
-}
-
+// ===== ADMIN VIEW (Company Dashboard) =====
 function showAdminView() {
-  document.getElementById('public-view').style.display = 'none';
+  hideAllTopLevelViews();
   document.getElementById('admin-view').style.display = 'block';
-  
+
+  document.getElementById('admin-company-name').textContent = currentCompany ? currentCompany.name : 'RFQ Management';
+  applyCompanyBranding(currentCompany, {
+    heroTitle: currentCompany ? currentCompany.name : 'RFQ Hub',
+    heroSubtitle: 'Manage your RFQs, contractor invitations, and submissions.'
+  });
+
+  const superLink = document.getElementById('super-admin-link');
+  if (superLink) superLink.style.display = isSuperAdmin ? 'inline' : 'none';
+
   document.getElementById('create-tab').style.display = 'block';
   document.getElementById('console-tab').style.display = 'none';
   document.getElementById('submissions-tab').style.display = 'none';
-  
+  document.getElementById('settings-tab').style.display = 'none';
+
   document.querySelectorAll('.tab-btn').forEach((btn, idx) => {
     btn.classList.toggle('active', idx === 0);
   });
 }
 
-function logoutAdmin() {
-  localStorage.removeItem('cnwe_admin_logged_in');
-  currentUser = null;
-  location.reload();
-}
-
 function switchAdminTab(tabName, button) {
   document.querySelectorAll('.admin-tab').forEach(tab => tab.style.display = 'none');
   document.querySelectorAll('.tab-btn').forEach(btn => btn.classList.remove('active'));
-  
+
   document.getElementById(tabName + '-tab').style.display = 'block';
   if (button) button.classList.add('active');
 
@@ -305,6 +539,112 @@ function switchAdminTab(tabName, button) {
     loadRFQConsole();
   } else if (tabName === 'submissions') {
     loadSubmissions();
+  } else if (tabName === 'settings') {
+    loadSettingsTab();
+  }
+}
+
+// ===== SETTINGS =====
+function loadSettingsTab() {
+  if (!currentCompany) return;
+
+  document.getElementById('settings-company-name').value = currentCompany.name || '';
+  document.getElementById('settings-contact-email').value = currentCompany.contact_email || '';
+  document.getElementById('settings-contact-phone').value = currentCompany.contact_phone || '';
+  document.getElementById('settings-address').value = currentCompany.address || '';
+
+  const preview = document.getElementById('settings-logo-preview');
+  const placeholder = document.getElementById('settings-logo-placeholder');
+  if (currentCompany.logo_url) {
+    preview.src = currentCompany.logo_url;
+    preview.style.display = 'block';
+    placeholder.style.display = 'none';
+  } else {
+    preview.style.display = 'none';
+    placeholder.style.display = 'flex';
+  }
+}
+
+async function handleLogoFileChange(e) {
+  const file = e.target.files[0];
+  if (!file || !currentCompany) return;
+
+  try {
+    showToast('Uploading logo...', 'info');
+    const ext = (file.name.split('.').pop() || 'png').toLowerCase();
+    const path = `${currentCompany.id}/logo-${Date.now()}.${ext}`;
+
+    const { error: uploadError } = await client.storage
+      .from('company-logos')
+      .upload(path, file, { upsert: true });
+    if (uploadError) throw uploadError;
+
+    const { data: urlData } = client.storage.from('company-logos').getPublicUrl(path);
+    const logoUrl = urlData.publicUrl;
+
+    const { error: updateError } = await client
+      .from('companies')
+      .update({ logo_url: logoUrl, updated_at: new Date().toISOString() })
+      .eq('id', currentCompany.id);
+    if (updateError) throw updateError;
+
+    currentCompany.logo_url = logoUrl;
+    loadSettingsTab();
+    document.getElementById('admin-company-name').textContent = currentCompany.name;
+    applyCompanyBranding(currentCompany, {
+      heroTitle: currentCompany.name,
+      heroSubtitle: 'Manage your RFQs, contractor invitations, and submissions.'
+    });
+
+    showToast('✅ Logo updated!', 'success');
+  } catch (err) {
+    console.error('Logo upload error:', err);
+    showToast('Error uploading logo: ' + err.message, 'error');
+  }
+}
+
+async function handleSettingsSubmit(e) {
+  e.preventDefault();
+  if (!currentCompany) return;
+
+  const name = document.getElementById('settings-company-name').value.trim();
+  const contactEmail = document.getElementById('settings-contact-email').value.trim();
+  const contactPhone = document.getElementById('settings-contact-phone').value.trim();
+  const address = document.getElementById('settings-address').value.trim();
+
+  if (!name) {
+    showToast('Company name is required', 'error');
+    return;
+  }
+
+  try {
+    const { error } = await client
+      .from('companies')
+      .update({
+        name,
+        contact_email: contactEmail || null,
+        contact_phone: contactPhone || null,
+        address: address || null,
+        updated_at: new Date().toISOString()
+      })
+      .eq('id', currentCompany.id);
+    if (error) throw error;
+
+    currentCompany.name = name;
+    currentCompany.contact_email = contactEmail;
+    currentCompany.contact_phone = contactPhone;
+    currentCompany.address = address;
+
+    document.getElementById('admin-company-name').textContent = name;
+    applyCompanyBranding(currentCompany, {
+      heroTitle: name,
+      heroSubtitle: 'Manage your RFQs, contractor invitations, and submissions.'
+    });
+
+    showToast('✅ Settings saved!', 'success');
+  } catch (err) {
+    console.error('Error saving settings:', err);
+    showToast('Error saving settings: ' + err.message, 'error');
   }
 }
 
@@ -340,12 +680,16 @@ async function createNewRFQ() {
     return;
   }
 
+  if (!currentCompany) {
+    showToast('❌ No company account loaded', 'error');
+    return;
+  }
+
   isSubmittingRFQ = true;
 
   try {
     console.log('=== CREATE RFQ STARTED ===');
-    
-    // Get fields by name attribute
+
     const nameInput = document.querySelector('input[name="rfq_name"]');
     const projectInput = document.querySelector('input[name="rfq_project"]');
     const descInput = document.querySelector('textarea[name="rfq_description"]');
@@ -365,13 +709,11 @@ async function createNewRFQ() {
       .map(e => e.trim())
       .filter(e => e.length > 0);
 
-    // Get required documents
     const docInputs = document.querySelectorAll('.doc-field');
     const requiredDocs = Array.from(docInputs)
       .map(input => input.value ? input.value.trim() : '')
       .filter(val => val.length > 0);
 
-    // Validate
     if (!name) {
       showToast('❌ Please enter RFQ Name', 'error');
       isSubmittingRFQ = false;
@@ -406,7 +748,6 @@ async function createNewRFQ() {
     console.log('✅ All validations passed');
     showToast('Creating RFQ...', 'success');
 
-    // Create RFQ
     const { data: rfq, error: rfqError } = await client
       .from('rfqs')
       .insert([{
@@ -416,18 +757,18 @@ async function createNewRFQ() {
         deadline: deadline,
         budget: budget || null,
         required_documents: requiredDocs,
-        created_by: 'admin'
+        created_by: currentUser ? currentUser.email : 'unknown',
+        company_id: currentCompany.id
       }])
       .select()
       .single();
 
     if (rfqError || !rfq || !rfq.id) {
-      throw new Error('Failed to create RFQ');
+      throw new Error(rfqError ? rfqError.message : 'Failed to create RFQ');
     }
 
     console.log('✅ RFQ created:', rfq.id);
 
-    // Create invitations
     const invitations = contractorEmails.map(email => ({
       rfq_id: rfq.id,
       contractor_email: email,
@@ -458,15 +799,17 @@ async function createNewRFQ() {
 // ===== RFQ CONSOLE =====
 async function loadRFQConsole() {
   try {
+    if (!currentCompany) return;
     console.log('Loading RFQ Console...');
-    
+
     const { data: rfqs, error: rfqError } = await client
       .from('rfqs')
       .select('*')
+      .eq('company_id', currentCompany.id)
       .order('created_at', { ascending: false });
 
     if (rfqError || !rfqs || rfqs.length === 0) {
-      document.getElementById('rfq-console-list').innerHTML = 
+      document.getElementById('rfq-console-list').innerHTML =
         '<div style="text-align: center; padding: 40px; color: var(--border);"><p>No active RFQs yet. <strong>Create one to get started!</strong></p></div>';
       return;
     }
@@ -517,7 +860,7 @@ async function loadRFQConsole() {
               <h4 style="margin: 0 0 8px 0; font-size: 12px; text-transform: uppercase; color: var(--border); font-weight: bold;">Description</h4>
               <p style="margin: 0; color: var(--ink); line-height: 1.5;">${rfq.description}</p>
             </div>
-            
+
             ${rfq.budget ? `
               <div style="padding-top: 15px; border-top: 1px solid var(--border); margin-top: 15px;">
                 <h4 style="margin: 0 0 8px 0; font-size: 12px; text-transform: uppercase; color: var(--border); font-weight: bold;">Budget</h4>
@@ -545,7 +888,7 @@ async function loadRFQConsole() {
                     <code style="font-size: 11px; color: var(--border); display: block; word-break: break-all; font-family: var(--mono);">${baseUrl}?rfq=${inv.invitation_token}</code>
                     <p style="margin: 4px 0 0 0; font-size: 11px; color: var(--border);">${inv.used ? '✅ Submitted' : '⏳ Pending'}</p>
                   </div>
-                  <button onclick="copyToClipboard('${baseUrl}?rfq=${inv.invitation_token}')" 
+                  <button onclick="copyToClipboard('${baseUrl}?rfq=${inv.invitation_token}')"
                     class="btn" style="margin-left: 10px; padding: 6px 10px; font-size: 12px; white-space: nowrap; flex-shrink: 0;">
                     Copy
                   </button>
@@ -577,11 +920,13 @@ async function loadRFQConsole() {
 // ===== SUBMISSIONS =====
 async function loadSubmissions() {
   try {
+    if (!currentCompany) return;
     console.log('Loading submissions...');
-    
+
     const { data: submissions, error } = await client
       .from('rfq_submissions')
-      .select(`*, rfqs(rfq_name)`)
+      .select(`*, rfqs!inner(rfq_name, company_id)`)
+      .eq('rfqs.company_id', currentCompany.id)
       .order('created_at', { ascending: false });
 
     if (error) throw error;
@@ -672,11 +1017,11 @@ async function openSubmissionDetail(id) {
       </div>
     `;
 
-    const docsHtml = documents && documents.length > 0 
+    const docsHtml = documents && documents.length > 0
       ? documents.map(doc => `
           <div style="padding: 8px; border: 1px solid var(--border); border-radius: 4px; margin-bottom: 8px; display: flex; justify-content: space-between; align-items: center;">
             <span style="color: var(--ink);">📄 ${doc.file_name}</span>
-            <button onclick="downloadDocument('${doc.file_path}', '${doc.file_name}')" 
+            <button onclick="downloadDocument('${doc.file_path}', '${doc.file_name}')"
               class="btn" style="padding: 4px 12px; font-size: 12px;">
               Download
             </button>
@@ -686,7 +1031,7 @@ async function openSubmissionDetail(id) {
 
     const detailsContent = document.getElementById('submission-details-content');
     const docsContent = document.getElementById('submission-documents-list');
-    
+
     if (detailsContent) detailsContent.innerHTML = detailsHtml;
     if (docsContent) docsContent.innerHTML = docsHtml;
 
@@ -700,7 +1045,7 @@ async function openSubmissionDetail(id) {
     if (title) title.textContent = submission.contractor_name;
 
     openModal('submission-detail-modal');
-    
+
   } catch (err) {
     console.error('Error opening submission detail:', err);
     showToast('Error: ' + err.message, 'error');
@@ -739,6 +1084,97 @@ function filterSubmissions() {
   loadSubmissions();
 }
 
+// ===== SUPER ADMIN =====
+function openSuperAdminView() {
+  if (!isSuperAdmin) {
+    showToast('Not authorized', 'error');
+    return;
+  }
+  showSuperAdminView();
+}
+
+function showSuperAdminView() {
+  hideAllTopLevelViews();
+  document.getElementById('super-admin-view').style.display = 'block';
+  applyDefaultBranding();
+  document.getElementById('brand-title').textContent = 'RFQ Hub — Platform Admin';
+  loadSuperAdminCompanies();
+}
+
+function closeSuperAdminView() {
+  showAdminView();
+}
+
+async function loadSuperAdminCompanies() {
+  try {
+    const { data: companies, error } = await client
+      .from('companies')
+      .select('*')
+      .order('created_at', { ascending: false });
+
+    if (error) throw error;
+
+    const list = document.getElementById('super-admin-companies-list');
+    if (!companies || companies.length === 0) {
+      list.innerHTML = '<p style="color:var(--border); text-align:center; padding:20px;">No companies yet.</p>';
+      return;
+    }
+
+    list.innerHTML = companies.map(c => `
+      <div style="display:flex; justify-content:space-between; align-items:center; padding:15px; border:1px solid var(--border); border-radius:4px; margin-bottom:10px; flex-wrap:wrap; gap:10px;">
+        <div style="display:flex; align-items:center; gap:12px;">
+          ${c.logo_url ? `<img src="${c.logo_url}" style="width:36px; height:36px; object-fit:contain; border-radius:6px;">` : ''}
+          <div>
+            <p style="margin:0; font-weight:600;">${c.name}</p>
+            <p style="margin:0; font-size:12px; color:var(--border);">${c.contact_email || 'No contact email'} · Joined ${new Date(c.created_at).toLocaleDateString()}</p>
+          </div>
+        </div>
+        <div style="display:flex; align-items:center; gap:10px;">
+          <span class="submission-status ${c.status === 'active' ? 'approved' : 'rejected'}">${c.status}</span>
+          <button onclick="toggleCompanyStatus('${c.id}', '${c.status}')" class="btn secondary" style="padding:6px 12px; font-size:12px;">
+            ${c.status === 'active' ? 'Suspend' : 'Reactivate'}
+          </button>
+          <button onclick="deleteCompany('${c.id}', '${(c.name || '').replace(/'/g, "\\'")}')" class="btn secondary" style="padding:6px 12px; font-size:12px; color:#D32F2F; border-color:#D32F2F;">
+            Delete
+          </button>
+        </div>
+      </div>
+    `).join('');
+  } catch (err) {
+    console.error('Error loading companies:', err);
+    showToast('Error loading companies: ' + err.message, 'error');
+  }
+}
+
+async function toggleCompanyStatus(companyId, currentStatus) {
+  const newStatus = currentStatus === 'active' ? 'suspended' : 'active';
+  try {
+    const { error } = await client
+      .from('companies')
+      .update({ status: newStatus, updated_at: new Date().toISOString() })
+      .eq('id', companyId);
+    if (error) throw error;
+    showToast(`✅ Company ${newStatus}`, 'success');
+    loadSuperAdminCompanies();
+  } catch (err) {
+    showToast('Error: ' + err.message, 'error');
+  }
+}
+
+async function deleteCompany(companyId, companyName) {
+  const confirmed = window.confirm(`Permanently delete "${companyName}" and all of its RFQs, invitations and submissions? This cannot be undone.`);
+  if (!confirmed) return;
+
+  try {
+    const { error } = await client.from('companies').delete().eq('id', companyId);
+    if (error) throw error;
+    showToast('✅ Company deleted', 'success');
+    loadSuperAdminCompanies();
+  } catch (err) {
+    showToast('Error: ' + err.message, 'error');
+  }
+}
+
 // ===== UTILITY FUNCTIONS =====
 function showToast(message, type = 'info') {
   const wrap = document.getElementById('toast-wrap');
@@ -746,7 +1182,7 @@ function showToast(message, type = 'info') {
   toast.className = `toast ${type}`;
   toast.textContent = message;
   wrap.appendChild(toast);
-  
+
   setTimeout(() => {
     toast.style.animation = 'slideOut 0.3s';
     setTimeout(() => toast.remove(), 300);
@@ -767,6 +1203,18 @@ function generateToken() {
   const timestamp = Date.now();
   const random = Math.random().toString(36).substring(2, 8);
   return `token-${random}-${timestamp}`;
+}
+
+function generateUUID() {
+  if (window.crypto && typeof crypto.randomUUID === 'function') {
+    return crypto.randomUUID();
+  }
+  // RFC4122 v4 fallback for older browsers
+  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function (c) {
+    const r = Math.random() * 16 | 0;
+    const v = c === 'x' ? r : (r & 0x3 | 0x8);
+    return v.toString(16);
+  });
 }
 
 function copyToClipboard(text) {
@@ -822,7 +1270,7 @@ async function showAddContractorForm(rfqId) {
 
     const baseUrl = window.location.origin + window.location.pathname;
     const link = `${baseUrl}?rfq=${inv.invitation_token}`;
-    
+
     showToast('✅ Contractor added!', 'success');
     navigator.clipboard.writeText(link);
     loadRFQConsole();
@@ -834,11 +1282,11 @@ async function showAddContractorForm(rfqId) {
 
 function showGeneratedLinks(rfqId, invitations) {
   window.lastInvitations = invitations;
-  
+
   const baseUrl = window.location.origin + window.location.pathname;
-  
+
   let linksHtml = '<div style="font-family: monospace; font-size: 12px; line-height: 1.8;">';
-  
+
   invitations.forEach((inv, idx) => {
     const link = `${baseUrl}?rfq=${inv.invitation_token}`;
     linksHtml += `
@@ -848,7 +1296,7 @@ function showGeneratedLinks(rfqId, invitations) {
       </div>
     `;
   });
-  
+
   linksHtml += '</div>';
 
   const linksContainer = document.getElementById('generated-links-list');
@@ -877,17 +1325,24 @@ function copyAllLinks() {
 
 async function downloadDocument(path, name) {
   try {
-    const { data } = client.storage.from('rfq-documents').getPublicUrl(path);
-    if (data && data.publicUrl) {
+    const { data, error } = await client.storage.from('rfq-documents').createSignedUrl(path, 120);
+    if (error) throw error;
+    if (data && data.signedUrl) {
       const link = document.createElement('a');
-      link.href = data.publicUrl;
+      link.href = data.signedUrl;
       link.download = name;
+      link.target = '_blank';
       link.click();
       showToast('✅ Download started', 'success');
     }
   } catch (err) {
-    showToast('Document: ' + name, 'info');
+    console.error('Download error:', err);
+    showToast('Error downloading document: ' + err.message, 'error');
   }
+}
+
+function acceptPOPIA() {
+  closeModal('popia-modal');
 }
 
 // Initialize on page load
