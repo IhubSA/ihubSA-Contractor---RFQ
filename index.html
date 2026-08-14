@@ -3,58 +3,126 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>RFQ Hub - CNWE Energy</title>
+  <title>RFQ Hub</title>
   <link rel="stylesheet" href="styles.css">
 </head>
 <body>
-  <!-- CNWE HEADER BRANDING -->
-  <div style="background: white; padding: 20px 40px; border-bottom: 3px solid #00A86B; display: flex; justify-content: space-between; align-items: center;">
+  <!-- DYNAMIC BRANDING HEADER -->
+  <div id="site-header" style="background: white; padding: 20px 40px; border-bottom: 3px solid #00A86B; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 15px;">
     <div style="display: flex; align-items: center; gap: 15px;">
-      <!-- CNWE Logo SVG -->
-      <svg width="60" height="60" viewBox="0 0 100 100" style="flex-shrink: 0;">
-        <!-- Blue circle background -->
+      <img id="brand-logo-img" src="" alt="Company logo" style="display:none; width:60px; height:60px; object-fit:contain; border-radius:8px; flex-shrink:0;">
+      <svg id="brand-logo-default" width="60" height="60" viewBox="0 0 100 100" style="flex-shrink: 0;">
         <circle cx="50" cy="50" r="46" fill="#004D5C"/>
-        <!-- Green swoosh/leaf shape -->
         <path d="M 50 15 C 65 20, 75 35, 72 50 C 70 60, 60 65, 50 62 C 45 45, 45 30, 50 15 Z" fill="#2E9B47"/>
         <path d="M 50 20 C 58 25, 63 35, 60 45 C 58 50, 52 52, 48 48 C 46 38, 47 28, 50 20 Z" fill="#4CAF50"/>
-        <!-- Circular arrow element -->
         <path d="M 25 45 A 25 25 0 1 1 30 65" fill="none" stroke="#00A86B" stroke-width="4" stroke-linecap="round"/>
       </svg>
       <div>
-        <h1 style="margin: 0; font-size: 24px; font-weight: bold; color: #004D5C; font-family: 'Source Serif 4', serif;">CNWE ENERGY (PTY) LTD</h1>
-        <p style="margin: 0; font-size: 12px; color: #666; font-family: 'IBM Plex Sans', sans-serif;">Request for Quotation Management System</p>
+        <h1 id="brand-title" style="margin: 0; font-size: 24px; font-weight: bold; color: #004D5C; font-family: 'Source Serif 4', serif;">RFQ Hub</h1>
+        <p id="brand-subtitle" style="margin: 0; font-size: 12px; color: #666; font-family: 'IBM Plex Sans', sans-serif;">Request for Quotation Management System</p>
       </div>
     </div>
+    <div id="header-actions" style="display:flex; align-items:center; gap:12px;"></div>
   </div>
 
-  <!-- HERO SECTION -->
-  <div style="background: linear-gradient(135deg, #004D5C 0%, #003340 100%); padding: 60px 40px; text-align: left;">
-    <h1 style="margin: 0 0 15px 0; font-size: 48px; font-weight: bold; color: white; font-family: 'Source Serif 4', serif;">RFQ Hub</h1>
-    <p style="margin: 0; font-size: 18px; color: #B8DDE3; font-family: 'IBM Plex Sans', sans-serif; line-height: 1.6; max-width: 600px;">Open requests for quotation. Apply directly online — you'll get a reference number and a confirmation the moment your application is received.</p>
+  <!-- DYNAMIC HERO SECTION -->
+  <div id="hero-section" style="background: linear-gradient(135deg, #004D5C 0%, #003340 100%); padding: 60px 40px; text-align: left;">
+    <h1 id="hero-title" style="margin: 0 0 15px 0; font-size: 48px; font-weight: bold; color: white; font-family: 'Source Serif 4', serif;">RFQ Hub</h1>
+    <p id="hero-subtitle" style="margin: 0; font-size: 18px; color: #B8DDE3; font-family: 'IBM Plex Sans', sans-serif; line-height: 1.6; max-width: 600px;">Open requests for quotation. Apply directly online — you'll get a reference number and a confirmation the moment your application is received.</p>
   </div>
 
   <div id="app-container" style="min-height: 100vh; background: #F5F5F5;">
-    <!-- PUBLIC VIEW (Contractor Portal) -->
+    <!-- PUBLIC VIEW (Contractor Portal + Landing + Auth) -->
     <div id="public-view" style="display:none; padding: 40px;">
       <div id="rfq-portal" style="display:none;"></div>
       <div id="no-rfq-message" style="display:none;"></div>
+
+      <div id="landing-section" style="display:none; max-width: 520px; margin: 0 auto;">
+        <div class="card" style="text-align:center;">
+          <h2 style="margin-top:0;">Welcome to RFQ Hub</h2>
+          <p style="color:var(--border); margin-bottom:25px;">A shared platform for managing requests for quotation. Each company signs in to its own account to create RFQs, invite contractors, and review submissions.</p>
+          <div style="display:flex; gap:12px; justify-content:center; flex-wrap:wrap;">
+            <button onclick="showLoginForm()" class="btn secondary" style="padding:12px 24px;">Log In</button>
+            <button onclick="showSignupForm()" class="btn gold" style="padding:12px 24px;">Sign Up Your Company</button>
+          </div>
+        </div>
+      </div>
+
+      <div id="login-section" style="display:none; max-width: 420px; margin: 0 auto;">
+        <div class="card">
+          <h2 style="margin-top:0;">Staff Login</h2>
+          <form id="login-form" style="display:flex; flex-direction:column; gap:15px;">
+            <div>
+              <label>Email</label>
+              <input type="email" id="login-email" required style="width:100%;">
+            </div>
+            <div>
+              <label>Password</label>
+              <input type="password" id="login-password" required style="width:100%;">
+            </div>
+            <button type="submit" class="btn gold" style="padding:12px; margin-top:5px;">Log In</button>
+          </form>
+          <p style="text-align:center; margin-top:15px; font-size:14px; color:var(--border);">
+            No account yet? <a href="#" onclick="showSignupForm(); return false;" style="color:var(--accent); font-weight:600;">Sign up your company</a>
+          </p>
+          <p style="text-align:center; margin-top:8px;">
+            <a href="#" onclick="showLandingView(); return false;" style="color:var(--border); font-size:13px;">&larr; Back</a>
+          </p>
+        </div>
+      </div>
+
+      <div id="signup-section" style="display:none; max-width: 480px; margin: 0 auto;">
+        <div class="card">
+          <h2 style="margin-top:0;">Sign Up Your Company</h2>
+          <p style="color:var(--border); font-size:14px; margin-bottom:15px;">Create an account to start managing your own RFQs. Add your logo and details afterward in Settings.</p>
+          <form id="signup-form" style="display:flex; flex-direction:column; gap:15px;">
+            <div>
+              <label>Company Name *</label>
+              <input type="text" id="signup-company-name" required style="width:100%;">
+            </div>
+            <div>
+              <label>Your Email *</label>
+              <input type="email" id="signup-email" required style="width:100%;">
+            </div>
+            <div>
+              <label>Password *</label>
+              <input type="password" id="signup-password" required minlength="6" style="width:100%;">
+            </div>
+            <div>
+              <label>Confirm Password *</label>
+              <input type="password" id="signup-password-confirm" required minlength="6" style="width:100%;">
+            </div>
+            <button type="submit" class="btn gold" style="padding:12px; margin-top:5px;">Create Account</button>
+          </form>
+          <p style="text-align:center; margin-top:15px; font-size:14px; color:var(--border);">
+            Already have an account? <a href="#" onclick="showLoginForm(); return false;" style="color:var(--accent); font-weight:600;">Log in</a>
+          </p>
+          <p style="text-align:center; margin-top:8px;">
+            <a href="#" onclick="showLandingView(); return false;" style="color:var(--border); font-size:13px;">&larr; Back</a>
+          </p>
+        </div>
+      </div>
     </div>
 
-    <!-- ADMIN VIEW -->
+    <!-- ADMIN VIEW (Company Dashboard) -->
     <div id="admin-view" style="display:none;">
       <div style="background: white; border-bottom: 1px solid #E0E0E0; padding: 20px 40px;">
-        <div style="display: flex; justify-content: space-between; align-items: center; max-width: 1200px; margin: 0 auto;">
-          <h2 style="margin: 0; color: #004D5C; font-family: 'Source Serif 4', serif;">RFQ Management</h2>
-          <button onclick="logoutAdmin()" class="btn secondary" style="padding: 8px 16px;">Logout</button>
+        <div style="display: flex; justify-content: space-between; align-items: center; max-width: 1200px; margin: 0 auto; flex-wrap:wrap; gap:10px;">
+          <h2 id="admin-company-name" style="margin: 0; color: #004D5C; font-family: 'Source Serif 4', serif;">RFQ Management</h2>
+          <div style="display:flex; align-items:center; gap:16px;">
+            <a id="super-admin-link" href="#" onclick="openSuperAdminView(); return false;" style="display:none; font-size:13px; color:var(--primary); font-weight:600;">Platform Admin</a>
+            <button onclick="logoutAdmin()" class="btn secondary" style="padding: 8px 16px;">Logout</button>
+          </div>
         </div>
       </div>
 
       <div style="padding: 40px; max-width: 1200px; margin: 0 auto;">
         <!-- Tab Navigation -->
-        <div style="display: flex; gap: 10px; margin-bottom: 30px; border-bottom: 2px solid #E0E0E0;">
+        <div style="display: flex; gap: 10px; margin-bottom: 30px; border-bottom: 2px solid #E0E0E0; flex-wrap:wrap;">
           <button class="tab-btn active" onclick="switchAdminTab('create', this)" style="padding: 12px 20px; border: none; background: none; cursor: pointer; font-weight: bold; color: #666; border-bottom: 3px solid transparent; margin-bottom: -2px;">Create RFQ</button>
           <button class="tab-btn" onclick="switchAdminTab('console', this)" style="padding: 12px 20px; border: none; background: none; cursor: pointer; font-weight: bold; color: #666; border-bottom: 3px solid transparent; margin-bottom: -2px;">RFQ Console</button>
           <button class="tab-btn" onclick="switchAdminTab('submissions', this)" style="padding: 12px 20px; border: none; background: none; cursor: pointer; font-weight: bold; color: #666; border-bottom: 3px solid transparent; margin-bottom: -2px;">Review Submissions</button>
+          <button class="tab-btn" onclick="switchAdminTab('settings', this)" style="padding: 12px 20px; border: none; background: none; cursor: pointer; font-weight: bold; color: #666; border-bottom: 3px solid transparent; margin-bottom: -2px;">Settings</button>
         </div>
 
         <!-- CREATE RFQ TAB -->
@@ -142,6 +210,66 @@
             <div id="submissions-list" style="display:flex; flex-direction:column; gap:15px;"></div>
           </div>
         </div>
+
+        <!-- SETTINGS TAB -->
+        <div id="settings-tab" class="admin-tab" style="display:none;">
+          <div class="card">
+            <h2 style="margin-top:0;">Company Settings</h2>
+            <p style="color:var(--border); font-size:14px; margin-bottom:20px;">This information is shown to contractors on your RFQ links.</p>
+            <form id="settings-form" style="display:flex; flex-direction:column; gap:20px; max-width:600px;">
+              <div>
+                <label style="font-weight:bold;">Logo</label>
+                <div style="display:flex; align-items:center; gap:15px; margin-top:8px;">
+                  <img id="settings-logo-preview" src="" alt="Logo preview" style="width:80px; height:80px; object-fit:contain; border:1px solid var(--border); border-radius:8px; background:var(--bg-2); display:none;">
+                  <div id="settings-logo-placeholder" style="width:80px; height:80px; border:1px dashed var(--border); border-radius:8px; display:flex; align-items:center; justify-content:center; color:var(--border); font-size:11px; text-align:center;">No logo</div>
+                  <div>
+                    <input type="file" id="settings-logo-file" accept="image/png,image/jpeg,image/svg+xml,image/webp">
+                    <p style="font-size:12px; color:var(--border); margin-top:5px;">PNG, JPG, SVG or WebP. Uploads immediately.</p>
+                  </div>
+                </div>
+              </div>
+              <div>
+                <label style="font-weight:bold;">Company Name *</label>
+                <input type="text" id="settings-company-name" required style="width:100%; padding:10px; border:1px solid var(--border); border-radius:4px; box-sizing:border-box;">
+              </div>
+              <div>
+                <label style="font-weight:bold;">Contact Email</label>
+                <input type="email" id="settings-contact-email" style="width:100%; padding:10px; border:1px solid var(--border); border-radius:4px; box-sizing:border-box;">
+              </div>
+              <div>
+                <label style="font-weight:bold;">Contact Phone</label>
+                <input type="tel" id="settings-contact-phone" style="width:100%; padding:10px; border:1px solid var(--border); border-radius:4px; box-sizing:border-box;">
+              </div>
+              <div>
+                <label style="font-weight:bold;">Address</label>
+                <textarea id="settings-address" style="width:100%; padding:10px; border:1px solid var(--border); border-radius:4px; box-sizing:border-box; min-height:70px; font-family:inherit;"></textarea>
+              </div>
+              <div style="display:flex; justify-content:flex-end;">
+                <button type="submit" class="btn gold" style="padding:10px 24px;">Save Settings</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- SUPER ADMIN VIEW (Platform-wide) -->
+    <div id="super-admin-view" style="display:none;">
+      <div style="background: white; border-bottom: 1px solid #E0E0E0; padding: 20px 40px;">
+        <div style="display: flex; justify-content: space-between; align-items: center; max-width: 1200px; margin: 0 auto; flex-wrap:wrap; gap:10px;">
+          <h2 style="margin: 0; color: #004D5C; font-family: 'Source Serif 4', serif;">Platform Admin</h2>
+          <div style="display:flex; gap:10px;">
+            <a href="#" onclick="closeSuperAdminView(); return false;" class="btn secondary" style="padding: 8px 16px; text-decoration:none; display:inline-block;">Back to Dashboard</a>
+            <button onclick="logoutAdmin()" class="btn secondary" style="padding: 8px 16px;">Logout</button>
+          </div>
+        </div>
+      </div>
+      <div style="padding: 40px; max-width: 1200px; margin: 0 auto;">
+        <div class="card">
+          <h2 style="margin-top:0;">All Companies</h2>
+          <p style="color:var(--border); font-size:14px; margin-bottom:20px;">Companies that have signed up to the platform.</p>
+          <div id="super-admin-companies-list"></div>
+        </div>
       </div>
     </div>
   </div>
@@ -213,11 +341,10 @@
 
   <!-- Supabase SDK -->
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-  
+
   <!-- Application Scripts -->
-  <link rel="stylesheet" href="styles.css">
   <script src="app.js"></script>
-  
+
   <script>
     // Initialize app on page load
     window.addEventListener('load', () => {
