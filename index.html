@@ -42,9 +42,9 @@
           <h2 style="margin-top:0;">Welcome to RFQ Hub</h2>
           <p style="color:var(--border); margin-bottom:25px;">A shared platform for managing requests for quotation. Each company signs in to its own account to create RFQs, invite contractors, and review submissions.</p>
           <div style="display:flex; gap:12px; justify-content:center; flex-wrap:wrap;">
-            <button onclick="showLoginForm()" class="btn secondary" style="padding:12px 24px;">Log In</button>
-            <button onclick="showSignupForm()" class="btn gold" style="padding:12px 24px;">Sign Up Your Company</button>
+            <button onclick="showLoginForm()" class="btn gold" style="padding:12px 24px;">Log In</button>
           </div>
+          <p style="margin-top:20px; font-size:13px; color:var(--border);">Access is by invitation only. If you're expecting access, check your email for an invite link.</p>
         </div>
       </div>
 
@@ -62,44 +62,27 @@
             </div>
             <button type="submit" class="btn gold" style="padding:12px; margin-top:5px;">Log In</button>
           </form>
-          <p style="text-align:center; margin-top:15px; font-size:14px; color:var(--border);">
-            No account yet? <a href="#" onclick="showSignupForm(); return false;" style="color:var(--accent); font-weight:600;">Sign up your company</a>
-          </p>
-          <p style="text-align:center; margin-top:8px;">
-            <a href="#" onclick="showLandingView(); return false;" style="color:var(--border); font-size:13px;">&larr; Back</a>
+          <p style="text-align:center; margin-top:15px; font-size:13px; color:var(--border);">
+            No account yet? Access is by invitation — ask your company admin or the platform admin to invite you.
           </p>
         </div>
       </div>
 
-      <div id="signup-section" style="display:none; max-width: 480px; margin: 0 auto;">
+      <div id="set-password-section" style="display:none; max-width: 420px; margin: 0 auto;">
         <div class="card">
-          <h2 style="margin-top:0;">Sign Up Your Company</h2>
-          <p style="color:var(--border); font-size:14px; margin-bottom:15px;">Create an account to start managing your own RFQs. Add your logo and details afterward in Settings.</p>
-          <form id="signup-form" style="display:flex; flex-direction:column; gap:15px;">
+          <h2 style="margin-top:0;">Choose a Password</h2>
+          <p style="color:var(--border); font-size:14px; margin-bottom:15px;">You've been invited to RFQ Hub. Set a password to finish setting up your account.</p>
+          <form id="set-password-form" style="display:flex; flex-direction:column; gap:15px;">
             <div>
-              <label>Company Name *</label>
-              <input type="text" id="signup-company-name" required style="width:100%;">
-            </div>
-            <div>
-              <label>Your Email *</label>
-              <input type="email" id="signup-email" required style="width:100%;">
-            </div>
-            <div>
-              <label>Password *</label>
-              <input type="password" id="signup-password" required minlength="6" style="width:100%;">
+              <label>New Password *</label>
+              <input type="password" id="set-password-new" required minlength="6" style="width:100%;">
             </div>
             <div>
               <label>Confirm Password *</label>
-              <input type="password" id="signup-password-confirm" required minlength="6" style="width:100%;">
+              <input type="password" id="set-password-confirm" required minlength="6" style="width:100%;">
             </div>
-            <button type="submit" class="btn gold" style="padding:12px; margin-top:5px;">Create Account</button>
+            <button type="submit" class="btn gold" style="padding:12px; margin-top:5px;">Set Password &amp; Continue</button>
           </form>
-          <p style="text-align:center; margin-top:15px; font-size:14px; color:var(--border);">
-            Already have an account? <a href="#" onclick="showLoginForm(); return false;" style="color:var(--accent); font-weight:600;">Log in</a>
-          </p>
-          <p style="text-align:center; margin-top:8px;">
-            <a href="#" onclick="showLandingView(); return false;" style="color:var(--border); font-size:13px;">&larr; Back</a>
-          </p>
         </div>
       </div>
     </div>
@@ -249,6 +232,21 @@
               </div>
             </form>
           </div>
+
+          <div class="card">
+            <h2 style="margin-top:0;">Team</h2>
+            <p style="color:var(--border); font-size:14px; margin-bottom:20px;">People with access to this company's RFQ Hub admin section.</p>
+            <div id="team-members-list" style="margin-bottom:25px;"></div>
+
+            <h3 style="font-size:16px;">Invite a Teammate</h3>
+            <form id="invite-teammate-form" style="display:flex; gap:10px; flex-wrap:wrap; align-items:flex-end; margin-top:10px;">
+              <div style="flex:1; min-width:220px;">
+                <label style="font-weight:bold;">Email *</label>
+                <input type="email" id="invite-teammate-email" required style="width:100%; padding:10px; border:1px solid var(--border); border-radius:4px; box-sizing:border-box;">
+              </div>
+              <button type="submit" class="btn gold" style="padding:10px 20px;">Send Invite</button>
+            </form>
+          </div>
         </div>
       </div>
     </div>
@@ -266,8 +264,24 @@
       </div>
       <div style="padding: 40px; max-width: 1200px; margin: 0 auto;">
         <div class="card">
+          <h2 style="margin-top:0;">Invite a Company</h2>
+          <p style="color:var(--border); font-size:14px; margin-bottom:20px;">Set up a new contractor and invite the first person who'll manage their RFQs. They'll get an email to set their own password.</p>
+          <form id="invite-company-form" style="display:flex; gap:10px; flex-wrap:wrap; align-items:flex-end;">
+            <div style="flex:1; min-width:200px;">
+              <label style="font-weight:bold;">Company Name *</label>
+              <input type="text" id="invite-company-name" required style="width:100%; padding:10px; border:1px solid var(--border); border-radius:4px; box-sizing:border-box;">
+            </div>
+            <div style="flex:1; min-width:220px;">
+              <label style="font-weight:bold;">First Admin's Email *</label>
+              <input type="email" id="invite-company-email" required style="width:100%; padding:10px; border:1px solid var(--border); border-radius:4px; box-sizing:border-box;">
+            </div>
+            <button type="submit" class="btn gold" style="padding:10px 20px;">Send Invite</button>
+          </form>
+        </div>
+
+        <div class="card">
           <h2 style="margin-top:0;">All Companies</h2>
-          <p style="color:var(--border); font-size:14px; margin-bottom:20px;">Companies that have signed up to the platform.</p>
+          <p style="color:var(--border); font-size:14px; margin-bottom:20px;">Companies set up on the platform.</p>
           <div id="super-admin-companies-list"></div>
         </div>
       </div>
