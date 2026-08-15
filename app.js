@@ -24,6 +24,7 @@ async function initApp() {
 
   const params = new URLSearchParams(window.location.search);
   const rfqToken = params.get('rfq');
+  const openRfqId = params.get('open');
   const wantsAdmin = params.has('admin');
   const authType = getUrlHashParams().get('type'); // 'invite' or 'recovery' when landing from an invite/reset link
 
@@ -32,6 +33,14 @@ async function initApp() {
     applyDefaultBranding();
     setHeaderActions('contractor');
     await loadContractorView(rfqToken);
+    return;
+  }
+
+  if (openRfqId) {
+    console.log('Loading public RFQ:', openRfqId);
+    applyDefaultBranding();
+    setHeaderActions('contractor');
+    await loadOpenRFQView(openRfqId);
     return;
   }
 
@@ -152,6 +161,68 @@ function showLandingView() {
   hideAllPublicSections();
   document.getElementById('landing-section').style.display = 'block';
   setHeaderActions('loggedOut');
+  loadPublicRFQList();
+}
+
+// ===== PUBLIC RFQ PORTAL =====
+async function loadPublicRFQList() {
+  const listEl = document.getElementById('public-rfq-list');
+  if (!listEl) return;
+
+  listEl.innerHTML = '<p style="color:var(--border);">Loading...</p>';
+
+  try {
+    const { data: rfqs, error } = await client
+      .from('rfqs')
+      .select('id, rfq_name, project_name, description, deadline, budget, company_id')
+      .eq('is_public', true)
+      .gt('deadline', new Date().toISOString())
+      .order('deadline', { ascending: true });
+
+    if (error) throw error;
+
+    if (!rfqs || rfqs.length === 0) {
+      listEl.innerHTML = '<p style="color:var(--border); font-style:italic;">No open RFQs right now. Check back soon.</p>';
+      return;
+    }
+
+    const companyIds = [...new Set(rfqs.map(r => r.company_id).filter(Boolean))];
+    let companiesById = {};
+    if (companyIds.length > 0) {
+      const { data: companies } = await client
+        .from('companies')
+        .select('id, name, logo_url')
+        .in('id', companyIds);
+      companiesById = Object.fromEntries((companies || []).map(c => [c.id, c]));
+    }
+
+    listEl.innerHTML = rfqs.map(rfq => {
+      const company = companiesById[rfq.company_id];
+      const deadlineDate = new Date(rfq.deadline);
+      return `
+        <div class="card" style="cursor:pointer;" onclick="window.location.href = '${window.location.origin}${window.location.pathname}?open=${rfq.id}'">
+          <div style="display:flex; justify-content:space-between; align-items:flex-start; gap:15px; flex-wrap:wrap;">
+            <div style="flex:1; min-width:200px;">
+              <p style="margin:0 0 6px 0; font-size:12px; text-transform:uppercase; color:var(--border); font-weight:bold;">${company ? company.name : 'RFQ Hub'}</p>
+              <h3 style="margin:0 0 6px 0; color:var(--primary);">${rfq.rfq_name}</h3>
+              <p style="margin:0; color:var(--border); font-size:14px;">Project: ${rfq.project_name}</p>
+            </div>
+            <div style="text-align:right;">
+              <p style="margin:0; font-size:13px; color:var(--border);">Deadline</p>
+              <p style="margin:0; font-weight:bold; color:var(--ink);">${deadlineDate.toLocaleDateString()}</p>
+            </div>
+          </div>
+          <p style="margin:12px 0 0 0; color:var(--ink); font-size:14px;">${rfq.description}</p>
+          <div style="margin-top:15px; text-align:right;">
+            <span class="btn gold" style="padding:8px 18px; display:inline-block;">View &amp; Apply</span>
+          </div>
+        </div>
+      `;
+    }).join('');
+  } catch (err) {
+    console.error('Error loading public RFQ list:', err);
+    listEl.innerHTML = '<p style="color:var(--warning);">Error loading open RFQs.</p>';
+  }
 }
 
 function showLoginForm() {
@@ -512,7 +583,25 @@ async function loadContractorView(token) {
   }
 }
 
-async function loadRFQDetails(rfqId) {
+async function loadOpenRFQView(rfqId) {
+  try {
+    console.log('Loading open RFQ view:', rfqId);
+
+    hideAllTopLevelViews();
+    document.getElementById('public-view').style.display = 'block';
+    hideAllPublicSections();
+
+    currentRFQId = rfqId;
+    await loadRFQDetails(rfqId, true);
+    document.getElementById('rfq-portal').style.display = 'block';
+    document.getElementById('no-rfq-message').style.display = 'none';
+
+  } catch (err) {
+    console.error('Error loading open RFQ view:', err);
+  }
+}
+
+async function loadRFQDetails(rfqId, isOpenAccess = false) {
   try {
     const { data: rfq, error } = await client
       .from('rfqs')
@@ -522,6 +611,16 @@ async function loadRFQDetails(rfqId) {
 
     if (error || !rfq) {
       throw new Error('RFQ not found');
+    }
+
+    // Direct public-portal access must be to an RFQ the company actually
+    // marked "Open" — a closed RFQ is only reachable via its invite link,
+    // even if someone guesses/shares its id.
+    if (isOpenAccess && !rfq.is_public) {
+      document.getElementById('rfq-portal').innerHTML = '<div class="card"><h2 style="margin-top:0;">Not Available</h2><p>This RFQ is invite-only and can\'t be accessed from the public portal.</p></div>';
+      document.getElementById('rfq-portal').style.display = 'block';
+      applyDefaultBranding();
+      return;
     }
 
     console.log('RFQ loaded:', rfq.rfq_name);
@@ -540,7 +639,9 @@ async function loadRFQDetails(rfqId) {
       applyCompanyBranding(company, {
         subtitle: 'Request for Quotation Portal',
         heroTitle: company.name,
-        heroSubtitle: `You've been invited to submit a quotation to ${company.name}.`
+        heroSubtitle: isOpenAccess
+          ? `${company.name} is accepting quotations for this RFQ.`
+          : `You've been invited to submit a quotation to ${company.name}.`
       });
     } else {
       applyDefaultBranding();
@@ -695,13 +796,16 @@ async function submitContractorForm(token) {
       }
     }
 
-    // Mark token as used
-    await client
-      .from('rfq_invitations')
-      .update({ used: true })
-      .eq('invitation_token', token);
+    // Mark token as used (only applies to invite-link applications; direct
+    // public-portal applications have no invitation token to update).
+    if (token) {
+      await client
+        .from('rfq_invitations')
+        .update({ used: true })
+        .eq('invitation_token', token);
 
-    console.log('✅ Token marked as used');
+      console.log('✅ Token marked as used');
+    }
 
     showToast('✅ Submission successful!', 'success');
     setTimeout(() => {
@@ -866,6 +970,27 @@ function setupCreateRFQForm() {
     form.addEventListener('submit', createNewRFQ);
     console.log('✅ Create RFQ form found and hooked up');
   }
+
+  document.querySelectorAll('input[name="rfq_visibility"]').forEach(radio => {
+    radio.addEventListener('change', updateVisibilityHint);
+  });
+  updateVisibilityHint();
+}
+
+function updateVisibilityHint() {
+  const checked = document.querySelector('input[name="rfq_visibility"]:checked');
+  const isPublic = checked && checked.value === 'open';
+  const label = document.getElementById('contractor-emails-label');
+  const hint = document.getElementById('contractor-emails-hint');
+  if (!label || !hint) return;
+
+  if (isPublic) {
+    label.textContent = 'Contractor Email Addresses (optional)';
+    hint.textContent = "Optional for Open RFQs — anyone can find and apply via the public portal. Add emails here only if you also want to invite specific contractors directly.";
+  } else {
+    label.textContent = 'Contractor Email Addresses *';
+    hint.textContent = 'Enter email addresses (one per line). Each gets a direct invite link and email. Required for Closed RFQs.';
+  }
 }
 
 function addDocumentField() {
@@ -907,6 +1032,7 @@ async function createNewRFQ() {
     const deadlineInput = document.querySelector('input[name="rfq_deadline"]');
     const budgetInput = document.querySelector('input[name="rfq_budget"]');
     const emailInput = document.querySelector('textarea[name="contractor_emails"]');
+    const visibilityInput = document.querySelector('input[name="rfq_visibility"]:checked');
 
     const name = nameInput?.value?.trim() || '';
     const project = projectInput?.value?.trim() || '';
@@ -914,6 +1040,7 @@ async function createNewRFQ() {
     const deadline = deadlineInput?.value?.trim() || '';
     const budget = budgetInput?.value?.trim() || '';
     const emailsText = emailInput?.value?.trim() || '';
+    const isPublic = (visibilityInput?.value || 'closed') === 'open';
 
     const contractorEmails = emailsText
       .split('\n')
@@ -950,8 +1077,8 @@ async function createNewRFQ() {
       isSubmittingRFQ = false;
       return;
     }
-    if (contractorEmails.length === 0) {
-      showToast('❌ Please enter at least one Contractor Email', 'error');
+    if (!isPublic && contractorEmails.length === 0) {
+      showToast('❌ Please enter at least one Contractor Email (required for Closed RFQs)', 'error');
       isSubmittingRFQ = false;
       return;
     }
@@ -969,7 +1096,8 @@ async function createNewRFQ() {
         budget: budget || null,
         required_documents: requiredDocs,
         created_by: currentUser ? currentUser.email : 'unknown',
-        company_id: currentCompany.id
+        company_id: currentCompany.id,
+        is_public: isPublic
       }])
       .select()
       .single();
@@ -982,24 +1110,29 @@ async function createNewRFQ() {
 
     await uploadRFQAttachments(rfq.id);
 
-    const invitations = contractorEmails.map(email => ({
-      rfq_id: rfq.id,
-      contractor_email: email,
-      invitation_token: generateToken(),
-      used: false
-    }));
+    if (contractorEmails.length > 0) {
+      const invitations = contractorEmails.map(email => ({
+        rfq_id: rfq.id,
+        contractor_email: email,
+        invitation_token: generateToken(),
+        used: false
+      }));
 
-    const { error: invError } = await client
-      .from('rfq_invitations')
-      .insert(invitations);
+      const { error: invError } = await client
+        .from('rfq_invitations')
+        .insert(invitations);
 
-    if (invError) throw invError;
+      if (invError) throw invError;
 
-    console.log('✅ Invitations created');
+      console.log('✅ Invitations created');
 
-    window.lastInvitations = invitations;
-    await sendRFQInviteEmails(rfq.id, invitations);
-    showGeneratedLinks(rfq.id, invitations);
+      window.lastInvitations = invitations;
+      await sendRFQInviteEmails(rfq.id, invitations);
+      showGeneratedLinks(rfq.id, invitations);
+    } else {
+      showToast(isPublic ? '✅ RFQ created and listed on the public portal' : '✅ RFQ created', 'success');
+    }
+
     resetCreateForm();
 
   } catch (err) {
@@ -1096,7 +1229,10 @@ async function loadRFQConsole() {
         <div class="rfq-console-card ${isExpired ? 'expired' : ''}">
           <div style="display: flex; justify-content: space-between; align-items: start; margin-bottom: 20px;">
             <div style="flex: 1;">
-              <h3 style="margin: 0 0 5px 0; color: var(--primary);">${rfq.rfq_name}</h3>
+              <h3 style="margin: 0 0 5px 0; color: var(--primary);">
+                ${rfq.rfq_name}
+                <span class="submission-status ${rfq.is_public ? 'approved' : 'under_review'}" style="vertical-align:middle; margin-left:8px;">${rfq.is_public ? 'Open — Public' : 'Closed — Invite Only'}</span>
+              </h3>
               <p style="margin: 0 0 8px 0; font-size: 14px; color: var(--border);">Project: <strong>${rfq.project_name}</strong></p>
               <p style="margin: 0; font-size: 14px; color: var(--border);">
                 Deadline: ${deadlineDate.toLocaleDateString()}
