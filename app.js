@@ -9,6 +9,7 @@ let currentCompany = null;
 let isSuperAdmin = false;
 let currentRFQId = null;
 let isSubmittingRFQ = false;
+let platformSettings = { logo_url: null };
 window.lastInvitations = [];
 
 const DEFAULT_HERO_SUBTITLE = "Open requests for quotation. Apply directly online — you'll get a reference number and a confirmation the moment your application is received.";
@@ -21,6 +22,7 @@ async function initApp() {
   console.log('✅ Supabase connected');
 
   setupStaticForms();
+  await loadPlatformSettings();
 
   const params = new URLSearchParams(window.location.search);
   const rfqToken = params.get('rfq');
@@ -120,6 +122,58 @@ function setupStaticForms() {
     inviteCompanyForm.addEventListener('submit', handleInviteCompanySubmit);
     inviteCompanyForm.dataset.wired = 'true';
   }
+
+  const platformLogoFile = document.getElementById('platform-logo-file');
+  if (platformLogoFile && !platformLogoFile.dataset.wired) {
+    platformLogoFile.addEventListener('change', handlePlatformLogoFileChange);
+    platformLogoFile.dataset.wired = 'true';
+  }
+}
+
+function renderPlatformLogoPreview() {
+  const preview = document.getElementById('platform-logo-preview');
+  const placeholder = document.getElementById('platform-logo-placeholder');
+  if (!preview || !placeholder) return;
+  if (platformSettings && platformSettings.logo_url) {
+    preview.src = platformSettings.logo_url;
+    preview.style.display = 'block';
+    placeholder.style.display = 'none';
+  } else {
+    preview.style.display = 'none';
+    placeholder.style.display = 'flex';
+  }
+}
+
+async function handlePlatformLogoFileChange(e) {
+  const file = e.target.files[0];
+  if (!file || !isSuperAdmin) return;
+
+  try {
+    showToast('Uploading logo...', 'info');
+    const ext = (file.name.split('.').pop() || 'png').toLowerCase();
+    const path = `platform/logo-${Date.now()}.${ext}`;
+
+    const { error: uploadError } = await client.storage
+      .from('company-logos')
+      .upload(path, file, { upsert: true });
+    if (uploadError) throw uploadError;
+
+    const { data: urlData } = client.storage.from('company-logos').getPublicUrl(path);
+    const logoUrl = urlData.publicUrl;
+
+    const { error: updateError } = await client
+      .from('platform_settings')
+      .update({ logo_url: logoUrl, updated_at: new Date().toISOString() })
+      .eq('id', 1);
+    if (updateError) throw updateError;
+
+    platformSettings = { logo_url: logoUrl };
+    renderPlatformLogoPreview();
+    showToast('✅ Platform logo updated', 'success');
+  } catch (err) {
+    console.error('Platform logo upload error:', err);
+    showToast('❌ Error uploading logo: ' + err.message, 'error');
+  }
 }
 
 function getUrlHashParams() {
@@ -213,7 +267,10 @@ async function loadPublicRFQList(province) {
         <div class="card" style="cursor:pointer;" onclick="window.location.href = '${window.location.origin}${window.location.pathname}?open=${rfq.id}'">
           <div style="display:flex; justify-content:space-between; align-items:flex-start; gap:15px; flex-wrap:wrap;">
             <div style="flex:1; min-width:200px;">
-              <p style="margin:0 0 6px 0; font-size:12px; text-transform:uppercase; color:var(--border); font-weight:bold;">${company ? company.name : 'RFQ Hub'}</p>
+              <div style="display:flex; align-items:center; gap:8px; margin-bottom:6px;">
+                ${company && company.logo_url ? `<img src="${company.logo_url}" alt="${company.name}" style="width:24px; height:24px; object-fit:contain; border-radius:4px;">` : ''}
+                <p style="margin:0; font-size:12px; text-transform:uppercase; color:var(--border); font-weight:bold;">${company ? company.name : 'RFQ Hub'}</p>
+              </div>
               <h3 style="margin:0 0 6px 0; color:var(--primary);">${rfq.rfq_name}</h3>
               <p style="margin:0; color:var(--border); font-size:14px;">Project: ${rfq.project_name}</p>
               ${locationText ? `<p style="margin:4px 0 0 0; color:var(--border); font-size:13px;">📍 ${locationText}</p>` : ''}
@@ -253,13 +310,37 @@ function showSetPasswordView() {
 }
 
 // ===== BRANDING =====
+async function loadPlatformSettings() {
+  try {
+    const { data, error } = await client
+      .from('platform_settings')
+      .select('logo_url')
+      .eq('id', 1)
+      .maybeSingle();
+    if (!error && data) {
+      platformSettings = data;
+    }
+  } catch (err) {
+    console.warn('Could not load platform settings:', err);
+  }
+}
+
 function applyDefaultBranding() {
   document.getElementById('brand-title').textContent = 'RFQ Hub';
   document.getElementById('brand-subtitle').textContent = 'Request for Quotation Management System';
   document.getElementById('hero-title').textContent = 'RFQ Hub';
   document.getElementById('hero-subtitle').textContent = DEFAULT_HERO_SUBTITLE;
-  document.getElementById('brand-logo-img').style.display = 'none';
-  document.getElementById('brand-logo-default').style.display = 'block';
+
+  const img = document.getElementById('brand-logo-img');
+  const def = document.getElementById('brand-logo-default');
+  if (platformSettings && platformSettings.logo_url) {
+    img.src = platformSettings.logo_url;
+    img.style.display = 'block';
+    def.style.display = 'none';
+  } else {
+    img.style.display = 'none';
+    def.style.display = 'block';
+  }
 }
 
 function applyCompanyBranding(company, opts = {}) {
@@ -1529,6 +1610,7 @@ function showSuperAdminView() {
   const backLink = document.getElementById('back-to-dashboard-link');
   if (backLink) backLink.style.display = currentCompany ? 'inline-block' : 'none';
 
+  renderPlatformLogoPreview();
   loadSuperAdminCompanies();
 }
 
