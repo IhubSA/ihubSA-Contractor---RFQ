@@ -440,10 +440,10 @@ label {
 
 /* SMALL PHONES */
 @media (max-width: 420px) {
-  #brand-logo-img,
-  #brand-logo-default {
-    width: 56px !important;
-    height: 56px !important;
+  /* Keep the logo at full (enlarged) size — let the title text wrap to its
+     own line underneath instead of shrinking the logo to make room. */
+  #brand-logo-group {
+    flex-wrap: wrap;
   }
 
   #hero-title {
