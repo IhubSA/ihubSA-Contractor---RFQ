@@ -10,8 +10,8 @@
   <!-- DYNAMIC BRANDING HEADER -->
   <div id="site-header" style="background: white; padding: 20px 40px; border-bottom: 3px solid #00A86B; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 15px;">
     <div style="display: flex; align-items: center; gap: 15px;">
-      <img id="brand-logo-img" src="" alt="Company logo" style="display:none; width:60px; height:60px; object-fit:contain; border-radius:8px; flex-shrink:0;">
-      <svg id="brand-logo-default" width="60" height="60" viewBox="0 0 100 100" style="flex-shrink: 0;">
+      <img id="brand-logo-img" src="" alt="Company logo" style="display:none; width:84px; height:84px; object-fit:contain; border-radius:8px; flex-shrink:0;">
+      <svg id="brand-logo-default" width="84" height="84" viewBox="0 0 100 100" style="flex-shrink: 0;">
         <circle cx="50" cy="50" r="46" fill="#004D5C"/>
         <path d="M 50 15 C 65 20, 75 35, 72 50 C 70 60, 60 65, 50 62 C 45 45, 45 30, 50 15 Z" fill="#2E9B47"/>
         <path d="M 50 20 C 58 25, 63 35, 60 45 C 58 50, 52 52, 48 48 C 46 38, 47 28, 50 20 Z" fill="#4CAF50"/>
@@ -119,7 +119,7 @@
         </div>
       </div>
 
-      <div style="padding: 40px; max-width: 1200px; margin: 0 auto;">
+      <div class="page-pad" style="padding: 40px; max-width: 1200px; margin: 0 auto;">
         <!-- Tab Navigation -->
         <div style="display: flex; gap: 10px; margin-bottom: 30px; border-bottom: 2px solid #E0E0E0; flex-wrap:wrap;">
           <button class="tab-btn active" onclick="switchAdminTab('create', this)" style="padding: 12px 20px; border: none; background: none; cursor: pointer; font-weight: bold; color: #666; border-bottom: 3px solid transparent; margin-bottom: -2px;">Create RFQ</button>
@@ -133,7 +133,7 @@
           <div class="card">
             <h2 style="margin-top:0;">Create New RFQ</h2>
             <form id="create-rfq-form" onsubmit="return false;" style="display:flex; flex-direction:column; gap:20px;">
-              <div style="display:grid; grid-template-columns:1fr 1fr; gap:20px;">
+              <div class="form-grid-2">
                 <div>
                   <label style="font-weight:bold; display:block; margin-bottom:8px;">RFQ Name/Title *</label>
                   <input type="text" name="rfq_name" placeholder="e.g., Safety Equipment Quotes" style="width:100%; padding:10px; border:1px solid var(--border); border-radius:4px; box-sizing:border-box;">
@@ -149,7 +149,7 @@
                 <textarea name="rfq_description" placeholder="Describe what you're looking for..." style="width:100%; padding:10px; border:1px solid var(--border); border-radius:4px; min-height:100px; box-sizing:border-box; font-family:inherit;"></textarea>
               </div>
 
-              <div style="display:grid; grid-template-columns:1fr 1fr; gap:20px;">
+              <div class="form-grid-2">
                 <div>
                   <label style="font-weight:bold; display:block; margin-bottom:8px;">Province *</label>
                   <select name="rfq_province" style="width:100%; padding:10px; border:1px solid var(--border); border-radius:4px; box-sizing:border-box;">
@@ -171,7 +171,7 @@
                 </div>
               </div>
 
-              <div style="display:grid; grid-template-columns:1fr 1fr; gap:20px;">
+              <div class="form-grid-2">
                 <div>
                   <label style="font-weight:bold; display:block; margin-bottom:8px;">Submission Deadline *</label>
                   <input type="datetime-local" name="rfq_deadline" style="width:100%; padding:10px; border:1px solid var(--border); border-radius:4px; box-sizing:border-box;">
@@ -239,7 +239,7 @@
         <div id="submissions-tab" class="admin-tab" style="display:none;">
           <div class="card">
             <h2 style="margin-top:0;">RFQ Submissions</h2>
-            <div style="margin-bottom:20px; display:grid; grid-template-columns:200px 200px; gap:10px;">
+            <div class="filter-bar">
               <select id="rfq-filter" onchange="filterSubmissions()" style="padding:10px; border:1px solid var(--border); border-radius:4px;">
                 <option value="">All RFQs</option>
               </select>
@@ -341,7 +341,7 @@
           </div>
         </div>
       </div>
-      <div style="padding: 40px; max-width: 1200px; margin: 0 auto;">
+      <div class="page-pad" style="padding: 40px; max-width: 1200px; margin: 0 auto;">
         <div class="card">
           <h2 style="margin-top:0;">Invite a Company</h2>
           <p style="color:var(--border); font-size:14px; margin-bottom:20px;">Set up a new contractor and invite the first person who'll manage their RFQs. They'll get an email to set their own password.</p>
