@@ -88,6 +88,12 @@ function setupStaticForms() {
     logoFile.dataset.wired = 'true';
   }
 
+  const changePasswordForm = document.getElementById('change-password-form');
+  if (changePasswordForm && !changePasswordForm.dataset.wired) {
+    changePasswordForm.addEventListener('submit', handleChangePasswordSubmit);
+    changePasswordForm.dataset.wired = 'true';
+  }
+
   const inviteTeammateForm = document.getElementById('invite-teammate-form');
   if (inviteTeammateForm && !inviteTeammateForm.dataset.wired) {
     inviteTeammateForm.addEventListener('submit', handleInviteTeammateSubmit);
@@ -232,6 +238,31 @@ async function handleSetPasswordSubmit(e) {
     await loadCurrentCompanyAndRoute(false);
   } catch (err) {
     console.error('Set password error:', err);
+    showToast('Error: ' + err.message, 'error');
+  }
+}
+
+async function handleChangePasswordSubmit(e) {
+  e.preventDefault();
+  const password = document.getElementById('change-password-new').value;
+  const confirmPassword = document.getElementById('change-password-confirm').value;
+
+  if (password.length < 6) {
+    showToast('Password must be at least 6 characters', 'error');
+    return;
+  }
+  if (password !== confirmPassword) {
+    showToast('Passwords do not match', 'error');
+    return;
+  }
+
+  try {
+    const { error } = await client.auth.updateUser({ password });
+    if (error) throw error;
+    document.getElementById('change-password-form').reset();
+    showToast('✅ Password updated', 'success');
+  } catch (err) {
+    console.error('Change password error:', err);
     showToast('Error: ' + err.message, 'error');
   }
 }
