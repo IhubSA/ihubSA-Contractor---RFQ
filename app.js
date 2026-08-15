@@ -268,11 +268,11 @@ async function handleChangePasswordSubmit(e) {
 }
 
 // ===== INVITES =====
-async function callInviteFunction(payload) {
+async function callEdgeFunction(functionName, payload) {
   const { data: { session } } = await client.auth.getSession();
-  if (!session) throw new Error('You must be logged in to send invites');
+  if (!session) throw new Error('You must be logged in to do that');
 
-  const response = await fetch(`${SUPABASE_URL}/functions/v1/invite-member`, {
+  const response = await fetch(`${SUPABASE_URL}/functions/v1/${functionName}`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -283,9 +283,31 @@ async function callInviteFunction(payload) {
 
   const result = await response.json().catch(() => ({}));
   if (!response.ok) {
-    throw new Error(result.error || `Invite failed (${response.status})`);
+    throw new Error(result.error || `Request failed (${response.status})`);
   }
   return result;
+}
+
+async function callInviteFunction(payload) {
+  return callEdgeFunction('invite-member', payload);
+}
+
+// Emails each contractor their unique RFQ link via the send-rfq-invites
+// Edge Function (Resend). Best-effort: a failure here doesn't undo the RFQ
+// or its invitation rows — the links are still shown/copyable as a fallback.
+async function sendRFQInviteEmails(rfqId, invitations) {
+  const payload = {
+    rfqId,
+    invitations: invitations.map(inv => ({ email: inv.contractor_email, token: inv.invitation_token }))
+  };
+
+  try {
+    const result = await callEdgeFunction('send-rfq-invites', payload);
+    showToast(`✅ Emailed ${result.sent || invitations.length} contractor(s)`, 'success');
+  } catch (err) {
+    console.error('Error sending contractor emails:', err);
+    showToast('RFQ created, but emailing contractors failed: ' + err.message, 'warning');
+  }
 }
 
 async function handleInviteCompanySubmit(e) {
@@ -962,6 +984,7 @@ async function createNewRFQ() {
     console.log('✅ Invitations created');
 
     window.lastInvitations = invitations;
+    await sendRFQInviteEmails(rfq.id, invitations);
     showGeneratedLinks(rfq.id, invitations);
     resetCreateForm();
 
@@ -1509,8 +1532,9 @@ async function showAddContractorForm(rfqId) {
     const baseUrl = window.location.origin + window.location.pathname;
     const link = `${baseUrl}?rfq=${inv.invitation_token}`;
 
-    showToast('✅ Contractor added!', 'success');
+    showToast('✅ Contractor added — sending invite email...', 'success');
     navigator.clipboard.writeText(link);
+    await sendRFQInviteEmails(rfqId, [inv]);
     loadRFQConsole();
 
   } catch (err) {
