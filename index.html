@@ -41,11 +41,8 @@
         <div style="max-width: 520px; margin: 0 auto 40px auto;">
           <div class="card" style="text-align:center;">
             <h2 style="margin-top:0;">Welcome to RFQ Hub</h2>
-            <p style="color:var(--border); margin-bottom:25px;">A shared platform for managing requests for quotation. Each company signs in to its own account to create RFQs, invite contractors, and review submissions.</p>
-            <div style="display:flex; gap:12px; justify-content:center; flex-wrap:wrap;">
-              <button onclick="showLoginForm()" class="btn gold" style="padding:12px 24px;">Log In</button>
-            </div>
-            <p style="margin-top:20px; font-size:13px; color:var(--border);">Company staff: access is by invitation only. If you're expecting access, check your email for an invite link.</p>
+            <p style="color:var(--border); margin-bottom:0;">A shared platform for managing requests for quotation. Each company signs in to its own account to create RFQs, invite contractors, and review submissions.</p>
+            <p style="margin-top:20px; font-size:13px; color:var(--border);">Company staff: use the <strong>Log In</strong> button above to access your dashboard. Access is by invitation only — if you're expecting access, check your email for an invite link.</p>
           </div>
         </div>
 
@@ -359,6 +356,19 @@
             </div>
             <button type="submit" class="btn gold" style="padding:10px 20px;">Send Invite</button>
           </form>
+        </div>
+
+        <div class="card">
+          <h2 style="margin-top:0;">Platform Branding</h2>
+          <p style="color:var(--border); font-size:14px; margin-bottom:20px;">This logo appears on the main public portal (the "RFQ Hub" landing page) whenever no specific company is in context.</p>
+          <div style="display:flex; align-items:center; gap:15px;">
+            <img id="platform-logo-preview" src="" alt="Platform logo preview" style="width:80px; height:80px; object-fit:contain; border:1px solid var(--border); border-radius:8px; background:var(--bg-2); display:none;">
+            <div id="platform-logo-placeholder" style="width:80px; height:80px; border:1px dashed var(--border); border-radius:8px; display:flex; align-items:center; justify-content:center; color:var(--border); font-size:11px; text-align:center;">No logo</div>
+            <div>
+              <input type="file" id="platform-logo-file" accept="image/png,image/jpeg,image/svg+xml,image/webp">
+              <p style="font-size:12px; color:var(--border); margin-top:5px;">PNG, JPG, SVG or WebP. Uploads immediately.</p>
+            </div>
+          </div>
         </div>
 
         <div class="card">
