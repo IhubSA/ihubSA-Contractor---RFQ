@@ -383,6 +383,15 @@ async function loadTeamMembers() {
 
 async function loadCurrentCompanyAndRoute(wantsAdmin) {
   try {
+    // Check super-admin status first — a super-admin should be able to log in
+    // and reach Platform Admin even if they don't belong to any company.
+    const { data: adminCheck } = await client
+      .from('super_admins')
+      .select('email')
+      .eq('email', currentUser.email)
+      .maybeSingle();
+    isSuperAdmin = !!adminCheck;
+
     const { data: membership, error } = await client
       .from('company_members')
       .select('company_id, role, companies(*)')
@@ -390,18 +399,13 @@ async function loadCurrentCompanyAndRoute(wantsAdmin) {
       .limit(1)
       .maybeSingle();
 
-    if (error || !membership || !membership.companies) {
+    if (error) {
       console.error('Error loading company membership:', error);
-      showToast('Could not find a company for this account', 'error');
-      await client.auth.signOut();
-      applyDefaultBranding();
-      showLandingView();
-      return;
     }
 
-    currentCompany = membership.companies;
+    currentCompany = (membership && membership.companies) ? membership.companies : null;
 
-    if (currentCompany.status === 'suspended') {
+    if (currentCompany && currentCompany.status === 'suspended') {
       showToast('This account has been suspended. Contact the platform admin.', 'error');
       await client.auth.signOut();
       currentCompany = null;
@@ -410,14 +414,15 @@ async function loadCurrentCompanyAndRoute(wantsAdmin) {
       return;
     }
 
-    const { data: adminCheck } = await client
-      .from('super_admins')
-      .select('email')
-      .eq('email', currentUser.email)
-      .maybeSingle();
-    isSuperAdmin = !!adminCheck;
+    if (!currentCompany && !isSuperAdmin) {
+      showToast('Could not find a company for this account', 'error');
+      await client.auth.signOut();
+      applyDefaultBranding();
+      showLandingView();
+      return;
+    }
 
-    if (wantsAdmin && isSuperAdmin) {
+    if ((wantsAdmin || !currentCompany) && isSuperAdmin) {
       showSuperAdminView();
     } else {
       showAdminView();
@@ -1258,10 +1263,19 @@ function showSuperAdminView() {
   document.getElementById('super-admin-view').style.display = 'block';
   applyDefaultBranding();
   document.getElementById('brand-title').textContent = 'RFQ Hub — Platform Admin';
+
+  // Only offer "Back to Dashboard" if there's actually a company dashboard to go back to.
+  const backLink = document.getElementById('back-to-dashboard-link');
+  if (backLink) backLink.style.display = currentCompany ? 'inline-block' : 'none';
+
   loadSuperAdminCompanies();
 }
 
 function closeSuperAdminView() {
+  if (!currentCompany) {
+    showToast("You're not a member of any company yet — invite one above to get started.", 'info');
+    return;
+  }
   showAdminView();
 }
 
