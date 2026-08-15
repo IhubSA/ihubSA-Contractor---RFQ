@@ -324,6 +324,13 @@ label {
   margin-bottom: 20px;
 }
 
+/* TWO-COLUMN FORM ROWS (collapses to one column on phones) */
+.form-grid-2 {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 20px;
+}
+
 /* RFQ CONSOLE STYLES */
 .rfq-console-card {
   border-left: 4px solid var(--accent);
@@ -339,6 +346,24 @@ label {
 }
 
 /* RESPONSIVE */
+
+/* TABLET */
+@media (max-width: 1024px) {
+  #site-header {
+    padding: 18px 24px !important;
+  }
+
+  #hero-section {
+    padding: 44px 24px !important;
+  }
+
+  #public-view,
+  .page-pad {
+    padding: 32px 24px !important;
+  }
+}
+
+/* PHONE & SMALL TABLET */
 @media (max-width: 768px) {
   body {
     font-size: 14px;
@@ -357,12 +382,76 @@ label {
     max-width: 100%;
   }
 
+  .modal-head,
+  .modal-foot {
+    padding: 15px 20px !important;
+  }
+
+  .modal-body {
+    padding: 20px !important;
+  }
+
   .filter-bar {
+    grid-template-columns: 1fr;
+  }
+
+  .form-grid-2 {
     grid-template-columns: 1fr;
   }
 
   input, textarea, select {
     font-size: 16px; /* Prevent zoom on iOS */
+  }
+
+  #site-header {
+    padding: 14px 20px !important;
+    gap: 10px;
+  }
+
+  #hero-section {
+    padding: 30px 20px !important;
+  }
+
+  #hero-title {
+    font-size: 28px !important;
+  }
+
+  #hero-subtitle {
+    font-size: 15px !important;
+  }
+
+  #brand-title {
+    font-size: 19px !important;
+  }
+
+  #brand-subtitle {
+    font-size: 11px !important;
+  }
+
+  #public-view,
+  .page-pad {
+    padding: 20px !important;
+  }
+
+  #site-footer {
+    padding: 20px !important;
+  }
+}
+
+/* SMALL PHONES */
+@media (max-width: 420px) {
+  #brand-logo-img,
+  #brand-logo-default {
+    width: 56px !important;
+    height: 56px !important;
+  }
+
+  #hero-title {
+    font-size: 24px !important;
+  }
+
+  .card {
+    padding: 16px;
   }
 }
 
