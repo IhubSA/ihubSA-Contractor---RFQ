@@ -528,6 +528,16 @@ async function loadRFQDetails(rfqId) {
           </div>
         ` : ''}
 
+        ${rfq.attachments && rfq.attachments.length > 0 ? `
+          <div style="margin: 20px 0; padding: 15px; background: var(--bg-2); border-radius: 4px;">
+            <h4 style="margin-top:0;">RFQ Documents</h4>
+            <p style="color: var(--border); font-size: 14px; margin-bottom: 10px;">Please review before applying:</p>
+            <ul style="margin:0; padding-left:20px;">
+              ${rfq.attachments.map(att => `<li style="margin-bottom:6px;"><a href="${att.url}" target="_blank" rel="noopener noreferrer">${att.name}</a></li>`).join('')}
+            </ul>
+          </div>
+        ` : ''}
+
         <form id="contractor-form" style="margin-top: 30px;">
           <h3>Your Company Information</h3>
 
@@ -934,6 +944,8 @@ async function createNewRFQ() {
 
     console.log('✅ RFQ created:', rfq.id);
 
+    await uploadRFQAttachments(rfq.id);
+
     const invitations = contractorEmails.map(email => ({
       rfq_id: rfq.id,
       contractor_email: email,
@@ -958,6 +970,49 @@ async function createNewRFQ() {
     showToast('Error: ' + err.message, 'error');
   } finally {
     isSubmittingRFQ = false;
+  }
+}
+
+// Uploads any files picked in the "Attach RFQ Document(s)" input to the
+// public rfq-attachments bucket and records them on the rfq row so the
+// contractor portal can show download links. Best-effort: a failed file
+// doesn't stop the RFQ from being created.
+async function uploadRFQAttachments(rfqId) {
+  const input = document.getElementById('rfq-attachments-input');
+  const files = input && input.files ? Array.from(input.files) : [];
+  if (files.length === 0) return;
+
+  const uploaded = [];
+
+  for (const file of files) {
+    try {
+      const path = `rfq-${rfqId}/${Date.now()}-${file.name}`;
+      const { error: uploadError } = await client.storage
+        .from('rfq-attachments')
+        .upload(path, file);
+
+      if (uploadError) {
+        console.warn('⚠️ Attachment upload failed:', file.name, uploadError.message);
+        continue;
+      }
+
+      const { data: urlData } = client.storage.from('rfq-attachments').getPublicUrl(path);
+      uploaded.push({ name: file.name, url: urlData.publicUrl });
+    } catch (err) {
+      console.warn('⚠️ Attachment upload error:', file.name, err.message);
+    }
+  }
+
+  if (uploaded.length === 0) return;
+
+  const { error: updateError } = await client
+    .from('rfqs')
+    .update({ attachments: uploaded })
+    .eq('id', rfqId);
+
+  if (updateError) {
+    console.error('Error saving attachment list:', updateError);
+    showToast('RFQ created, but attaching documents failed', 'warning');
   }
 }
 
@@ -1039,6 +1094,15 @@ async function loadRFQConsole() {
               <h4 style="margin: 0 0 10px 0; font-size: 12px; text-transform: uppercase; color: var(--border); font-weight: bold;">Required Documents</h4>
               <ul style="margin: 0; padding-left: 20px; color: var(--ink);">
                 ${rfq.required_documents.map(doc => `<li style="margin-bottom: 5px;">${doc}</li>`).join('')}
+              </ul>
+            </div>
+          ` : ''}
+
+          ${rfq.attachments && rfq.attachments.length > 0 ? `
+            <div style="background: var(--bg-2); padding: 15px; border-radius: 4px; margin-bottom: 15px;">
+              <h4 style="margin: 0 0 10px 0; font-size: 12px; text-transform: uppercase; color: var(--border); font-weight: bold;">RFQ Documents (visible to contractors)</h4>
+              <ul style="margin: 0; padding-left: 20px; color: var(--ink);">
+                ${rfq.attachments.map(att => `<li style="margin-bottom: 5px;"><a href="${att.url}" target="_blank" rel="noopener noreferrer">${att.name}</a></li>`).join('')}
               </ul>
             </div>
           ` : ''}
