@@ -1338,8 +1338,8 @@ async function loadRFQConsole() {
 
       consoleHtml += `
         <div class="rfq-console-card ${isExpired ? 'expired' : ''}">
-          <div style="display: flex; justify-content: space-between; align-items: start; margin-bottom: 20px;">
-            <div style="flex: 1;">
+          <div style="display: flex; justify-content: space-between; align-items: start; margin-bottom: 20px; flex-wrap: wrap; gap: 15px;">
+            <div style="flex: 1; min-width: 220px;">
               <h3 style="margin: 0 0 5px 0; color: var(--primary);">
                 ${rfq.rfq_name}
                 <span class="submission-status ${rfq.is_public ? 'approved' : 'under_review'}" style="vertical-align:middle; margin-left:8px;">${rfq.is_public ? 'Open — Public' : 'Closed — Invite Only'}</span>
