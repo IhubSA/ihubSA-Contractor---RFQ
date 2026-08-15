@@ -165,24 +165,32 @@ function showLandingView() {
 }
 
 // ===== PUBLIC RFQ PORTAL =====
-async function loadPublicRFQList() {
+async function loadPublicRFQList(province) {
   const listEl = document.getElementById('public-rfq-list');
   if (!listEl) return;
 
   listEl.innerHTML = '<p style="color:var(--border);">Loading...</p>';
 
   try {
-    const { data: rfqs, error } = await client
+    let query = client
       .from('rfqs')
-      .select('id, rfq_name, project_name, description, deadline, budget, company_id')
+      .select('id, rfq_name, project_name, description, deadline, budget, company_id, province, location_area')
       .eq('is_public', true)
       .gt('deadline', new Date().toISOString())
       .order('deadline', { ascending: true });
 
+    if (province) {
+      query = query.eq('province', province);
+    }
+
+    const { data: rfqs, error } = await query;
+
     if (error) throw error;
 
     if (!rfqs || rfqs.length === 0) {
-      listEl.innerHTML = '<p style="color:var(--border); font-style:italic;">No open RFQs right now. Check back soon.</p>';
+      listEl.innerHTML = province
+        ? '<p style="color:var(--border); font-style:italic;">No open RFQs in this province right now.</p>'
+        : '<p style="color:var(--border); font-style:italic;">No open RFQs right now. Check back soon.</p>';
       return;
     }
 
@@ -199,6 +207,8 @@ async function loadPublicRFQList() {
     listEl.innerHTML = rfqs.map(rfq => {
       const company = companiesById[rfq.company_id];
       const deadlineDate = new Date(rfq.deadline);
+      const locationParts = [rfq.location_area, rfq.province].filter(Boolean);
+      const locationText = locationParts.join(', ');
       return `
         <div class="card" style="cursor:pointer;" onclick="window.location.href = '${window.location.origin}${window.location.pathname}?open=${rfq.id}'">
           <div style="display:flex; justify-content:space-between; align-items:flex-start; gap:15px; flex-wrap:wrap;">
@@ -206,6 +216,7 @@ async function loadPublicRFQList() {
               <p style="margin:0 0 6px 0; font-size:12px; text-transform:uppercase; color:var(--border); font-weight:bold;">${company ? company.name : 'RFQ Hub'}</p>
               <h3 style="margin:0 0 6px 0; color:var(--primary);">${rfq.rfq_name}</h3>
               <p style="margin:0; color:var(--border); font-size:14px;">Project: ${rfq.project_name}</p>
+              ${locationText ? `<p style="margin:4px 0 0 0; color:var(--border); font-size:13px;">📍 ${locationText}</p>` : ''}
             </div>
             <div style="text-align:right;">
               <p style="margin:0; font-size:13px; color:var(--border);">Deadline</p>
@@ -653,6 +664,7 @@ async function loadRFQDetails(rfqId, isOpenAccess = false) {
         <h2 style="margin-top:0;">${rfq.rfq_name}</h2>
         <p style="color: var(--border); margin-bottom: 20px;">${rfq.description}</p>
 
+        ${(rfq.location_area || rfq.province) ? `<p><strong>Location:</strong> ${[rfq.location_area, rfq.province].filter(Boolean).join(', ')}</p>` : ''}
         ${rfq.budget ? `<p><strong>Budget:</strong> R${rfq.budget.toLocaleString()}</p>` : ''}
         ${rfq.deadline ? `<p><strong>Deadline:</strong> ${new Date(rfq.deadline).toLocaleDateString()}</p>` : ''}
 
@@ -1033,6 +1045,8 @@ async function createNewRFQ() {
     const budgetInput = document.querySelector('input[name="rfq_budget"]');
     const emailInput = document.querySelector('textarea[name="contractor_emails"]');
     const visibilityInput = document.querySelector('input[name="rfq_visibility"]:checked');
+    const provinceInput = document.querySelector('select[name="rfq_province"]');
+    const locationAreaInput = document.querySelector('input[name="rfq_location_area"]');
 
     const name = nameInput?.value?.trim() || '';
     const project = projectInput?.value?.trim() || '';
@@ -1041,6 +1055,8 @@ async function createNewRFQ() {
     const budget = budgetInput?.value?.trim() || '';
     const emailsText = emailInput?.value?.trim() || '';
     const isPublic = (visibilityInput?.value || 'closed') === 'open';
+    const province = provinceInput?.value || '';
+    const locationArea = locationAreaInput?.value?.trim() || '';
 
     const contractorEmails = emailsText
       .split('\n')
@@ -1072,6 +1088,11 @@ async function createNewRFQ() {
       isSubmittingRFQ = false;
       return;
     }
+    if (!province) {
+      showToast('❌ Please select a Province', 'error');
+      isSubmittingRFQ = false;
+      return;
+    }
     if (requiredDocs.length === 0) {
       showToast('❌ Please add at least one Required Document type', 'error');
       isSubmittingRFQ = false;
@@ -1097,7 +1118,9 @@ async function createNewRFQ() {
         required_documents: requiredDocs,
         created_by: currentUser ? currentUser.email : 'unknown',
         company_id: currentCompany.id,
-        is_public: isPublic
+        is_public: isPublic,
+        province: province,
+        location_area: locationArea || null
       }])
       .select()
       .single();
@@ -1234,6 +1257,7 @@ async function loadRFQConsole() {
                 <span class="submission-status ${rfq.is_public ? 'approved' : 'under_review'}" style="vertical-align:middle; margin-left:8px;">${rfq.is_public ? 'Open — Public' : 'Closed — Invite Only'}</span>
               </h3>
               <p style="margin: 0 0 8px 0; font-size: 14px; color: var(--border);">Project: <strong>${rfq.project_name}</strong></p>
+              ${(rfq.location_area || rfq.province) ? `<p style="margin: 0 0 8px 0; font-size: 14px; color: var(--border);">📍 ${[rfq.location_area, rfq.province].filter(Boolean).join(', ')}</p>` : ''}
               <p style="margin: 0; font-size: 14px; color: var(--border);">
                 Deadline: ${deadlineDate.toLocaleDateString()}
                 <span style="color: ${isExpired ? 'var(--warning)' : 'var(--success)'}; font-weight: bold; margin-left: 8px;">
@@ -1761,4 +1785,11 @@ function acceptPOPIA() {
 window.addEventListener('DOMContentLoaded', () => {
   console.log('Page loaded, initializing...');
   setupCreateRFQForm();
+
+  const provinceFilter = document.getElementById('public-rfq-province-filter');
+  if (provinceFilter) {
+    provinceFilter.addEventListener('change', () => {
+      loadPublicRFQList(provinceFilter.value || null);
+    });
+  }
 });
