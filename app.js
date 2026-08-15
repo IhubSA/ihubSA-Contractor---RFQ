@@ -325,11 +325,17 @@ async function loadPlatformSettings() {
   }
 }
 
+function updateFooterCompanyName(name) {
+  const el = document.getElementById('footer-company-name');
+  if (el) el.textContent = name || 'RFQ Hub';
+}
+
 function applyDefaultBranding() {
   document.getElementById('brand-title').textContent = 'RFQ Hub';
   document.getElementById('brand-subtitle').textContent = 'Request for Quotation Management System';
   document.getElementById('hero-title').textContent = 'RFQ Hub';
   document.getElementById('hero-subtitle').textContent = DEFAULT_HERO_SUBTITLE;
+  updateFooterCompanyName('RFQ Hub');
 
   const img = document.getElementById('brand-logo-img');
   const def = document.getElementById('brand-logo-default');
@@ -350,6 +356,7 @@ function applyCompanyBranding(company, opts = {}) {
   document.getElementById('brand-subtitle').textContent = opts.subtitle || 'Request for Quotation Management System';
   document.getElementById('hero-title').textContent = opts.heroTitle || company.name || 'RFQ Hub';
   document.getElementById('hero-subtitle').textContent = opts.heroSubtitle || DEFAULT_HERO_SUBTITLE;
+  updateFooterCompanyName(company.name);
 
   const img = document.getElementById('brand-logo-img');
   const def = document.getElementById('brand-logo-default');
@@ -1873,5 +1880,10 @@ window.addEventListener('DOMContentLoaded', () => {
     provinceFilter.addEventListener('change', () => {
       loadPublicRFQList(provinceFilter.value || null);
     });
+  }
+
+  const footerYear = document.getElementById('footer-year');
+  if (footerYear) {
+    footerYear.textContent = new Date().getFullYear();
   }
 });
