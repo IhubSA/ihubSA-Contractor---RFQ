@@ -52,6 +52,21 @@
         <div style="max-width: 900px; margin: 0 auto;">
           <h2 style="margin-bottom:5px;">Open RFQs</h2>
           <p style="color:var(--border); margin-bottom:20px;">Current requests for quotation from companies on this platform. Click one to review the details and apply.</p>
+          <div style="margin-bottom:20px; max-width:280px;">
+            <label style="font-weight:bold; display:block; margin-bottom:8px; font-size:14px;">Filter by Province</label>
+            <select id="public-rfq-province-filter" style="width:100%; padding:10px; border:1px solid var(--border); border-radius:4px; box-sizing:border-box;">
+              <option value="">All Provinces</option>
+              <option value="Eastern Cape">Eastern Cape</option>
+              <option value="Free State">Free State</option>
+              <option value="Gauteng">Gauteng</option>
+              <option value="KwaZulu-Natal">KwaZulu-Natal</option>
+              <option value="Limpopo">Limpopo</option>
+              <option value="Mpumalanga">Mpumalanga</option>
+              <option value="Northern Cape">Northern Cape</option>
+              <option value="North West">North West</option>
+              <option value="Western Cape">Western Cape</option>
+            </select>
+          </div>
           <div id="public-rfq-list"></div>
         </div>
       </div>
@@ -135,6 +150,28 @@
               <div>
                 <label style="font-weight:bold; display:block; margin-bottom:8px;">Description *</label>
                 <textarea name="rfq_description" placeholder="Describe what you're looking for..." style="width:100%; padding:10px; border:1px solid var(--border); border-radius:4px; min-height:100px; box-sizing:border-box; font-family:inherit;"></textarea>
+              </div>
+
+              <div style="display:grid; grid-template-columns:1fr 1fr; gap:20px;">
+                <div>
+                  <label style="font-weight:bold; display:block; margin-bottom:8px;">Province *</label>
+                  <select name="rfq_province" style="width:100%; padding:10px; border:1px solid var(--border); border-radius:4px; box-sizing:border-box;">
+                    <option value="">Select a province...</option>
+                    <option value="Eastern Cape">Eastern Cape</option>
+                    <option value="Free State">Free State</option>
+                    <option value="Gauteng">Gauteng</option>
+                    <option value="KwaZulu-Natal">KwaZulu-Natal</option>
+                    <option value="Limpopo">Limpopo</option>
+                    <option value="Mpumalanga">Mpumalanga</option>
+                    <option value="Northern Cape">Northern Cape</option>
+                    <option value="North West">North West</option>
+                    <option value="Western Cape">Western Cape</option>
+                  </select>
+                </div>
+                <div>
+                  <label style="font-weight:bold; display:block; margin-bottom:8px;">Town / Area (optional)</label>
+                  <input type="text" name="rfq_location_area" placeholder="e.g., Table Bay, Cape Town" style="width:100%; padding:10px; border:1px solid var(--border); border-radius:4px; box-sizing:border-box;">
+                </div>
               </div>
 
               <div style="display:grid; grid-template-columns:1fr 1fr; gap:20px;">
