@@ -37,14 +37,22 @@
       <div id="rfq-portal" style="display:none;"></div>
       <div id="no-rfq-message" style="display:none;"></div>
 
-      <div id="landing-section" style="display:none; max-width: 520px; margin: 0 auto;">
-        <div class="card" style="text-align:center;">
-          <h2 style="margin-top:0;">Welcome to RFQ Hub</h2>
-          <p style="color:var(--border); margin-bottom:25px;">A shared platform for managing requests for quotation. Each company signs in to its own account to create RFQs, invite contractors, and review submissions.</p>
-          <div style="display:flex; gap:12px; justify-content:center; flex-wrap:wrap;">
-            <button onclick="showLoginForm()" class="btn gold" style="padding:12px 24px;">Log In</button>
+      <div id="landing-section" style="display:none;">
+        <div style="max-width: 520px; margin: 0 auto 40px auto;">
+          <div class="card" style="text-align:center;">
+            <h2 style="margin-top:0;">Welcome to RFQ Hub</h2>
+            <p style="color:var(--border); margin-bottom:25px;">A shared platform for managing requests for quotation. Each company signs in to its own account to create RFQs, invite contractors, and review submissions.</p>
+            <div style="display:flex; gap:12px; justify-content:center; flex-wrap:wrap;">
+              <button onclick="showLoginForm()" class="btn gold" style="padding:12px 24px;">Log In</button>
+            </div>
+            <p style="margin-top:20px; font-size:13px; color:var(--border);">Company staff: access is by invitation only. If you're expecting access, check your email for an invite link.</p>
           </div>
-          <p style="margin-top:20px; font-size:13px; color:var(--border);">Access is by invitation only. If you're expecting access, check your email for an invite link.</p>
+        </div>
+
+        <div style="max-width: 900px; margin: 0 auto;">
+          <h2 style="margin-bottom:5px;">Open RFQs</h2>
+          <p style="color:var(--border); margin-bottom:20px;">Current requests for quotation from companies on this platform. Click one to review the details and apply.</p>
+          <div id="public-rfq-list"></div>
         </div>
       </div>
 
@@ -141,6 +149,19 @@
               </div>
 
               <div>
+                <label style="font-weight:bold; display:block; margin-bottom:8px;">Visibility *</label>
+                <p style="font-size:14px; color:var(--border); margin:0 0 10px 0;">Open RFQs are listed on the public portal for anyone to find and apply. Closed RFQs are only reachable via the invite links you send below.</p>
+                <div style="display:flex; gap:24px; flex-wrap:wrap;">
+                  <label style="font-weight:normal; display:flex; align-items:center; gap:6px; cursor:pointer;">
+                    <input type="radio" name="rfq_visibility" value="closed" checked> Closed &mdash; Invite Only
+                  </label>
+                  <label style="font-weight:normal; display:flex; align-items:center; gap:6px; cursor:pointer;">
+                    <input type="radio" name="rfq_visibility" value="open"> Open &mdash; Public Portal
+                  </label>
+                </div>
+              </div>
+
+              <div>
                 <label style="font-weight:bold; display:block; margin-bottom:8px;">Required Documents *</label>
                 <p style="font-size:14px; color:var(--border); margin:0 0 10px 0;">Click the button below to add document types contractors must submit</p>
                 <div id="required-docs-builder" style="margin-bottom:10px;"></div>
@@ -154,8 +175,8 @@
               </div>
 
               <div>
-                <label style="font-weight:bold; display:block; margin-bottom:8px;">Contractor Email Addresses *</label>
-                <p style="font-size:14px; color:var(--border); margin:0 0 10px 0;">Enter email addresses (one per line). You'll receive unique links for each contractor.</p>
+                <label id="contractor-emails-label" style="font-weight:bold; display:block; margin-bottom:8px;">Contractor Email Addresses *</label>
+                <p id="contractor-emails-hint" style="font-size:14px; color:var(--border); margin:0 0 10px 0;">Enter email addresses (one per line). Each gets a direct invite link and email. Required for Closed RFQs.</p>
                 <textarea name="contractor_emails" placeholder="contractor1@example.com&#10;contractor2@example.com" style="width:100%; padding:10px; border:1px solid var(--border); border-radius:4px; min-height:80px; box-sizing:border-box; font-family:inherit;"></textarea>
               </div>
 
