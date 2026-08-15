@@ -267,8 +267,8 @@ async function loadPublicRFQList(province) {
         <div class="card" style="cursor:pointer;" onclick="window.location.href = '${window.location.origin}${window.location.pathname}?open=${rfq.id}'">
           <div style="display:flex; justify-content:space-between; align-items:flex-start; gap:15px; flex-wrap:wrap;">
             <div style="flex:1; min-width:200px;">
-              <div style="display:flex; align-items:center; gap:8px; margin-bottom:6px;">
-                ${company && company.logo_url ? `<img src="${company.logo_url}" alt="${company.name}" style="height:28px; width:auto; max-width:90px; object-fit:contain;">` : ''}
+              <div style="display:flex; align-items:center; gap:8px; margin-bottom:8px; flex-wrap:wrap;">
+                ${company && company.logo_url ? `<img src="${company.logo_url}" alt="${company.name}" style="height:40px; width:auto; max-width:130px; object-fit:contain;">` : ''}
                 <p style="margin:0; font-size:12px; text-transform:uppercase; color:var(--border); font-weight:bold;">${company ? company.name : 'RFQ Hub'}</p>
               </div>
               <h3 style="margin:0 0 6px 0; color:var(--primary);">${rfq.rfq_name}</h3>
