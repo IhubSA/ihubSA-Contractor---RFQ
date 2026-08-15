@@ -308,6 +308,24 @@
           <p style="color:var(--border); font-size:14px; margin-bottom:20px;">Companies set up on the platform.</p>
           <div id="super-admin-companies-list"></div>
         </div>
+
+        <div class="card">
+          <h2 style="margin-top:0;">Change Password</h2>
+          <p style="color:var(--border); font-size:14px; margin-bottom:20px;">Update the password for your own (platform admin) login.</p>
+          <form id="super-change-password-form" style="display:flex; flex-direction:column; gap:15px; max-width:400px;">
+            <div>
+              <label style="font-weight:bold;">New Password *</label>
+              <input type="password" id="super-change-password-new" required minlength="6" style="width:100%; padding:10px; border:1px solid var(--border); border-radius:4px; box-sizing:border-box;">
+            </div>
+            <div>
+              <label style="font-weight:bold;">Confirm New Password *</label>
+              <input type="password" id="super-change-password-confirm" required minlength="6" style="width:100%; padding:10px; border:1px solid var(--border); border-radius:4px; box-sizing:border-box;">
+            </div>
+            <div style="display:flex; justify-content:flex-end;">
+              <button type="submit" class="btn gold" style="padding:10px 24px;">Update Password</button>
+            </div>
+          </form>
+        </div>
       </div>
     </div>
   </div>
