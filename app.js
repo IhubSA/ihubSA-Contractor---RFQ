@@ -18,17 +18,23 @@ const DEFAULT_HERO_SUBTITLE = "Open requests for quotation. Apply directly onlin
 async function initApp() {
   console.log('Initializing RFQ Hub...');
 
-  client = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
-  console.log('✅ Supabase connected');
-
-  setupStaticForms();
-  await loadPlatformSettings();
-
+  // Capture the URL's search params and auth hash FIRST, before any
+  // await below. Supabase's own client processes and clears the
+  // #access_token=...&type=invite hash asynchronously as soon as the
+  // client is created — if we read it after an await, it's often already
+  // gone by the time we check it, which silently skips the "set your
+  // password" screen for invite/recovery links.
   const params = new URLSearchParams(window.location.search);
   const rfqToken = params.get('rfq');
   const openRfqId = params.get('open');
   const wantsAdmin = params.has('admin');
   const authType = getUrlHashParams().get('type'); // 'invite' or 'recovery' when landing from an invite/reset link
+
+  client = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+  console.log('✅ Supabase connected');
+
+  setupStaticForms();
+  await loadPlatformSettings();
 
   if (rfqToken) {
     console.log('Loading RFQ with token:', rfqToken);
