@@ -25,6 +25,7 @@ async function initApp() {
   const params = new URLSearchParams(window.location.search);
   const rfqToken = params.get('rfq');
   const wantsAdmin = params.has('admin');
+  const authType = getUrlHashParams().get('type'); // 'invite' or 'recovery' when landing from an invite/reset link
 
   if (rfqToken) {
     console.log('Loading RFQ with token:', rfqToken);
@@ -38,6 +39,15 @@ async function initApp() {
     const { data: { session } } = await client.auth.getSession();
     if (session && session.user) {
       currentUser = session.user;
+
+      if (authType === 'invite' || authType === 'recovery') {
+        // They have a valid session from the invite link but haven't set a
+        // password yet — make them do that before routing into the dashboard.
+        applyDefaultBranding();
+        showSetPasswordView();
+        return;
+      }
+
       await loadCurrentCompanyAndRoute(wantsAdmin);
       return;
     }
@@ -60,10 +70,10 @@ function setupStaticForms() {
     loginForm.dataset.wired = 'true';
   }
 
-  const signupForm = document.getElementById('signup-form');
-  if (signupForm && !signupForm.dataset.wired) {
-    signupForm.addEventListener('submit', handleSignupSubmit);
-    signupForm.dataset.wired = 'true';
+  const setPasswordForm = document.getElementById('set-password-form');
+  if (setPasswordForm && !setPasswordForm.dataset.wired) {
+    setPasswordForm.addEventListener('submit', handleSetPasswordSubmit);
+    setPasswordForm.dataset.wired = 'true';
   }
 
   const settingsForm = document.getElementById('settings-form');
@@ -77,6 +87,25 @@ function setupStaticForms() {
     logoFile.addEventListener('change', handleLogoFileChange);
     logoFile.dataset.wired = 'true';
   }
+
+  const inviteTeammateForm = document.getElementById('invite-teammate-form');
+  if (inviteTeammateForm && !inviteTeammateForm.dataset.wired) {
+    inviteTeammateForm.addEventListener('submit', handleInviteTeammateSubmit);
+    inviteTeammateForm.dataset.wired = 'true';
+  }
+
+  const inviteCompanyForm = document.getElementById('invite-company-form');
+  if (inviteCompanyForm && !inviteCompanyForm.dataset.wired) {
+    inviteCompanyForm.addEventListener('submit', handleInviteCompanySubmit);
+    inviteCompanyForm.dataset.wired = 'true';
+  }
+}
+
+function getUrlHashParams() {
+  const hash = window.location.hash && window.location.hash.startsWith('#')
+    ? window.location.hash.slice(1)
+    : (window.location.hash || '');
+  return new URLSearchParams(hash);
 }
 
 // ===== VIEW SWITCHING =====
@@ -87,7 +116,7 @@ function hideAllTopLevelViews() {
 }
 
 function hideAllPublicSections() {
-  ['rfq-portal', 'no-rfq-message', 'landing-section', 'login-section', 'signup-section'].forEach(id => {
+  ['rfq-portal', 'no-rfq-message', 'landing-section', 'login-section', 'set-password-section'].forEach(id => {
     const el = document.getElementById(id);
     if (el) el.style.display = 'none';
   });
@@ -98,8 +127,7 @@ function setHeaderActions(mode) {
   if (!el) return;
   if (mode === 'loggedOut') {
     el.innerHTML = `
-      <button onclick="showLoginForm()" class="btn secondary" style="padding:8px 16px;">Log In</button>
-      <button onclick="showSignupForm()" class="btn gold" style="padding:8px 16px;">Sign Up</button>
+      <button onclick="showLoginForm()" class="btn gold" style="padding:8px 16px;">Log In</button>
     `;
   } else {
     el.innerHTML = '';
@@ -122,11 +150,11 @@ function showLoginForm() {
   setHeaderActions('form');
 }
 
-function showSignupForm() {
+function showSetPasswordView() {
   hideAllTopLevelViews();
   document.getElementById('public-view').style.display = 'block';
   hideAllPublicSections();
-  document.getElementById('signup-section').style.display = 'block';
+  document.getElementById('set-password-section').style.display = 'block';
   setHeaderActions('form');
 }
 
@@ -179,46 +207,146 @@ async function handleLoginSubmit(e) {
   }
 }
 
-async function handleSignupSubmit(e) {
+async function handleSetPasswordSubmit(e) {
   e.preventDefault();
-  const companyName = document.getElementById('signup-company-name').value.trim();
-  const email = document.getElementById('signup-email').value.trim();
-  const password = document.getElementById('signup-password').value;
-  const confirmPassword = document.getElementById('signup-password-confirm').value;
+  const password = document.getElementById('set-password-new').value;
+  const confirmPassword = document.getElementById('set-password-confirm').value;
 
-  if (!companyName || !email || !password) {
-    showToast('Please fill in all required fields', 'error');
+  if (password.length < 6) {
+    showToast('Password must be at least 6 characters', 'error');
     return;
   }
   if (password !== confirmPassword) {
     showToast('Passwords do not match', 'error');
     return;
   }
-  if (password.length < 6) {
-    showToast('Password must be at least 6 characters', 'error');
+
+  try {
+    const { error } = await client.auth.updateUser({ password });
+    if (error) throw error;
+
+    // Drop the invite/recovery hash so a page refresh doesn't re-trigger this view
+    history.replaceState(null, '', window.location.pathname + window.location.search);
+
+    showToast('✅ Password set!', 'success');
+    await loadCurrentCompanyAndRoute(false);
+  } catch (err) {
+    console.error('Set password error:', err);
+    showToast('Error: ' + err.message, 'error');
+  }
+}
+
+// ===== INVITES =====
+async function callInviteFunction(payload) {
+  const { data: { session } } = await client.auth.getSession();
+  if (!session) throw new Error('You must be logged in to send invites');
+
+  const response = await fetch(`${SUPABASE_URL}/functions/v1/invite-member`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${session.access_token}`
+    },
+    body: JSON.stringify(payload)
+  });
+
+  const result = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    throw new Error(result.error || `Invite failed (${response.status})`);
+  }
+  return result;
+}
+
+async function handleInviteCompanySubmit(e) {
+  e.preventDefault();
+  const companyName = document.getElementById('invite-company-name').value.trim();
+  const email = document.getElementById('invite-company-email').value.trim();
+
+  if (!companyName || !email) {
+    showToast('Please fill in both fields', 'error');
     return;
   }
 
   try {
-    showToast('Creating your account...', 'info');
-    const { data, error } = await client.auth.signUp({
-      email,
-      password,
-      options: { data: { company_name: companyName } }
-    });
-    if (error) throw error;
-
-    if (data.session) {
-      currentUser = data.user;
-      showToast('✅ Account created!', 'success');
-      await loadCurrentCompanyAndRoute(false);
-    } else {
-      showToast('✅ Account created! Check your email to confirm, then log in.', 'success');
-      showLoginForm();
-    }
+    showToast('Sending invite...', 'info');
+    await callInviteFunction({ companyName, email });
+    showToast(`✅ Invited ${email} to set up "${companyName}"`, 'success');
+    document.getElementById('invite-company-form').reset();
+    loadSuperAdminCompanies();
   } catch (err) {
-    console.error('Signup error:', err);
-    showToast('Signup failed: ' + err.message, 'error');
+    console.error('Invite company error:', err);
+    showToast('Error: ' + err.message, 'error');
+  }
+}
+
+async function handleInviteTeammateSubmit(e) {
+  e.preventDefault();
+  if (!currentCompany) return;
+  const email = document.getElementById('invite-teammate-email').value.trim();
+
+  if (!email) {
+    showToast('Please enter an email', 'error');
+    return;
+  }
+
+  try {
+    showToast('Sending invite...', 'info');
+    await callInviteFunction({ companyId: currentCompany.id, email, role: 'staff' });
+    showToast(`✅ Invited ${email} to your team`, 'success');
+    document.getElementById('invite-teammate-form').reset();
+    loadTeamMembers();
+  } catch (err) {
+    console.error('Invite teammate error:', err);
+    showToast('Error: ' + err.message, 'error');
+  }
+}
+
+async function loadTeamMembers() {
+  if (!currentCompany) return;
+  try {
+    const { data: members, error: membersError } = await client
+      .from('company_members')
+      .select('id, role, email, user_id')
+      .eq('company_id', currentCompany.id)
+      .order('created_at', { ascending: true });
+
+    if (membersError) throw membersError;
+
+    const { data: invites } = await client
+      .from('company_invitations')
+      .select('id, email, created_at')
+      .eq('company_id', currentCompany.id)
+      .eq('status', 'pending')
+      .order('created_at', { ascending: false });
+
+    let html = '';
+
+    if (members && members.length > 0) {
+      html += members.map(m => `
+        <div style="display:flex; justify-content:space-between; align-items:center; padding:10px; border:1px solid var(--border); border-radius:4px; margin-bottom:8px;">
+          <span>${m.email || m.user_id}${currentUser && m.user_id === currentUser.id ? ' <span style="color:var(--border); font-size:12px;">(you)</span>' : ''}</span>
+          <span class="submission-status approved" style="text-transform:capitalize;">${m.role}</span>
+        </div>
+      `).join('');
+    } else {
+      html += '<p style="color:var(--border); font-style:italic;">No team members found.</p>';
+    }
+
+    if (invites && invites.length > 0) {
+      html += '<h4 style="margin-top:20px; margin-bottom:10px; font-size:12px; text-transform:uppercase; color:var(--border);">Pending Invites</h4>';
+      html += invites.map(inv => `
+        <div style="display:flex; justify-content:space-between; align-items:center; padding:10px; border:1px dashed var(--border); border-radius:4px; margin-bottom:8px;">
+          <span>${inv.email}</span>
+          <span style="font-size:12px; color:var(--border);">Invited ${new Date(inv.created_at).toLocaleDateString()}</span>
+        </div>
+      `).join('');
+    }
+
+    document.getElementById('team-members-list').innerHTML = html;
+  } catch (err) {
+    console.error('Error loading team:', err);
+    const el = document.getElementById('team-members-list');
+    if (el) el.innerHTML = '<p style="color:var(--warning);">Error loading team.</p>';
   }
 }
 
@@ -541,6 +669,7 @@ function switchAdminTab(tabName, button) {
     loadSubmissions();
   } else if (tabName === 'settings') {
     loadSettingsTab();
+    loadTeamMembers();
   }
 }
 
