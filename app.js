@@ -94,6 +94,12 @@ function setupStaticForms() {
     changePasswordForm.dataset.wired = 'true';
   }
 
+  const superChangePasswordForm = document.getElementById('super-change-password-form');
+  if (superChangePasswordForm && !superChangePasswordForm.dataset.wired) {
+    superChangePasswordForm.addEventListener('submit', handleSuperChangePasswordSubmit);
+    superChangePasswordForm.dataset.wired = 'true';
+  }
+
   const inviteTeammateForm = document.getElementById('invite-teammate-form');
   if (inviteTeammateForm && !inviteTeammateForm.dataset.wired) {
     inviteTeammateForm.addEventListener('submit', handleInviteTeammateSubmit);
@@ -243,9 +249,17 @@ async function handleSetPasswordSubmit(e) {
 }
 
 async function handleChangePasswordSubmit(e) {
+  return submitPasswordChange(e, 'change-password-new', 'change-password-confirm', 'change-password-form');
+}
+
+async function handleSuperChangePasswordSubmit(e) {
+  return submitPasswordChange(e, 'super-change-password-new', 'super-change-password-confirm', 'super-change-password-form');
+}
+
+async function submitPasswordChange(e, newFieldId, confirmFieldId, formId) {
   e.preventDefault();
-  const password = document.getElementById('change-password-new').value;
-  const confirmPassword = document.getElementById('change-password-confirm').value;
+  const password = document.getElementById(newFieldId).value;
+  const confirmPassword = document.getElementById(confirmFieldId).value;
 
   if (password.length < 6) {
     showToast('Password must be at least 6 characters', 'error');
@@ -259,7 +273,7 @@ async function handleChangePasswordSubmit(e) {
   try {
     const { error } = await client.auth.updateUser({ password });
     if (error) throw error;
-    document.getElementById('change-password-form').reset();
+    document.getElementById(formId).reset();
     showToast('✅ Password updated', 'success');
   } catch (err) {
     console.error('Change password error:', err);
