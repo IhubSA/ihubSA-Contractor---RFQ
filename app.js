@@ -30,10 +30,15 @@ async function initApp() {
   const wantsAdmin = params.has('admin');
   const authType = getUrlHashParams().get('type'); // 'invite' or 'recovery' when landing from an invite/reset link
 
+  // Wire up static form/UI listeners before touching the Supabase client —
+  // this work has no network dependency, so the page stays interactive
+  // (login form, settings sliders, etc.) even if the Supabase SDK is slow
+  // to load from its CDN, and it means a client-creation failure below
+  // can't silently skip wiring the rest of the page.
+  setupStaticForms();
+
   client = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
   console.log('✅ Supabase connected');
-
-  setupStaticForms();
   await loadPlatformSettings();
 
   if (rfqToken) {
@@ -105,6 +110,13 @@ function setupStaticForms() {
     logoFile.dataset.wired = 'true';
   }
 
+  const logoScale = document.getElementById('settings-logo-scale');
+  if (logoScale && !logoScale.dataset.wired) {
+    logoScale.addEventListener('input', handleSettingsLogoScaleInput);
+    logoScale.addEventListener('change', handleSettingsLogoScaleChange);
+    logoScale.dataset.wired = 'true';
+  }
+
   const changePasswordForm = document.getElementById('change-password-form');
   if (changePasswordForm && !changePasswordForm.dataset.wired) {
     changePasswordForm.addEventListener('submit', handleChangePasswordSubmit);
@@ -134,19 +146,69 @@ function setupStaticForms() {
     platformLogoFile.addEventListener('change', handlePlatformLogoFileChange);
     platformLogoFile.dataset.wired = 'true';
   }
+
+  const platformLogoScale = document.getElementById('platform-logo-scale');
+  if (platformLogoScale && !platformLogoScale.dataset.wired) {
+    platformLogoScale.addEventListener('input', handlePlatformLogoScaleInput);
+    platformLogoScale.addEventListener('change', handlePlatformLogoScaleChange);
+    platformLogoScale.dataset.wired = 'true';
+  }
 }
 
 function renderPlatformLogoPreview() {
   const preview = document.getElementById('platform-logo-preview');
   const placeholder = document.getElementById('platform-logo-placeholder');
+  const scaleInput = document.getElementById('platform-logo-scale');
+  const scaleLabel = document.getElementById('platform-logo-scale-label');
   if (!preview || !placeholder) return;
+
+  const scale = (platformSettings && platformSettings.logo_scale) || 1;
+  if (scaleInput) scaleInput.value = Math.round(scale * 100);
+  if (scaleLabel) scaleLabel.textContent = `${Math.round(scale * 100)}%`;
+
   if (platformSettings && platformSettings.logo_url) {
+    applyLogoScale(preview, scale);
     preview.src = platformSettings.logo_url;
     preview.style.display = 'block';
     placeholder.style.display = 'none';
   } else {
     preview.style.display = 'none';
     placeholder.style.display = 'flex';
+  }
+}
+
+function handlePlatformLogoScaleInput(e) {
+  const pct = Number(e.target.value);
+  const label = document.getElementById('platform-logo-scale-label');
+  if (label) label.textContent = `${pct}%`;
+  const preview = document.getElementById('platform-logo-preview');
+  if (preview && preview.style.display !== 'none') {
+    applyLogoScale(preview, pct / 100);
+  }
+}
+
+async function handlePlatformLogoScaleChange(e) {
+  if (!isSuperAdmin) return;
+  const pct = Number(e.target.value);
+  const scale = Math.min(1.5, Math.max(0.5, pct / 100));
+  try {
+    const { error } = await client
+      .from('platform_settings')
+      .update({ logo_scale: scale, updated_at: new Date().toISOString() })
+      .eq('id', 1);
+    if (error) throw error;
+
+    platformSettings = { ...platformSettings, logo_scale: scale };
+
+    const brandImg = document.getElementById('brand-logo-img');
+    if (brandImg && brandImg.style.display !== 'none') {
+      applyLogoScale(brandImg, scale);
+    }
+
+    showToast('✅ Logo size saved', 'success');
+  } catch (err) {
+    console.error('Error saving logo size:', err);
+    showToast('❌ Error saving logo size: ' + err.message, 'error');
   }
 }
 
@@ -173,7 +235,7 @@ async function handlePlatformLogoFileChange(e) {
       .eq('id', 1);
     if (updateError) throw updateError;
 
-    platformSettings = { logo_url: logoUrl };
+    platformSettings = { ...platformSettings, logo_url: logoUrl };
     renderPlatformLogoPreview();
     showToast('✅ Platform logo updated', 'success');
   } catch (err) {
@@ -259,7 +321,7 @@ async function loadPublicRFQList(province) {
     if (companyIds.length > 0) {
       const { data: companies } = await client
         .from('companies')
-        .select('id, name, logo_url')
+        .select('id, name, logo_url, logo_scale')
         .in('id', companyIds);
       companiesById = Object.fromEntries((companies || []).map(c => [c.id, c]));
     }
@@ -269,12 +331,15 @@ async function loadPublicRFQList(province) {
       const deadlineDate = new Date(rfq.deadline);
       const locationParts = [rfq.location_area, rfq.province].filter(Boolean);
       const locationText = locationParts.join(', ');
+      const cardLogoScale = Math.min(1.5, Math.max(0.5, (company && company.logo_scale) || 1));
+      const cardLogoHeight = Math.round(40 * cardLogoScale);
+      const cardLogoMaxWidth = Math.round(130 * cardLogoScale);
       return `
         <div class="card" style="cursor:pointer;" onclick="window.location.href = '${window.location.origin}${window.location.pathname}?open=${rfq.id}'">
           <div style="display:flex; justify-content:space-between; align-items:flex-start; gap:15px; flex-wrap:wrap;">
             <div style="flex:1; min-width:200px;">
               <div style="display:flex; align-items:center; gap:8px; margin-bottom:8px; flex-wrap:wrap;">
-                ${company && company.logo_url ? `<img src="${company.logo_url}" alt="${company.name}" style="height:40px; width:auto; max-width:130px; object-fit:contain;">` : ''}
+                ${company && company.logo_url ? `<img src="${company.logo_url}" alt="${company.name}" style="height:${cardLogoHeight}px; width:auto; max-width:${cardLogoMaxWidth}px; object-fit:contain;">` : ''}
                 <p style="margin:0; font-size:12px; text-transform:uppercase; color:var(--border); font-weight:bold;">${company ? company.name : 'RFQ Hub'}</p>
               </div>
               <h3 style="margin:0 0 6px 0; color:var(--primary);">${rfq.rfq_name}</h3>
@@ -336,6 +401,18 @@ function updateFooterCompanyName(name) {
   if (el) el.textContent = name || 'RFQ Hub';
 }
 
+// Base header logo size at 100% scale. A company/platform's logo_scale
+// (0.5–1.5, enforced server-side too) multiplies both dimensions so a
+// wide wordmark still keeps its aspect ratio via object-fit:contain.
+const BASE_LOGO_HEIGHT = 84;
+const BASE_LOGO_MAX_WIDTH = 260;
+
+function applyLogoScale(imgEl, scale) {
+  const s = Math.min(1.5, Math.max(0.5, Number(scale) || 1));
+  imgEl.style.height = `${Math.round(BASE_LOGO_HEIGHT * s)}px`;
+  imgEl.style.maxWidth = `${Math.round(BASE_LOGO_MAX_WIDTH * s)}px`;
+}
+
 function applyDefaultBranding() {
   document.getElementById('brand-title').textContent = 'RFQ Hub';
   document.getElementById('brand-subtitle').textContent = 'Request for Quotation Management System';
@@ -346,6 +423,7 @@ function applyDefaultBranding() {
   const img = document.getElementById('brand-logo-img');
   const def = document.getElementById('brand-logo-default');
   if (platformSettings && platformSettings.logo_url) {
+    applyLogoScale(img, platformSettings.logo_scale);
     img.src = platformSettings.logo_url;
     img.style.display = 'block';
     def.style.display = 'none';
@@ -367,6 +445,7 @@ function applyCompanyBranding(company, opts = {}) {
   const img = document.getElementById('brand-logo-img');
   const def = document.getElementById('brand-logo-default');
   if (company.logo_url) {
+    applyLogoScale(img, company.logo_scale);
     img.src = company.logo_url;
     img.style.display = 'block';
     def.style.display = 'none';
@@ -976,13 +1055,58 @@ function loadSettingsTab() {
 
   const preview = document.getElementById('settings-logo-preview');
   const placeholder = document.getElementById('settings-logo-placeholder');
+  const scaleInput = document.getElementById('settings-logo-scale');
+  const scaleLabel = document.getElementById('settings-logo-scale-label');
+
+  const scale = currentCompany.logo_scale || 1;
+  if (scaleInput) scaleInput.value = Math.round(scale * 100);
+  if (scaleLabel) scaleLabel.textContent = `${Math.round(scale * 100)}%`;
+
   if (currentCompany.logo_url) {
+    applyLogoScale(preview, scale);
     preview.src = currentCompany.logo_url;
     preview.style.display = 'block';
     placeholder.style.display = 'none';
   } else {
     preview.style.display = 'none';
     placeholder.style.display = 'flex';
+  }
+}
+
+function handleSettingsLogoScaleInput(e) {
+  const pct = Number(e.target.value);
+  const label = document.getElementById('settings-logo-scale-label');
+  if (label) label.textContent = `${pct}%`;
+  const preview = document.getElementById('settings-logo-preview');
+  if (preview && preview.style.display !== 'none') {
+    applyLogoScale(preview, pct / 100);
+  }
+}
+
+async function handleSettingsLogoScaleChange(e) {
+  if (!currentCompany) return;
+  const pct = Number(e.target.value);
+  const scale = Math.min(1.5, Math.max(0.5, pct / 100));
+  try {
+    const { error } = await client
+      .from('companies')
+      .update({ logo_scale: scale, updated_at: new Date().toISOString() })
+      .eq('id', currentCompany.id);
+    if (error) throw error;
+
+    currentCompany.logo_scale = scale;
+
+    // Live-update the real header logo too, without disturbing the
+    // title/subtitle text currently shown there.
+    const brandImg = document.getElementById('brand-logo-img');
+    if (brandImg && brandImg.style.display !== 'none') {
+      applyLogoScale(brandImg, scale);
+    }
+
+    showToast('✅ Logo size saved', 'success');
+  } catch (err) {
+    console.error('Error saving logo size:', err);
+    showToast('❌ Error saving logo size: ' + err.message, 'error');
   }
 }
 
