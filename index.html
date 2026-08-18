@@ -575,20 +575,36 @@
       </div>
       <div class="modal-body">
         <div id="submission-details-content"></div>
+        <div id="submission-info-request-box" style="display:none; margin-top:20px; padding:15px; background:#FFF8E1; border-radius:4px; border-left:3px solid #B8860B;">
+          <h4 style="margin:0 0 8px 0;">Information Requested</h4>
+          <p id="submission-info-request-text" style="margin:0 0 6px 0; white-space:pre-wrap;"></p>
+          <p id="submission-info-request-date" style="margin:0; font-size:12px; color:var(--border);"></p>
+        </div>
+        <div id="submission-info-response-box" style="display:none; margin-top:20px; padding:15px; background:#E1F0FF; border-radius:4px; border-left:3px solid #0B2A4A;">
+          <h4 style="margin:0 0 8px 0;">Contractor's Response</h4>
+          <p id="submission-info-response-text" style="margin:0 0 6px 0; white-space:pre-wrap;"></p>
+          <p id="submission-info-response-date" style="margin:0; font-size:12px; color:var(--border);"></p>
+        </div>
         <div style="margin-top:30px; padding-top:20px; border-top:1px solid var(--border);">
           <h4>Uploaded Documents</h4>
           <div id="submission-documents-list"></div>
         </div>
       </div>
+      <div id="submission-info-request-form" style="display:none; padding:0 24px 20px 24px;">
+        <label style="font-weight:bold; font-size:12px; text-transform:uppercase; color:var(--ink);">What information do you need from the contractor?</label>
+        <textarea id="submission-info-request-message" rows="3" style="width:100%; margin-top:6px; padding:10px; border:1px solid var(--border); border-radius:4px; font-family:inherit;" placeholder="e.g. Please upload your latest B-BBEE certificate and confirm your VAT number."></textarea>
+      </div>
       <div class="modal-foot">
         <button type="button" class="btn secondary" onclick="closeModal('submission-detail-modal')">Close</button>
-        <select id="submission-status-update" style="padding:8px 12px; border:1px solid var(--border); border-radius:4px;">
+        <select id="submission-status-update" onchange="onSubmissionStatusSelectChange()" style="padding:8px 12px; border:1px solid var(--border); border-radius:4px;">
           <option value="submitted">Submitted</option>
           <option value="under_review">Under Review</option>
+          <option value="info_requested">Request More Information</option>
+          <option value="response_received">Response Received</option>
           <option value="approved">Approved</option>
           <option value="rejected">Rejected</option>
         </select>
-        <button type="button" class="btn gold" onclick="updateSubmissionStatus()">Update Status</button>
+        <button type="button" id="submission-status-action-btn" class="btn gold" onclick="handleSubmissionStatusAction()">Update Status</button>
       </div>
     </div>
   </div>
