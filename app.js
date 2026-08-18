@@ -1370,12 +1370,29 @@ async function submitContractorForm(token) {
   }
 }
 
+// Shows the company's logo next to its name in the dashboard header bar
+// (distinct from the site-wide masthead logo) so the page feels like it
+// belongs to that company. Hides the <img> entirely when there's no logo.
+function updateAdminHeaderLogo(company) {
+  const img = document.getElementById('admin-header-logo');
+  if (!img) return;
+  if (company && company.logo_url) {
+    img.src = company.logo_url;
+    img.alt = company.name || '';
+    img.style.display = 'block';
+  } else {
+    img.style.display = 'none';
+    img.src = '';
+  }
+}
+
 // ===== ADMIN VIEW (Company Dashboard) =====
 function showAdminView() {
   hideAllTopLevelViews();
   document.getElementById('admin-view').style.display = 'block';
 
   document.getElementById('admin-company-name').textContent = currentCompany ? currentCompany.name : 'RFQ Management';
+  updateAdminHeaderLogo(currentCompany);
   applyCompanyBranding(currentCompany, {
     heroTitle: currentCompany ? currentCompany.name : 'RFQ Hub',
     heroSubtitle: 'Manage your RFQs, contractor invitations, and submissions.'
@@ -1517,6 +1534,7 @@ async function handleLogoFileChange(e) {
     currentCompany.logo_url = logoUrl;
     loadSettingsTab();
     document.getElementById('admin-company-name').textContent = currentCompany.name;
+    updateAdminHeaderLogo(currentCompany);
     applyCompanyBranding(currentCompany, {
       heroTitle: currentCompany.name,
       heroSubtitle: 'Manage your RFQs, contractor invitations, and submissions.'
@@ -1562,6 +1580,7 @@ async function handleSettingsSubmit(e) {
     currentCompany.address = address;
 
     document.getElementById('admin-company-name').textContent = name;
+    updateAdminHeaderLogo(currentCompany);
     applyCompanyBranding(currentCompany, {
       heroTitle: name,
       heroSubtitle: 'Manage your RFQs, contractor invitations, and submissions.'
