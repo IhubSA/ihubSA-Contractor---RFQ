@@ -215,14 +215,17 @@
       </div>
 
       <div class="page-pad" style="padding: 40px; max-width: 1200px; margin: 0 auto;">
-        <!-- Tab Navigation -->
-        <div style="display: flex; gap: 10px; margin-bottom: 30px; border-bottom: 2px solid #E4E7EB; flex-wrap:wrap;">
-          <button class="tab-btn active" onclick="switchAdminTab('create', this)" style="padding: 12px 20px; border: none; background: none; cursor: pointer; font-weight: bold; color: #666; border-bottom: 3px solid transparent; margin-bottom: -2px;">Create RFQ</button>
-          <button class="tab-btn" onclick="switchAdminTab('console', this)" style="padding: 12px 20px; border: none; background: none; cursor: pointer; font-weight: bold; color: #666; border-bottom: 3px solid transparent; margin-bottom: -2px;">RFQ Console</button>
-          <button class="tab-btn" onclick="switchAdminTab('submissions', this)" style="padding: 12px 20px; border: none; background: none; cursor: pointer; font-weight: bold; color: #666; border-bottom: 3px solid transparent; margin-bottom: -2px;">Review Submissions</button>
-          <button class="tab-btn" onclick="switchAdminTab('settings', this)" style="padding: 12px 20px; border: none; background: none; cursor: pointer; font-weight: bold; color: #666; border-bottom: 3px solid transparent; margin-bottom: -2px;">Settings</button>
-        </div>
+        <div class="admin-layout">
+          <!-- Section Navigation -->
+          <div class="admin-sidebar">
+            <button class="sidebar-tab-btn company-tab-btn active" onclick="switchAdminTab('create', this)">Create RFQ</button>
+            <button class="sidebar-tab-btn company-tab-btn" onclick="switchAdminTab('console', this)">RFQ Console</button>
+            <button class="sidebar-tab-btn company-tab-btn" onclick="switchAdminTab('submissions', this)">Review Submissions</button>
+            <button class="sidebar-tab-btn company-tab-btn" onclick="switchAdminTab('team', this)">Team</button>
+            <button class="sidebar-tab-btn company-tab-btn" onclick="switchAdminTab('settings', this)">Settings</button>
+          </div>
 
+          <div class="admin-content">
         <!-- CREATE RFQ TAB -->
         <div id="create-tab" class="admin-tab" style="display:block;">
           <div class="card">
@@ -350,6 +353,24 @@
           </div>
         </div>
 
+        <!-- TEAM TAB -->
+        <div id="team-tab" class="admin-tab" style="display:none;">
+          <div class="card">
+            <h2 style="margin-top:0;">Team</h2>
+            <p style="color:var(--border); font-size:14px; margin-bottom:20px;">People with access to this company's RFQ Hub admin section.</p>
+            <div id="team-members-list" style="margin-bottom:25px;"></div>
+
+            <h3 style="font-size:16px;">Invite a Teammate</h3>
+            <form id="invite-teammate-form" style="display:flex; gap:10px; flex-wrap:wrap; align-items:flex-end; margin-top:10px;">
+              <div style="flex:1; min-width:220px;">
+                <label style="font-weight:bold;">Email *</label>
+                <input type="email" id="invite-teammate-email" required style="width:100%; padding:10px; border:1px solid var(--border); border-radius:4px; box-sizing:border-box;">
+              </div>
+              <button type="submit" class="btn gold" style="padding:10px 20px;">Send Invite</button>
+            </form>
+          </div>
+        </div>
+
         <!-- SETTINGS TAB -->
         <div id="settings-tab" class="admin-tab" style="display:none;">
           <div class="card">
@@ -416,20 +437,7 @@
               </div>
             </form>
           </div>
-
-          <div class="card">
-            <h2 style="margin-top:0;">Team</h2>
-            <p style="color:var(--border); font-size:14px; margin-bottom:20px;">People with access to this company's RFQ Hub admin section.</p>
-            <div id="team-members-list" style="margin-bottom:25px;"></div>
-
-            <h3 style="font-size:16px;">Invite a Teammate</h3>
-            <form id="invite-teammate-form" style="display:flex; gap:10px; flex-wrap:wrap; align-items:flex-end; margin-top:10px;">
-              <div style="flex:1; min-width:220px;">
-                <label style="font-weight:bold;">Email *</label>
-                <input type="email" id="invite-teammate-email" required style="width:100%; padding:10px; border:1px solid var(--border); border-radius:4px; box-sizing:border-box;">
-              </div>
-              <button type="submit" class="btn gold" style="padding:10px 20px;">Send Invite</button>
-            </form>
+        </div>
           </div>
         </div>
       </div>
@@ -447,73 +455,96 @@
         </div>
       </div>
       <div class="page-pad" style="padding: 40px; max-width: 1200px; margin: 0 auto;">
-        <div class="card">
-          <h2 style="margin-top:0;">Invite a Company</h2>
-          <p style="color:var(--border); font-size:14px; margin-bottom:20px;">Set up a new contractor and invite the first person who'll manage their RFQs. They'll get an email to set their own password.</p>
-          <form id="invite-company-form" style="display:flex; gap:10px; flex-wrap:wrap; align-items:flex-end;">
-            <div style="flex:1; min-width:200px;">
-              <label style="font-weight:bold;">Company Name *</label>
-              <input type="text" id="invite-company-name" required style="width:100%; padding:10px; border:1px solid var(--border); border-radius:4px; box-sizing:border-box;">
-            </div>
-            <div style="flex:1; min-width:220px;">
-              <label style="font-weight:bold;">First Admin's Email *</label>
-              <input type="email" id="invite-company-email" required style="width:100%; padding:10px; border:1px solid var(--border); border-radius:4px; box-sizing:border-box;">
-            </div>
-            <button type="submit" class="btn gold" style="padding:10px 20px;">Send Invite</button>
-          </form>
-        </div>
-
-        <div class="card">
-          <h2 style="margin-top:0;">Platform Branding</h2>
-          <p style="color:var(--border); font-size:14px; margin-bottom:20px;">This logo appears on the main public portal (the "RFQ Hub" landing page) whenever no specific company is in context.</p>
-          <div style="display:flex; align-items:center; gap:15px; flex-wrap:wrap;">
-            <div style="width:140px; height:140px; border:1px solid var(--border); border-radius:8px; background:var(--bg-2); display:flex; align-items:center; justify-content:center; overflow:hidden; flex-shrink:0;">
-              <img id="platform-logo-preview" src="" alt="Platform logo preview" style="max-width:260px; height:84px; width:auto; object-fit:contain; display:none;">
-              <span id="platform-logo-placeholder" style="color:var(--border); font-size:11px; text-align:center; padding:0 10px;">No logo</span>
-            </div>
-            <div>
-              <input type="file" id="platform-logo-file" accept="image/png,image/jpeg,image/svg+xml,image/webp">
-              <p style="font-size:12px; color:var(--border); margin-top:5px;">PNG, JPG, SVG or WebP. Uploads immediately.</p>
-            </div>
+        <div class="admin-layout">
+          <!-- Section Navigation -->
+          <div class="admin-sidebar">
+            <button class="sidebar-tab-btn super-tab-btn active" onclick="switchSuperAdminTab('super-invite', this)">Invite a Company</button>
+            <button class="sidebar-tab-btn super-tab-btn" onclick="switchSuperAdminTab('super-branding', this)">Platform Branding</button>
+            <button class="sidebar-tab-btn super-tab-btn" onclick="switchSuperAdminTab('super-companies', this)">All Companies</button>
+            <button class="sidebar-tab-btn super-tab-btn" onclick="switchSuperAdminTab('super-applicants', this)">Registered Applicants</button>
+            <button class="sidebar-tab-btn super-tab-btn" onclick="switchSuperAdminTab('super-password', this)">Change Password</button>
           </div>
-          <div style="margin-top:14px; max-width:320px;">
-            <label style="font-weight:bold; font-size:13px; display:flex; justify-content:space-between;">
-              <span>Logo Size</span>
-              <span id="platform-logo-scale-label" style="font-weight:normal; color:var(--border);">100%</span>
-            </label>
-            <input type="range" id="platform-logo-scale" min="50" max="150" step="5" value="100" style="width:100%;">
-            <p style="font-size:12px; color:var(--border); margin-top:5px;">Scales the platform logo in the site header. The preview above matches the header size.</p>
+
+          <div class="admin-content">
+        <div id="super-invite-tab" class="super-tab" style="display:block;">
+          <div class="card">
+            <h2 style="margin-top:0;">Invite a Company</h2>
+            <p style="color:var(--border); font-size:14px; margin-bottom:20px;">Set up a new contractor and invite the first person who'll manage their RFQs. They'll get an email to set their own password.</p>
+            <form id="invite-company-form" style="display:flex; gap:10px; flex-wrap:wrap; align-items:flex-end;">
+              <div style="flex:1; min-width:200px;">
+                <label style="font-weight:bold;">Company Name *</label>
+                <input type="text" id="invite-company-name" required style="width:100%; padding:10px; border:1px solid var(--border); border-radius:4px; box-sizing:border-box;">
+              </div>
+              <div style="flex:1; min-width:220px;">
+                <label style="font-weight:bold;">First Admin's Email *</label>
+                <input type="email" id="invite-company-email" required style="width:100%; padding:10px; border:1px solid var(--border); border-radius:4px; box-sizing:border-box;">
+              </div>
+              <button type="submit" class="btn gold" style="padding:10px 20px;">Send Invite</button>
+            </form>
           </div>
         </div>
 
-        <div class="card">
-          <h2 style="margin-top:0;">All Companies</h2>
-          <p style="color:var(--border); font-size:14px; margin-bottom:20px;">Companies set up on the platform.</p>
-          <div id="super-admin-companies-list"></div>
+        <div id="super-branding-tab" class="super-tab" style="display:none;">
+          <div class="card">
+            <h2 style="margin-top:0;">Platform Branding</h2>
+            <p style="color:var(--border); font-size:14px; margin-bottom:20px;">This logo appears on the main public portal (the "RFQ Hub" landing page) whenever no specific company is in context.</p>
+            <div style="display:flex; align-items:center; gap:15px; flex-wrap:wrap;">
+              <div style="width:140px; height:140px; border:1px solid var(--border); border-radius:8px; background:var(--bg-2); display:flex; align-items:center; justify-content:center; overflow:hidden; flex-shrink:0;">
+                <img id="platform-logo-preview" src="" alt="Platform logo preview" style="max-width:260px; height:84px; width:auto; object-fit:contain; display:none;">
+                <span id="platform-logo-placeholder" style="color:var(--border); font-size:11px; text-align:center; padding:0 10px;">No logo</span>
+              </div>
+              <div>
+                <input type="file" id="platform-logo-file" accept="image/png,image/jpeg,image/svg+xml,image/webp">
+                <p style="font-size:12px; color:var(--border); margin-top:5px;">PNG, JPG, SVG or WebP. Uploads immediately.</p>
+              </div>
+            </div>
+            <div style="margin-top:14px; max-width:320px;">
+              <label style="font-weight:bold; font-size:13px; display:flex; justify-content:space-between;">
+                <span>Logo Size</span>
+                <span id="platform-logo-scale-label" style="font-weight:normal; color:var(--border);">100%</span>
+              </label>
+              <input type="range" id="platform-logo-scale" min="50" max="150" step="5" value="100" style="width:100%;">
+              <p style="font-size:12px; color:var(--border); margin-top:5px;">Scales the platform logo in the site header. The preview above matches the header size.</p>
+            </div>
+          </div>
         </div>
 
-        <div class="card">
-          <h2 style="margin-top:0;">Registered Applicants</h2>
-          <p style="color:var(--border); font-size:14px; margin-bottom:20px;">Everyone who has registered on the public portal in order to view and apply to open RFQs.</p>
-          <div id="super-admin-applicants-list"></div>
+        <div id="super-companies-tab" class="super-tab" style="display:none;">
+          <div class="card">
+            <h2 style="margin-top:0;">All Companies</h2>
+            <p style="color:var(--border); font-size:14px; margin-bottom:20px;">Companies set up on the platform.</p>
+            <div id="super-admin-companies-list"></div>
+          </div>
         </div>
 
-        <div class="card">
-          <h2 style="margin-top:0;">Change Password</h2>
-          <p style="color:var(--border); font-size:14px; margin-bottom:20px;">Update the password for your own (platform admin) login.</p>
-          <form id="super-change-password-form" style="display:flex; flex-direction:column; gap:15px; max-width:400px;">
-            <div>
-              <label style="font-weight:bold;">New Password *</label>
-              <input type="password" id="super-change-password-new" required minlength="6" style="width:100%; padding:10px; border:1px solid var(--border); border-radius:4px; box-sizing:border-box;">
-            </div>
-            <div>
-              <label style="font-weight:bold;">Confirm New Password *</label>
-              <input type="password" id="super-change-password-confirm" required minlength="6" style="width:100%; padding:10px; border:1px solid var(--border); border-radius:4px; box-sizing:border-box;">
-            </div>
-            <div style="display:flex; justify-content:flex-end;">
-              <button type="submit" class="btn gold" style="padding:10px 24px;">Update Password</button>
-            </div>
-          </form>
+        <div id="super-applicants-tab" class="super-tab" style="display:none;">
+          <div class="card">
+            <h2 style="margin-top:0;">Registered Applicants</h2>
+            <p style="color:var(--border); font-size:14px; margin-bottom:20px;">Everyone who has registered on the public portal in order to view and apply to open RFQs.</p>
+            <div id="super-admin-applicants-list"></div>
+          </div>
+        </div>
+
+        <div id="super-password-tab" class="super-tab" style="display:none;">
+          <div class="card">
+            <h2 style="margin-top:0;">Change Password</h2>
+            <p style="color:var(--border); font-size:14px; margin-bottom:20px;">Update the password for your own (platform admin) login.</p>
+            <form id="super-change-password-form" style="display:flex; flex-direction:column; gap:15px; max-width:400px;">
+              <div>
+                <label style="font-weight:bold;">New Password *</label>
+                <input type="password" id="super-change-password-new" required minlength="6" style="width:100%; padding:10px; border:1px solid var(--border); border-radius:4px; box-sizing:border-box;">
+              </div>
+              <div>
+                <label style="font-weight:bold;">Confirm New Password *</label>
+                <input type="password" id="super-change-password-confirm" required minlength="6" style="width:100%; padding:10px; border:1px solid var(--border); border-radius:4px; box-sizing:border-box;">
+              </div>
+              <div style="display:flex; justify-content:flex-end;">
+                <button type="submit" class="btn gold" style="padding:10px 24px;">Update Password</button>
+              </div>
+            </form>
+          </div>
+        </div>
+          </div>
         </div>
       </div>
     </div>
