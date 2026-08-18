@@ -50,10 +50,13 @@ async function initApp() {
   }
 
   if (openRfqId) {
-    console.log('Loading public RFQ:', openRfqId);
+    // Direct links (e.g. bookmarked/shared) must go through the same
+    // registration gate as clicking "View & Apply" — show the normal
+    // landing page underneath and open the gate on top of it.
+    console.log('Loading public RFQ (gated):', openRfqId);
     applyDefaultBranding();
-    setHeaderActions('contractor');
-    await loadOpenRFQView(openRfqId);
+    showLandingView();
+    openApplicantGate(openRfqId);
     return;
   }
 
@@ -152,6 +155,18 @@ function setupStaticForms() {
     platformLogoScale.addEventListener('input', handlePlatformLogoScaleInput);
     platformLogoScale.addEventListener('change', handlePlatformLogoScaleChange);
     platformLogoScale.dataset.wired = 'true';
+  }
+
+  const gateEmailForm = document.getElementById('gate-email-form');
+  if (gateEmailForm && !gateEmailForm.dataset.wired) {
+    gateEmailForm.addEventListener('submit', handleGateEmailSubmit);
+    gateEmailForm.dataset.wired = 'true';
+  }
+
+  const gateRegisterForm = document.getElementById('gate-register-form');
+  if (gateRegisterForm && !gateRegisterForm.dataset.wired) {
+    gateRegisterForm.addEventListener('submit', handleGateRegisterSubmit);
+    gateRegisterForm.dataset.wired = 'true';
   }
 }
 
@@ -335,7 +350,7 @@ async function loadPublicRFQList(province) {
       const cardLogoHeight = Math.round(40 * cardLogoScale);
       const cardLogoMaxWidth = Math.round(130 * cardLogoScale);
       return `
-        <div class="card" style="cursor:pointer;" onclick="window.location.href = '${window.location.origin}${window.location.pathname}?open=${rfq.id}'">
+        <div class="card" style="cursor:pointer;" onclick="openApplicantGate('${rfq.id}')">
           <div style="display:flex; justify-content:space-between; align-items:flex-start; gap:15px; flex-wrap:wrap;">
             <div style="flex:1; min-width:200px;">
               <div style="display:flex; align-items:center; gap:8px; margin-bottom:8px; flex-wrap:wrap;">
@@ -364,6 +379,121 @@ async function loadPublicRFQList(province) {
   }
 }
 
+// ===== APPLICANT REGISTRATION GATE =====
+// Anyone browsing the public "Open RFQs" list must be a registered
+// applicant before they can view an RFQ's details or apply. We check
+// their email against the applicant_registrations table via a narrow,
+// SECURITY DEFINER RPC that only ever returns true/false — it never
+// exposes any applicant's data to the public. If the email isn't on
+// file, we collect a quick registration first.
+let pendingGateRfqId = null;
+
+function openApplicantGate(rfqId) {
+  pendingGateRfqId = rfqId;
+
+  const emailInput = document.getElementById('gate-email');
+  const fullNameInput = document.getElementById('gate-full-name');
+  const companyNameInput = document.getElementById('gate-company-name');
+  const phoneInput = document.getElementById('gate-phone');
+  if (emailInput) emailInput.value = '';
+  if (fullNameInput) fullNameInput.value = '';
+  if (companyNameInput) companyNameInput.value = '';
+  if (phoneInput) phoneInput.value = '';
+
+  document.getElementById('gate-email-section').style.display = 'block';
+  document.getElementById('gate-register-section').style.display = 'none';
+  openModal('applicant-gate-modal');
+}
+
+function gateBackToEmail() {
+  document.getElementById('gate-email-section').style.display = 'block';
+  document.getElementById('gate-register-section').style.display = 'none';
+}
+
+async function handleGateEmailSubmit(e) {
+  e.preventDefault();
+  const email = document.getElementById('gate-email').value.trim();
+  if (!email) return;
+
+  const submitBtn = document.getElementById('gate-email-submit');
+  const originalLabel = submitBtn.textContent;
+  submitBtn.disabled = true;
+  submitBtn.textContent = 'Checking...';
+
+  try {
+    const { data: isRegistered, error } = await client.rpc('check_applicant_registered', { p_email: email });
+    if (error) throw error;
+
+    if (isRegistered) {
+      showToast('👋 Welcome back! Loading RFQ...', 'success');
+      proceedPastGate();
+    } else {
+      document.getElementById('gate-email-section').style.display = 'none';
+      document.getElementById('gate-register-section').style.display = 'block';
+    }
+  } catch (err) {
+    console.error('Error checking registration:', err);
+    showToast('❌ Could not check registration. Please try again.', 'error');
+  } finally {
+    submitBtn.disabled = false;
+    submitBtn.textContent = originalLabel;
+  }
+}
+
+async function handleGateRegisterSubmit(e) {
+  e.preventDefault();
+  const email = document.getElementById('gate-email').value.trim();
+  const fullName = document.getElementById('gate-full-name').value.trim();
+  const companyName = document.getElementById('gate-company-name').value.trim();
+  const phone = document.getElementById('gate-phone').value.trim();
+
+  if (!email || !fullName) {
+    showToast('❌ Please enter your name and email.', 'error');
+    return;
+  }
+
+  const submitBtn = document.getElementById('gate-register-submit');
+  const originalLabel = submitBtn.textContent;
+  submitBtn.disabled = true;
+  submitBtn.textContent = 'Registering...';
+
+  try {
+    const { error } = await client
+      .from('applicant_registrations')
+      .insert({
+        full_name: fullName,
+        company_name: companyName || null,
+        email,
+        phone: phone || null
+      });
+    // A duplicate email (e.g. a race with another tab, or someone
+    // double-submitting) isn't a real problem here — they're registered
+    // either way, so let them through rather than showing an error.
+    if (error && error.code !== '23505') throw error;
+
+    showToast('✅ Registered! Loading RFQ...', 'success');
+    proceedPastGate();
+  } catch (err) {
+    console.error('Error registering applicant:', err);
+    showToast('❌ Registration failed: ' + err.message, 'error');
+  } finally {
+    submitBtn.disabled = false;
+    submitBtn.textContent = originalLabel;
+  }
+}
+
+function proceedPastGate() {
+  closeModal('applicant-gate-modal');
+  const rfqId = pendingGateRfqId;
+  pendingGateRfqId = null;
+  if (!rfqId) return;
+
+  const url = new URL(window.location.href);
+  url.searchParams.set('open', rfqId);
+  window.history.replaceState({}, '', url);
+  loadOpenRFQView(rfqId);
+}
+
 function showLoginForm() {
   hideAllTopLevelViews();
   document.getElementById('public-view').style.display = 'block';
@@ -385,7 +515,7 @@ async function loadPlatformSettings() {
   try {
     const { data, error } = await client
       .from('platform_settings')
-      .select('logo_url')
+      .select('logo_url, logo_scale')
       .eq('id', 1)
       .maybeSingle();
     if (!error && data) {
@@ -1749,6 +1879,7 @@ function showSuperAdminView() {
 
   renderPlatformLogoPreview();
   loadSuperAdminCompanies();
+  loadSuperAdminApplicants();
 }
 
 function closeSuperAdminView() {
@@ -1797,6 +1928,44 @@ async function loadSuperAdminCompanies() {
   } catch (err) {
     console.error('Error loading companies:', err);
     showToast('Error loading companies: ' + err.message, 'error');
+  }
+}
+
+async function loadSuperAdminApplicants() {
+  try {
+    const { data: applicants, error } = await client
+      .from('applicant_registrations')
+      .select('*')
+      .order('created_at', { ascending: false });
+
+    if (error) throw error;
+
+    const list = document.getElementById('super-admin-applicants-list');
+    if (!list) return;
+
+    if (!applicants || applicants.length === 0) {
+      list.innerHTML = '<p style="color:var(--border); text-align:center; padding:20px;">No one has registered yet.</p>';
+      return;
+    }
+
+    list.innerHTML = `
+      <p style="color:var(--border); font-size:13px; margin-bottom:10px;">${applicants.length} registered applicant${applicants.length === 1 ? '' : 's'}</p>
+      <div style="max-height:500px; overflow-y:auto;">
+        ${applicants.map(a => `
+          <div style="display:flex; justify-content:space-between; align-items:center; padding:15px; border:1px solid var(--border); border-radius:4px; margin-bottom:10px; flex-wrap:wrap; gap:10px;">
+            <div>
+              <p style="margin:0; font-weight:600;">${a.full_name}</p>
+              <p style="margin:0; font-size:12px; color:var(--border);">${a.company_name ? a.company_name + ' · ' : ''}${a.email}${a.phone ? ' · ' + a.phone : ''}</p>
+            </div>
+            <p style="margin:0; font-size:12px; color:var(--border);">Registered ${new Date(a.created_at).toLocaleDateString()}</p>
+          </div>
+        `).join('')}
+      </div>
+    `;
+  } catch (err) {
+    console.error('Error loading applicants:', err);
+    const list = document.getElementById('super-admin-applicants-list');
+    if (list) list.innerHTML = '<p style="color:var(--warning);">Error loading registered applicants.</p>';
   }
 }
 
