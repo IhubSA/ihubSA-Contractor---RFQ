@@ -8,22 +8,35 @@
 </head>
 <body>
   <!-- DYNAMIC BRANDING HEADER -->
-  <div id="site-header" style="background: var(--primary); padding: 20px 40px; border-bottom: 3px solid var(--accent); display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 15px;">
-    <div id="brand-logo-group" style="display: flex; align-items: center; gap: 15px;">
+  <header id="site-header" class="site-header">
+    <div id="brand-logo-group" class="brand-logo-group">
       <img id="brand-logo-img" src="" alt="Company logo" style="display:none; height:84px; width:auto; max-width:260px; object-fit:contain; flex-shrink:0;">
       <svg id="brand-logo-default" width="84" height="84" viewBox="0 0 100 100" style="flex-shrink: 0;">
         <circle cx="50" cy="50" r="46" fill="#FFFFFF"/>
-        <path d="M 50 15 C 65 20, 75 35, 72 50 C 70 60, 60 65, 50 62 C 45 45, 45 30, 50 15 Z" fill="#0B2A4A"/>
-        <path d="M 50 20 C 58 25, 63 35, 60 45 C 58 50, 52 52, 48 48 C 46 38, 47 28, 50 20 Z" fill="#F2790C"/>
-        <path d="M 25 45 A 25 25 0 1 1 30 65" fill="none" stroke="#0B2A4A" stroke-width="4" stroke-linecap="round"/>
+        <path d="M 50 15 C 65 20, 75 35, 72 50 C 70 60, 60 65, 50 62 C 45 45, 45 30, 50 15 Z" fill="#0F3557"/>
+        <path d="M 50 20 C 58 25, 63 35, 60 45 C 58 50, 52 52, 48 48 C 46 38, 47 28, 50 20 Z" fill="#F57C00"/>
+        <path d="M 25 45 A 25 25 0 1 1 30 65" fill="none" stroke="#0F3557" stroke-width="4" stroke-linecap="round"/>
       </svg>
       <div>
         <h1 id="brand-title" style="margin: 0; font-size: 24px; font-weight: bold; color: white; font-family: 'IBM Plex Sans', sans-serif;">RFQ Hub</h1>
         <p id="brand-subtitle" style="margin: 0; font-size: 12px; color: #AFC4DB; font-family: 'IBM Plex Sans', sans-serif;">Request for Quotation Management System</p>
       </div>
     </div>
-    <div id="header-actions" style="display:flex; align-items:center; gap:12px;"></div>
-  </div>
+
+    <button id="mobile-nav-toggle" class="mobile-nav-toggle" type="button" onclick="toggleMobileNav()" aria-label="Toggle menu" aria-expanded="false" aria-controls="site-nav-wrap">
+      <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2" stroke-linecap="round"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
+    </button>
+
+    <div id="site-nav-wrap" class="site-nav-wrap">
+      <nav class="site-nav" aria-label="Primary">
+        <a href="#" onclick="navGoOpportunities(); return false;">Opportunities</a>
+        <a href="#" onclick="navGoHowItWorks(); return false;">How It Works</a>
+        <a href="#" onclick="navGoAbout(); return false;">About</a>
+        <a href="#" onclick="navGoHelp(); return false;">Help</a>
+      </nav>
+      <div id="header-actions" class="site-header-ctas"></div>
+    </div>
+  </header>
 
   <!-- DYNAMIC HERO SECTION -->
   <div id="hero-section" style="position:relative; background: linear-gradient(135deg, var(--primary) 0%, var(--primary-dark) 100%); padding: 60px 40px 50px 40px; text-align: left; overflow:hidden;">
@@ -33,30 +46,17 @@
     <h1 id="hero-title" style="position:relative; margin: 0 0 15px 0; font-size: 44px; font-weight: 800; color: white; font-family: 'IBM Plex Sans', sans-serif; letter-spacing:-0.01em;">RFQ Hub</h1>
     <p id="hero-subtitle" style="position:relative; margin: 0 0 30px 0; font-size: 17px; color: #C7D8EA; font-family: 'IBM Plex Sans', sans-serif; line-height: 1.6; max-width: 600px;">Open requests for quotation. Apply directly online — you'll get a reference number and a confirmation the moment your application is received.</p>
 
-    <div style="position:relative;">
-      <form id="hero-search-form" class="hero-search-bar">
-        <input type="text" id="hero-search-input" placeholder="Search open RFQs by name, project or keyword...">
-        <button type="submit">SEARCH</button>
-      </form>
-      <div class="hero-filter-row">
-        <select id="public-rfq-province-filter" class="hero-filter-pill">
-          <option value="">All Provinces</option>
-          <option value="Eastern Cape">Eastern Cape</option>
-          <option value="Free State">Free State</option>
-          <option value="Gauteng">Gauteng</option>
-          <option value="KwaZulu-Natal">KwaZulu-Natal</option>
-          <option value="Limpopo">Limpopo</option>
-          <option value="Mpumalanga">Mpumalanga</option>
-          <option value="Northern Cape">Northern Cape</option>
-          <option value="North West">North West</option>
-          <option value="Western Cape">Western Cape</option>
-        </select>
-        <select id="public-rfq-sort" class="hero-filter-pill">
-          <option value="deadline_asc">Sort: Closing Soonest</option>
-          <option value="deadline_desc">Sort: Closing Latest</option>
-          <option value="budget_desc">Sort: Highest Budget</option>
-        </select>
+    <!-- Marketplace-specific hero content (CTA buttons + live stats). Only
+         shown on the public landing page — showLandingView() reveals this,
+         hideAllTopLevelViews() hides it again for every other view (login,
+         admin dashboard, contractor pages, etc.) so it never bleeds into
+         screens where it doesn't belong. -->
+    <div id="hero-marketplace-extras" style="display:none; position:relative;">
+      <div class="hero-cta-row">
+        <button type="button" class="btn gold hero-btn-primary" onclick="document.getElementById('public-rfq-list').scrollIntoView({behavior:'smooth'})">Browse Opportunities →</button>
+        <button type="button" class="hero-btn-secondary" onclick="openApplicantGate(null)">Register as a Supplier</button>
       </div>
+      <div id="hero-stats-row" class="hero-stats-row" style="display:none;"></div>
     </div>
   </div>
 
@@ -69,71 +69,101 @@
       <div id="landing-section" style="display:none;">
         <div style="max-width: 1200px; margin: 0 auto 30px auto;">
           <div class="card" style="text-align:center; padding:16px 24px;">
-            <p style="margin:0; font-size:13px; color:var(--border);">Company staff: use the <strong>Log In</strong> button above to access your dashboard. Access is by invitation only — if you're expecting access, check your email for an invite link.</p>
+            <p style="margin:0; font-size:13px; color:var(--border);">Company staff: use the <strong>Sign In</strong> button above to access your dashboard. Access is by invitation only — if you're expecting access, check your email for an invite link.</p>
           </div>
         </div>
 
         <div class="landing-two-col" style="max-width: 1200px; margin: 0 auto; display:grid; grid-template-columns: 2fr 1fr; gap:30px; align-items:start;">
           <div>
-            <h2 class="section-eyebrow" style="margin-bottom:5px;">CURRENT OPPORTUNITIES</h2>
-            <p style="color:var(--border); margin:10px 0 20px 0;">Current requests for quotation from companies on this platform. Click one to review the details and apply.</p>
+            <h2 class="section-eyebrow" style="margin-bottom:5px;">OPEN OPPORTUNITIES</h2>
+            <p style="color:var(--border); margin:10px 0 20px 0;">Find current Requests for Quotation from organisations looking for suppliers and service providers.</p>
+
+            <div class="opp-search-wrap">
+              <form id="hero-search-form" class="opp-search-bar">
+                <input type="text" id="hero-search-input" placeholder="Search opportunities...">
+                <button type="submit">Search</button>
+              </form>
+              <div class="opp-filter-row">
+                <select id="public-rfq-province-filter" class="opp-filter-pill">
+                  <option value="">All Provinces</option>
+                  <option value="Eastern Cape">Eastern Cape</option>
+                  <option value="Free State">Free State</option>
+                  <option value="Gauteng">Gauteng</option>
+                  <option value="KwaZulu-Natal">KwaZulu-Natal</option>
+                  <option value="Limpopo">Limpopo</option>
+                  <option value="Mpumalanga">Mpumalanga</option>
+                  <option value="Northern Cape">Northern Cape</option>
+                  <option value="North West">North West</option>
+                  <option value="Western Cape">Western Cape</option>
+                </select>
+                <select id="public-rfq-category-filter" class="opp-filter-pill" disabled title="Category data isn't tracked yet — coming soon">
+                  <option value="">All Categories</option>
+                </select>
+                <select id="public-rfq-sort" class="opp-filter-pill">
+                  <option value="deadline_asc">Sort: Closing Soonest</option>
+                  <option value="deadline_desc">Sort: Closing Latest</option>
+                  <option value="budget_desc">Sort: Highest Budget</option>
+                </select>
+              </div>
+            </div>
+
             <div id="public-rfq-list"></div>
           </div>
 
           <div class="card" id="why-register-card">
-            <h3 class="section-eyebrow" style="font-size:18px;">WHY REGISTER?</h3>
+            <h3 class="section-eyebrow" style="font-size:18px;">WHY BECOME A REGISTERED SUPPLIER?</h3>
             <div style="margin-top:16px;">
               <div class="why-register-item">
-                <div class="why-register-icon">
-                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2l7 4v6c0 5-3.5 8-7 10-3.5-2-7-5-7-10V6l7-4z"/></svg>
-                </div>
+                <div class="why-register-icon why-register-check">✓</div>
                 <div>
-                  <h4>Registered Access</h4>
-                  <p>Register once with your email and you're set to view and apply for any open RFQ on this portal.</p>
+                  <h4>Access More Opportunities</h4>
+                  <p>See RFQs published by participating organisations.</p>
                 </div>
               </div>
               <div class="why-register-item">
-                <div class="why-register-icon">
-                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><path d="M9 15l2 2 4-4"/></svg>
-                </div>
+                <div class="why-register-icon why-register-check">✓</div>
                 <div>
-                  <h4>Easy Submissions</h4>
-                  <p>Complete each RFQ's form and upload your supporting documents online, in one place.</p>
+                  <h4>Submit Online</h4>
+                  <p>Complete your quotation and upload supporting documents digitally.</p>
                 </div>
               </div>
               <div class="why-register-item">
-                <div class="why-register-icon">
-                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg>
-                </div>
+                <div class="why-register-icon why-register-check">✓</div>
                 <div>
-                  <h4>Direct Contact</h4>
-                  <p>The company running each RFQ reviews submissions and will reach out directly using the details you provide.</p>
+                  <h4>Build Your Supplier Profile</h4>
+                  <p>Enter your company information once and reuse it.</p>
+                </div>
+              </div>
+              <div class="why-register-item">
+                <div class="why-register-icon why-register-check">✓</div>
+                <div>
+                  <h4>Track Your Applications</h4>
+                  <p>Keep a record of the RFQs you've responded to and their status.</p>
                 </div>
               </div>
               <div class="why-register-item" style="margin-bottom:0;">
-                <div class="why-register-icon">
-                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="11" width="18" height="10" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
-                </div>
+                <div class="why-register-icon why-register-check">✓</div>
                 <div>
                   <h4>Secure &amp; Confidential</h4>
-                  <p>Your information is only ever shared with the specific company you apply to.</p>
+                  <p>Your submission is only ever shared with the organisation running the RFQ.</p>
                 </div>
               </div>
             </div>
-            <button type="button" class="btn gold" style="width:100%; padding:12px; margin-top:6px;" onclick="document.getElementById('public-rfq-list').scrollIntoView({behavior:'smooth'})">Browse Open RFQs</button>
+            <button type="button" class="btn gold" style="width:100%; padding:12px; margin-top:6px;" onclick="openApplicantGate(null)">Register Free →</button>
+            <p style="text-align:center; margin:12px 0 0 0; font-size:13px; color:var(--border);">Already registered? <a href="#" onclick="document.getElementById('public-rfq-list').scrollIntoView({behavior:'smooth'}); return false;" style="color:var(--primary); font-weight:600;">Browse Opportunities</a></p>
           </div>
         </div>
 
-        <div style="max-width: 1200px; margin: 60px auto 0 auto; padding:40px 0; border-top:1px solid #E4E7EB;">
-          <h2 class="section-eyebrow" style="text-align:center; display:block; width:fit-content; margin:0 auto 40px auto;">HOW DOES IT WORK?</h2>
+        <div id="how-it-works-section" style="max-width: 1200px; margin: 60px auto 0 auto; padding:40px 0; border-top:1px solid #E4E7EB;">
+          <h2 class="section-eyebrow" style="text-align:center; display:block; width:fit-content; margin:0 auto 40px auto;">HOW IT WORKS</h2>
           <div class="how-it-works-grid">
             <div class="how-it-works-step">
               <div class="how-it-works-step-icon">
                 <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg>
               </div>
               <p class="how-it-works-step-num">01</p>
-              <h4>Find an Opportunity</h4>
-              <p>Browse current open RFQs listed on this portal.</p>
+              <h4>Discover</h4>
+              <p>Find an RFQ that matches your business.</p>
             </div>
             <div class="how-it-works-step">
               <div class="how-it-works-step-icon">
@@ -141,24 +171,64 @@
               </div>
               <p class="how-it-works-step-num">02</p>
               <h4>Register</h4>
-              <p>Confirm your email — first-time applicants complete a quick registration.</p>
+              <p>Create your free supplier account.</p>
             </div>
             <div class="how-it-works-step">
               <div class="how-it-works-step-icon">
                 <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/></svg>
               </div>
               <p class="how-it-works-step-num">03</p>
-              <h4>Submit a Response</h4>
-              <p>Complete the required form and upload your documents.</p>
+              <h4>Submit</h4>
+              <p>Complete the response and upload supporting documents.</p>
             </div>
             <div class="how-it-works-step">
               <div class="how-it-works-step-icon">
                 <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><path d="M22 4L12 14.01l-3-3"/></svg>
               </div>
               <p class="how-it-works-step-num">04</p>
-              <h4>Company Reviews &amp; Responds</h4>
-              <p>The company reviews all quotations and will contact you regarding next steps.</p>
+              <h4>Get Reviewed</h4>
+              <p>The organisation evaluates submissions and contacts successful suppliers.</p>
             </div>
+          </div>
+        </div>
+
+        <div id="trust-section" style="max-width: 1200px; margin: 0 auto; padding:40px 0; border-top:1px solid #E4E7EB;">
+          <h2 class="section-eyebrow" style="text-align:center; display:block; width:fit-content; margin:0 auto 40px auto;">A BETTER WAY TO CONNECT BUYERS &amp; SUPPLIERS</h2>
+          <div class="trust-grid">
+            <div class="trust-item">
+              <div class="trust-icon"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M2 12h20M12 2c2.5 3 4 7 4 10s-1.5 7-4 10c-2.5-3-4-7-4-10s1.5-7 4-10z"/></svg></div>
+              <h4>Transparent</h4>
+              <p>Clear RFQ requirements and closing dates.</p>
+            </div>
+            <div class="trust-item">
+              <div class="trust-icon"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="11" width="18" height="10" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg></div>
+              <h4>Secure</h4>
+              <p>Your submission is securely handled.</p>
+            </div>
+            <div class="trust-item">
+              <div class="trust-icon"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2l7 4v6c0 5-3.5 8-7 10-3.5-2-7-5-7-10V6l7-4z"/></svg></div>
+              <h4>Accessible</h4>
+              <p>Opportunities are available to registered suppliers.</p>
+            </div>
+            <div class="trust-item">
+              <div class="trust-icon"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg></div>
+              <h4>Professional</h4>
+              <p>A structured process for quotations and supplier responses.</p>
+            </div>
+          </div>
+        </div>
+
+        <div id="org-logos-section" style="display:none; max-width: 1200px; margin: 0 auto; padding:40px 0; border-top:1px solid #E4E7EB;">
+          <h2 class="section-eyebrow" style="text-align:center; display:block; width:fit-content; margin:0 auto 30px auto;">ORGANISATIONS USING THE PLATFORM</h2>
+          <div id="org-logos-grid" class="org-logos-grid"></div>
+        </div>
+
+        <div class="final-cta-section">
+          <div class="final-cta-inner">
+            <h2>Ready to Find Your Next Business Opportunity?</h2>
+            <p>Register as a supplier and start responding to RFQs online.</p>
+            <button type="button" class="btn gold" style="padding:14px 32px; font-size:15px;" onclick="openApplicantGate(null)">Create Free Supplier Account</button>
+            <p style="margin-top:14px; font-size:13px;"><a href="#" onclick="document.getElementById('public-rfq-list').scrollIntoView({behavior:'smooth'}); return false;" style="color:#C7D8EA;">Already registered? Browse Opportunities</a></p>
           </div>
         </div>
       </div>
@@ -553,19 +623,41 @@
     </div>
 
     <!-- SITE FOOTER -->
-    <footer id="site-footer" style="border-top:3px solid var(--accent); padding:28px 40px; text-align:center; background:var(--primary-dark);">
-      <p style="margin:0 0 10px 0; font-size:12px; color:#8FA4BE;">
-        <a href="#" onclick="openModal('popia-modal'); return false;" style="color:#C7D8EA; text-decoration:underline;">Privacy Notice</a>
-      </p>
-      <p style="margin:0 0 8px 0; font-size:12px; color:#8FA4BE; font-family:'IBM Plex Sans', sans-serif;">&copy; <span id="footer-year"></span> <span id="footer-company-name">RFQ Hub</span>. All rights reserved.</p>
-      <p style="margin:0; font-size:12px; color:#8FA4BE; font-family:'IBM Plex Sans', sans-serif; display:flex; align-items:center; justify-content:center; gap:6px;">
-        Powered by
-        <svg width="16" height="16" viewBox="0 0 100 100" aria-hidden="true" style="flex-shrink:0;">
-          <circle cx="50" cy="50" r="46" fill="#FFFFFF"/>
-          <text x="50" y="68" font-family="'IBM Plex Sans', sans-serif" font-size="52" font-weight="bold" fill="#F2790C" text-anchor="middle">i</text>
-        </svg>
-        <strong style="color:#C7D8EA;">ihubSA</strong>
-      </p>
+    <footer id="site-footer" class="site-footer">
+      <div class="footer-columns">
+        <div class="footer-col">
+          <h5>Platform</h5>
+          <a href="#" onclick="navGoOpportunities(); return false;">Opportunities</a>
+          <a href="#" onclick="navGoHowItWorks(); return false;">How It Works</a>
+          <a href="#" onclick="navGoAbout(); return false;">About</a>
+        </div>
+        <div class="footer-col">
+          <h5>Suppliers</h5>
+          <a href="#" onclick="openApplicantGate(null); return false;">Register</a>
+          <a href="#" onclick="showLoginForm(); return false;">Sign In</a>
+          <a href="#" onclick="navGoHelp(); return false;">Help</a>
+        </div>
+        <div class="footer-col">
+          <h5>Legal</h5>
+          <a href="#" onclick="openModal('popia-modal'); return false;">Privacy Policy</a>
+          <a href="#" onclick="navGoTerms(); return false;">Terms &amp; Conditions</a>
+        </div>
+        <div class="footer-col">
+          <h5>Contact</h5>
+          <a href="mailto:ihubsa@gmail.com">ihubsa@gmail.com</a>
+        </div>
+      </div>
+      <div class="footer-bottom">
+        <p style="margin:0 0 8px 0; font-size:12px; color:#8FA4BE; font-family:'IBM Plex Sans', sans-serif;">&copy; <span id="footer-year"></span> <span id="footer-company-name">RFQ Hub</span>. All rights reserved.</p>
+        <p style="margin:0; font-size:12px; color:#8FA4BE; font-family:'IBM Plex Sans', sans-serif; display:flex; align-items:center; justify-content:center; gap:6px;">
+          Powered by
+          <svg width="16" height="16" viewBox="0 0 100 100" aria-hidden="true" style="flex-shrink:0;">
+            <circle cx="50" cy="50" r="46" fill="#FFFFFF"/>
+            <text x="50" y="68" font-family="'IBM Plex Sans', sans-serif" font-size="52" font-weight="bold" fill="#F57C00" text-anchor="middle">i</text>
+          </svg>
+          <strong style="color:#C7D8EA;">ihubSA</strong>
+        </p>
+      </div>
     </footer>
   </div>
 
@@ -583,7 +675,7 @@
           <p id="submission-info-request-text" style="margin:0 0 6px 0; white-space:pre-wrap;"></p>
           <p id="submission-info-request-date" style="margin:0; font-size:12px; color:var(--border);"></p>
         </div>
-        <div id="submission-info-response-box" style="display:none; margin-top:20px; padding:15px; background:#E1F0FF; border-radius:4px; border-left:3px solid #0B2A4A;">
+        <div id="submission-info-response-box" style="display:none; margin-top:20px; padding:15px; background:#E1F0FF; border-radius:4px; border-left:3px solid #0F3557;">
           <h4 style="margin:0 0 8px 0;">Contractor's Response</h4>
           <p id="submission-info-response-text" style="margin:0 0 6px 0; white-space:pre-wrap;"></p>
           <p id="submission-info-response-date" style="margin:0; font-size:12px; color:var(--border);"></p>
@@ -647,15 +739,31 @@
     </div>
   </div>
 
+  <!-- GENERIC "COMING SOON" INFO MODAL (About / Help / Terms placeholders) -->
+  <div id="info-page-modal" class="modal" style="display:none;">
+    <div class="modal-content" style="max-width:440px;">
+      <div class="modal-head">
+        <h3 id="info-page-modal-title">Coming Soon</h3>
+        <button class="drawer-close" onclick="closeModal('info-page-modal')">✕</button>
+      </div>
+      <div class="modal-body">
+        <p id="info-page-modal-body" style="color:var(--ink);"></p>
+      </div>
+      <div class="modal-foot">
+        <button type="button" class="btn gold" onclick="closeModal('info-page-modal')">Close</button>
+      </div>
+    </div>
+  </div>
+
   <!-- APPLICANT REGISTRATION GATE MODAL -->
   <div id="applicant-gate-modal" class="modal" style="display:none;">
     <div class="modal-content" style="max-width:480px;">
       <div class="modal-head">
-        <h3>Register to View &amp; Apply</h3>
+        <h3 id="gate-modal-title">Register to View &amp; Apply</h3>
         <button class="drawer-close" onclick="closeModal('applicant-gate-modal')">✕</button>
       </div>
       <div class="modal-body">
-        <p style="color:var(--border); margin-bottom:20px;">To view this RFQ's details and apply, please confirm your email. It only takes a moment.</p>
+        <p id="gate-modal-intro" style="color:var(--border); margin-bottom:20px;">To view this RFQ's details and apply, please confirm your email. It only takes a moment.</p>
 
         <div id="gate-email-section">
           <form id="gate-email-form">
