@@ -206,7 +206,10 @@
     <div id="admin-view" style="display:none;">
       <div style="background: var(--primary); border-bottom: 3px solid var(--accent); padding: 20px 40px;">
         <div style="display: flex; justify-content: space-between; align-items: center; max-width: 1200px; margin: 0 auto; flex-wrap:wrap; gap:10px;">
-          <h2 id="admin-company-name" style="margin: 0; color: white; font-family: 'IBM Plex Sans', sans-serif;">RFQ Management</h2>
+          <div style="display:flex; align-items:center; gap:12px; min-width:0;">
+            <img id="admin-header-logo" src="" alt="" style="display:none; height:40px; max-width:140px; width:auto; object-fit:contain; border-radius:3px; background:white; padding:3px;">
+            <h2 id="admin-company-name" style="margin: 0; color: white; font-family: 'IBM Plex Sans', sans-serif;">RFQ Management</h2>
+          </div>
           <div style="display:flex; align-items:center; gap:16px;">
             <a id="super-admin-link" href="#" onclick="openSuperAdminView(); return false;" style="display:none; font-size:13px; color:white; font-weight:600;">Platform Admin</a>
             <button onclick="logoutAdmin()" class="btn secondary" style="padding: 8px 16px;">Logout</button>
