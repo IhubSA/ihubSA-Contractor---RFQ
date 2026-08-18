@@ -411,25 +411,29 @@ async function loadPublicRFQList() {
       const cardLogoMaxWidth = Math.round(130 * cardLogoScale);
       return `
         <div class="opportunity-card" onclick="openApplicantGate('${rfq.id}')">
-          <div style="display:flex; justify-content:space-between; align-items:flex-start; gap:20px; flex-wrap:wrap;">
-            <div style="flex:1; min-width:220px;">
+          <div class="opportunity-card-grid">
+            <div class="opportunity-col-info">
               <span class="badge-open">Open</span>
               ${company && company.logo_url ? `<div style="margin-bottom:6px;"><img src="${company.logo_url}" alt="${company.name}" style="height:${cardLogoHeight}px; width:auto; max-width:${cardLogoMaxWidth}px; object-fit:contain;"></div>` : ''}
               <p style="margin:0 0 6px 0; font-size:12px; text-transform:uppercase; color:var(--border); font-weight:bold;">${company ? company.name : 'RFQ Hub'}</p>
               <h3 style="margin:0 0 8px 0; color:var(--primary);">${rfq.rfq_name}</h3>
-              <p style="margin:0 0 10px 0; color:var(--ink); font-size:14px;">${rfq.description}</p>
+              <p style="margin:0; color:var(--ink); font-size:14px;">${rfq.description}</p>
+            </div>
+            <div class="opportunity-col-meta">
               <div class="opportunity-meta-row">${ICON_CALENDAR}<div><span class="opportunity-meta-label">Closing Date</span>${deadlineDate.toLocaleDateString()} at ${deadlineDate.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</div></div>
               ${locationText ? `<div class="opportunity-meta-row">${ICON_PIN}<div><span class="opportunity-meta-label">Location</span>${locationText}</div></div>` : ''}
               <div class="opportunity-meta-row">${ICON_TAG}<div><span class="opportunity-meta-label">Project</span>${rfq.project_name}</div></div>
             </div>
-            <div class="countdown-box">
-              <p class="countdown-label">Time Remaining</p>
-              <div class="countdown-units" data-deadline="${rfq.deadline}">
-                <div><div class="countdown-unit-num cd-days">--</div><div class="countdown-unit-label">Days</div></div>
-                <div><div class="countdown-unit-num cd-hrs">--</div><div class="countdown-unit-label">Hrs</div></div>
-                <div><div class="countdown-unit-num cd-mins">--</div><div class="countdown-unit-label">Mins</div></div>
+            <div class="opportunity-col-countdown">
+              <div class="countdown-box">
+                <p class="countdown-label">Time Remaining</p>
+                <div class="countdown-units" data-deadline="${rfq.deadline}">
+                  <div><div class="countdown-unit-num cd-days">--</div><div class="countdown-unit-label">Days</div></div>
+                  <div><div class="countdown-unit-num cd-hrs">--</div><div class="countdown-unit-label">Hrs</div></div>
+                  <div><div class="countdown-unit-num cd-mins">--</div><div class="countdown-unit-label">Mins</div></div>
+                </div>
+                <button type="button" class="btn gold" style="width:100%; padding:10px; margin-top:14px;" onclick="event.stopPropagation(); openApplicantGate('${rfq.id}')">View Opportunity</button>
               </div>
-              <button type="button" class="btn gold" style="width:100%; padding:10px; margin-top:14px;" onclick="event.stopPropagation(); openApplicantGate('${rfq.id}')">View Opportunity</button>
             </div>
           </div>
         </div>
