@@ -27,6 +27,7 @@ async function initApp() {
   const params = new URLSearchParams(window.location.search);
   const rfqToken = params.get('rfq');
   const openRfqId = params.get('open');
+  const infoToken = params.get('info');
   const wantsAdmin = params.has('admin');
   const authType = getUrlHashParams().get('type'); // 'invite' or 'recovery' when landing from an invite/reset link
 
@@ -46,6 +47,14 @@ async function initApp() {
     applyDefaultBranding();
     setHeaderActions('contractor');
     await loadContractorView(rfqToken);
+    return;
+  }
+
+  if (infoToken) {
+    console.log('Loading information request with token:', infoToken);
+    applyDefaultBranding();
+    setHeaderActions('contractor');
+    await loadInfoRequestView(infoToken);
     return;
   }
 
@@ -963,6 +972,165 @@ async function loadContractorView(token) {
 
   } catch (err) {
     console.error('Error loading contractor view:', err);
+  }
+}
+
+// Public "respond to an information request" page, reached via the emailed
+// ?info=TOKEN link. Uses the get_submission_by_info_token/submit_additional_info
+// RPCs (SECURITY DEFINER) since the contractor isn't logged in and RLS
+// otherwise blocks reading/updating someone else's submission — the token
+// itself is the credential, same trust model as the existing rfq_invitations
+// invite-link tokens.
+let currentInfoRequestToken = null;
+let currentInfoRequestSubmissionId = null;
+let currentInfoRequestRfqId = null;
+
+async function loadInfoRequestView(token) {
+  try {
+    hideAllTopLevelViews();
+    document.getElementById('public-view').style.display = 'block';
+    hideAllPublicSections();
+
+    const { data, error } = await client.rpc('get_submission_by_info_token', { p_token: token });
+    const row = Array.isArray(data) ? data[0] : data;
+
+    if (error || !row) {
+      console.error('Info request link not found:', error);
+      document.getElementById('no-rfq-message').style.display = 'block';
+      document.getElementById('rfq-portal').style.display = 'none';
+      document.getElementById('no-rfq-message').innerHTML = '<div class="card"><h2>Invalid Link</h2><p>This link is invalid or has already been used.</p></div>';
+      return;
+    }
+
+    currentInfoRequestToken = token;
+    currentInfoRequestSubmissionId = row.submission_id;
+    currentInfoRequestRfqId = row.rfq_id;
+
+    if (row.company_id) {
+      const { data: company } = await client
+        .from('companies')
+        .select('*')
+        .eq('id', row.company_id)
+        .maybeSingle();
+      if (company) {
+        applyCompanyBranding(company, {
+          subtitle: 'Request for Quotation Portal',
+          heroTitle: company.name,
+          heroSubtitle: `${company.name} has asked for more information on your submission.`
+        });
+      } else {
+        applyDefaultBranding();
+      }
+    } else {
+      applyDefaultBranding();
+    }
+
+    const alreadyResponded = !!row.info_response_message;
+
+    const formHtml = `
+      <div class="card">
+        <h2 style="margin-top:0;">Additional Information Requested</h2>
+        <p style="color: var(--border); margin-bottom: 20px;">For your submission to: <strong>${row.rfq_name}</strong> (${row.project_name})</p>
+
+        <div style="background: var(--bg-2); padding: 15px; border-radius: 4px; margin-bottom: 20px;">
+          <p style="margin:0 0 6px 0; font-size:12px; text-transform:uppercase; color:var(--border); font-weight:bold;">They've asked for:</p>
+          <p style="margin:0; white-space:pre-wrap;">${row.info_request_message || ''}</p>
+        </div>
+
+        ${alreadyResponded ? `
+          <div style="background:#E1F0FF; padding:15px; border-radius:4px; margin-bottom:20px;">
+            <p style="margin:0 0 6px 0; font-size:12px; text-transform:uppercase; color:var(--border); font-weight:bold;">Your previous response:</p>
+            <p style="margin:0; white-space:pre-wrap;">${row.info_response_message}</p>
+          </div>
+        ` : ''}
+
+        <form id="info-request-form" style="margin-top: 10px;">
+          <div style="margin-bottom: 15px;">
+            <label>Your Response *</label>
+            <textarea id="info-response-message" required rows="4" style="width:100%; padding:10px; border:1px solid var(--border); border-radius:4px; font-family:inherit;" placeholder="Provide the requested information here..."></textarea>
+          </div>
+
+          <div style="margin-bottom: 15px;">
+            <label>Upload Supporting Document(s)</label>
+            <input type="file" id="info-response-files" multiple>
+          </div>
+
+          <button type="submit" class="btn gold" style="width: 100%; padding: 15px; margin-top: 10px;">Submit Response</button>
+        </form>
+      </div>
+    `;
+
+    document.getElementById('rfq-portal').innerHTML = formHtml;
+    document.getElementById('rfq-portal').style.display = 'block';
+    document.getElementById('no-rfq-message').style.display = 'none';
+
+    document.getElementById('info-request-form').addEventListener('submit', (e) => {
+      e.preventDefault();
+      submitAdditionalInfoForm();
+    });
+
+  } catch (err) {
+    console.error('Error loading info request view:', err);
+    showToast('Error loading page', 'error');
+  }
+}
+
+async function submitAdditionalInfoForm() {
+  try {
+    const message = document.getElementById('info-response-message').value.trim();
+    if (!message) {
+      showToast('Please enter a response', 'error');
+      return;
+    }
+
+    showToast('Submitting...', 'success');
+
+    const { data: submissionId, error } = await client.rpc('submit_additional_info', {
+      p_token: currentInfoRequestToken,
+      p_message: message
+    });
+
+    if (error) throw error;
+
+    const resolvedSubmissionId = submissionId || currentInfoRequestSubmissionId;
+
+    const fileInput = document.getElementById('info-response-files');
+    let filesUploaded = 0;
+    if (fileInput && fileInput.files && fileInput.files.length > 0) {
+      for (const file of fileInput.files) {
+        try {
+          const filePath = `rfq-${currentInfoRequestRfqId}/sub-${resolvedSubmissionId}/${Date.now()}-${file.name}`;
+          const { error: uploadError } = await client.storage
+            .from('rfq-documents')
+            .upload(filePath, file);
+
+          if (uploadError) {
+            console.warn('⚠️ File upload failed:', uploadError.message);
+            continue;
+          }
+
+          await client.from('rfq_submission_documents').insert([{
+            submission_id: resolvedSubmissionId,
+            file_name: file.name,
+            file_path: filePath,
+            file_size: file.size
+          }]);
+
+          filesUploaded++;
+        } catch (fileErr) {
+          console.warn('⚠️ Error uploading file:', fileErr.message);
+        }
+      }
+    }
+
+    showToast('✅ Response submitted!', 'success');
+    setTimeout(() => {
+      document.getElementById('rfq-portal').innerHTML = '<div class="card"><h2 style="margin-top:0; color:var(--success);">Thank You!</h2><p>Your response has been received.</p></div>';
+    }, 1000);
+
+  } catch (err) {
+    console.error('Error submitting response:', err);
+    showToast('Error: ' + err.message, 'error');
   }
 }
 
@@ -1892,11 +2060,40 @@ async function openSubmissionDetail(id) {
     if (detailsContent) detailsContent.innerHTML = detailsHtml;
     if (docsContent) docsContent.innerHTML = docsHtml;
 
+    const requestBox = document.getElementById('submission-info-request-box');
+    if (requestBox) {
+      if (submission.info_request_message) {
+        requestBox.style.display = 'block';
+        document.getElementById('submission-info-request-text').textContent = submission.info_request_message;
+        document.getElementById('submission-info-request-date').textContent = submission.info_requested_at
+          ? `Requested ${new Date(submission.info_requested_at).toLocaleString()}`
+          : '';
+      } else {
+        requestBox.style.display = 'none';
+      }
+    }
+
+    const responseBox = document.getElementById('submission-info-response-box');
+    if (responseBox) {
+      if (submission.info_response_message) {
+        responseBox.style.display = 'block';
+        document.getElementById('submission-info-response-text').textContent = submission.info_response_message;
+        document.getElementById('submission-info-response-date').textContent = submission.info_response_at
+          ? `Received ${new Date(submission.info_response_at).toLocaleString()}`
+          : '';
+      } else {
+        responseBox.style.display = 'none';
+      }
+    }
+
     const statusSelect = document.getElementById('submission-status-update');
     if (statusSelect) {
       statusSelect.value = submission.status;
       statusSelect.dataset.submissionId = id;
     }
+    const messageBox = document.getElementById('submission-info-request-message');
+    if (messageBox) messageBox.value = '';
+    onSubmissionStatusSelectChange();
 
     const title = document.getElementById('submission-title');
     if (title) title.textContent = submission.contractor_name;
@@ -1909,17 +2106,37 @@ async function openSubmissionDetail(id) {
   }
 }
 
-async function updateSubmissionStatus() {
+// Toggles the "what do you need?" message box and relabels the action
+// button based on which status is currently selected — Request More
+// Information needs a message + triggers an email, everything else is a
+// plain status write.
+function onSubmissionStatusSelectChange() {
+  const statusSelect = document.getElementById('submission-status-update');
+  const formBox = document.getElementById('submission-info-request-form');
+  const actionBtn = document.getElementById('submission-status-action-btn');
+  if (!statusSelect || !formBox || !actionBtn) return;
+
+  const isInfoRequest = statusSelect.value === 'info_requested';
+  formBox.style.display = isInfoRequest ? 'block' : 'none';
+  actionBtn.textContent = isInfoRequest ? 'Send Request' : 'Update Status';
+}
+
+async function handleSubmissionStatusAction() {
+  const statusSelect = document.getElementById('submission-status-update');
+  if (!statusSelect || !statusSelect.dataset.submissionId) {
+    showToast('Error: submission ID not found', 'error');
+    return;
+  }
+
+  const id = statusSelect.dataset.submissionId;
+  const newStatus = statusSelect.value;
+
+  if (newStatus === 'info_requested') {
+    await sendSubmissionInfoRequest(id);
+    return;
+  }
+
   try {
-    const statusSelect = document.getElementById('submission-status-update');
-    if (!statusSelect || !statusSelect.dataset.submissionId) {
-      showToast('Error: submission ID not found', 'error');
-      return;
-    }
-
-    const id = statusSelect.dataset.submissionId;
-    const newStatus = statusSelect.value;
-
     const { error } = await client
       .from('rfq_submissions')
       .update({ status: newStatus, updated_at: new Date().toISOString() })
@@ -1933,6 +2150,31 @@ async function updateSubmissionStatus() {
 
   } catch (err) {
     console.error('Error:', err);
+    showToast('Error: ' + err.message, 'error');
+  }
+}
+
+// Emails the contractor asking for more information/documents via the
+// request-submission-info Edge Function (Resend) — mirrors the pattern used
+// for send-rfq-invites. The submission's status flips to 'info_requested'
+// server-side once the email is queued.
+async function sendSubmissionInfoRequest(submissionId) {
+  const messageBox = document.getElementById('submission-info-request-message');
+  const message = messageBox ? messageBox.value.trim() : '';
+
+  if (!message) {
+    showToast('Please describe what information you need', 'error');
+    return;
+  }
+
+  try {
+    showToast('Sending request...', 'info');
+    await callEdgeFunction('request-submission-info', { submissionId, message });
+    showToast('✅ Information request emailed to the contractor', 'success');
+    closeModal('submission-detail-modal');
+    loadSubmissions();
+  } catch (err) {
+    console.error('Error sending info request:', err);
     showToast('Error: ' + err.message, 'error');
   }
 }
