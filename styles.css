@@ -355,6 +355,56 @@ label {
   border-left-color: var(--warning);
 }
 
+/* DASHBOARD LEFT-SIDEBAR NAVIGATION (company admin + super admin) */
+.admin-layout {
+  display: flex;
+  gap: 30px;
+  align-items: flex-start;
+}
+
+.admin-sidebar {
+  width: 220px;
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  position: sticky;
+  top: 20px;
+}
+
+.admin-content {
+  flex: 1;
+  min-width: 0;
+}
+
+.sidebar-tab-btn {
+  display: block;
+  width: 100%;
+  text-align: left;
+  padding: 12px 16px;
+  border: none;
+  border-left: 3px solid transparent;
+  background: none;
+  cursor: pointer;
+  font-weight: 600;
+  font-size: 14px;
+  font-family: var(--sans);
+  color: var(--ink);
+  border-radius: 0 4px 4px 0;
+  transition: all 0.2s;
+}
+
+.sidebar-tab-btn:hover {
+  background: var(--bg-2);
+  color: var(--primary);
+}
+
+.sidebar-tab-btn.active {
+  background: var(--bg-2);
+  border-left-color: var(--accent);
+  color: var(--primary);
+}
+
 /* HERO SEARCH BAR */
 .hero-search-bar {
   display: flex;
@@ -648,6 +698,35 @@ label {
 
   .form-grid-2 {
     grid-template-columns: 1fr;
+  }
+
+  /* Sidebar nav collapses to a horizontal scrollable tab bar on narrow screens */
+  .admin-layout {
+    flex-direction: column;
+    gap: 0;
+  }
+
+  .admin-sidebar {
+    width: 100%;
+    flex-direction: row;
+    overflow-x: auto;
+    position: static;
+    border-bottom: 2px solid #E4E7EB;
+    margin-bottom: 20px;
+    gap: 0;
+  }
+
+  .sidebar-tab-btn {
+    white-space: nowrap;
+    border-left: none;
+    border-bottom: 3px solid transparent;
+    border-radius: 0;
+  }
+
+  .sidebar-tab-btn.active {
+    background: none;
+    border-left-color: transparent;
+    border-bottom-color: var(--accent);
   }
 
   input, textarea, select {
