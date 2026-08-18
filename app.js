@@ -1215,16 +1215,17 @@ function showAdminView() {
   document.getElementById('create-tab').style.display = 'block';
   document.getElementById('console-tab').style.display = 'none';
   document.getElementById('submissions-tab').style.display = 'none';
+  document.getElementById('team-tab').style.display = 'none';
   document.getElementById('settings-tab').style.display = 'none';
 
-  document.querySelectorAll('.tab-btn').forEach((btn, idx) => {
+  document.querySelectorAll('.company-tab-btn').forEach((btn, idx) => {
     btn.classList.toggle('active', idx === 0);
   });
 }
 
 function switchAdminTab(tabName, button) {
   document.querySelectorAll('.admin-tab').forEach(tab => tab.style.display = 'none');
-  document.querySelectorAll('.tab-btn').forEach(btn => btn.classList.remove('active'));
+  document.querySelectorAll('.company-tab-btn').forEach(btn => btn.classList.remove('active'));
 
   document.getElementById(tabName + '-tab').style.display = 'block';
   if (button) button.classList.add('active');
@@ -1233,10 +1234,23 @@ function switchAdminTab(tabName, button) {
     loadRFQConsole();
   } else if (tabName === 'submissions') {
     loadSubmissions();
+  } else if (tabName === 'team') {
+    loadTeamMembers();
   } else if (tabName === 'settings') {
     loadSettingsTab();
-    loadTeamMembers();
   }
+}
+
+// Super Admin dashboard uses its own tab/button classes (.super-tab /
+// .super-tab-btn) so switching a tab here never touches the company
+// admin dashboard's tab state, and vice versa — the two dashboards can
+// be left on different sections without clobbering each other.
+function switchSuperAdminTab(tabName, button) {
+  document.querySelectorAll('.super-tab').forEach(tab => tab.style.display = 'none');
+  document.querySelectorAll('.super-tab-btn').forEach(btn => btn.classList.remove('active'));
+
+  document.getElementById(tabName + '-tab').style.display = 'block';
+  if (button) button.classList.add('active');
 }
 
 // ===== SETTINGS =====
@@ -1945,6 +1959,17 @@ function showSuperAdminView() {
   renderPlatformLogoPreview();
   loadSuperAdminCompanies();
   loadSuperAdminApplicants();
+
+  // Always open on the first section for a predictable landing spot,
+  // matching the company admin dashboard's reset-to-first-tab behavior.
+  document.getElementById('super-invite-tab').style.display = 'block';
+  document.getElementById('super-branding-tab').style.display = 'none';
+  document.getElementById('super-companies-tab').style.display = 'none';
+  document.getElementById('super-applicants-tab').style.display = 'none';
+  document.getElementById('super-password-tab').style.display = 'none';
+  document.querySelectorAll('.super-tab-btn').forEach((btn, idx) => {
+    btn.classList.toggle('active', idx === 0);
+  });
 }
 
 function closeSuperAdminView() {
