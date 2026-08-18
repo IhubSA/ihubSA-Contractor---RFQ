@@ -621,12 +621,15 @@ function applyLogoScale(imgEl, scale) {
   imgEl.style.maxWidth = `${Math.round(BASE_LOGO_MAX_WIDTH * s)}px`;
 }
 
-function applyDefaultBranding() {
-  document.getElementById('brand-title').textContent = 'RFQ Hub';
+// The very top masthead (logo + title + subtitle) is platform-level
+// branding — it always shows the platform's own logo (set on the Platform
+// Branding tab) and "Public RFQ Hub", regardless of which company's
+// dashboard or public RFQ page is currently showing. Company-specific
+// branding only appears further down the page (hero section, dashboard
+// header bar, footer).
+function applyPlatformMasthead() {
+  document.getElementById('brand-title').textContent = 'Public RFQ Hub';
   document.getElementById('brand-subtitle').textContent = 'Request for Quotation Management System';
-  document.getElementById('hero-title').textContent = 'RFQ Hub';
-  document.getElementById('hero-subtitle').textContent = DEFAULT_HERO_SUBTITLE;
-  updateFooterCompanyName('RFQ Hub');
 
   const img = document.getElementById('brand-logo-img');
   const def = document.getElementById('brand-logo-default');
@@ -641,26 +644,20 @@ function applyDefaultBranding() {
   }
 }
 
+function applyDefaultBranding() {
+  applyPlatformMasthead();
+  document.getElementById('hero-title').textContent = 'RFQ Hub';
+  document.getElementById('hero-subtitle').textContent = DEFAULT_HERO_SUBTITLE;
+  updateFooterCompanyName('RFQ Hub');
+}
+
 function applyCompanyBranding(company, opts = {}) {
   if (!company) { applyDefaultBranding(); return; }
 
-  document.getElementById('brand-title').textContent = company.name || 'RFQ Hub';
-  document.getElementById('brand-subtitle').textContent = opts.subtitle || 'Request for Quotation Management System';
+  applyPlatformMasthead();
   document.getElementById('hero-title').textContent = opts.heroTitle || company.name || 'RFQ Hub';
   document.getElementById('hero-subtitle').textContent = opts.heroSubtitle || DEFAULT_HERO_SUBTITLE;
   updateFooterCompanyName(company.name);
-
-  const img = document.getElementById('brand-logo-img');
-  const def = document.getElementById('brand-logo-default');
-  if (company.logo_url) {
-    applyLogoScale(img, company.logo_scale);
-    img.src = company.logo_url;
-    img.style.display = 'block';
-    def.style.display = 'none';
-  } else {
-    img.style.display = 'none';
-    def.style.display = 'block';
-  }
 }
 
 // ===== AUTH =====
@@ -1967,7 +1964,7 @@ async function loadSubmissions() {
     if (!currentCompany) return;
     console.log('Loading submissions...');
 
-    const { data: submissions, error } = await client
+    const { data: allSubmissions, error } = await client
       .from('rfq_submissions')
       .select(`*, rfqs!inner(rfq_name, company_id)`)
       .eq('rfqs.company_id', currentCompany.id)
@@ -1975,10 +1972,37 @@ async function loadSubmissions() {
 
     if (error) throw error;
 
-    console.log('Submissions loaded:', submissions ? submissions.length : 0);
+    console.log('Submissions loaded:', allSubmissions ? allSubmissions.length : 0);
 
-    if (!submissions || submissions.length === 0) {
-      document.getElementById('submissions-list').innerHTML = '<p style="text-align: center; color: var(--border); padding: 40px;">No submissions yet</p>';
+    // Populate the RFQ filter's options from the full (unfiltered) set so the
+    // dropdown always lists every RFQ that has submissions, regardless of the
+    // currently-selected filters — rebuilding it from an already-filtered
+    // list would make other RFQs disappear from the dropdown itself.
+    const rfqFilterEl = document.getElementById('rfq-filter');
+    if (rfqFilterEl) {
+      const previousSelection = rfqFilterEl.value;
+      const rfqOptionsById = new Map();
+      (allSubmissions || []).forEach(sub => {
+        if (sub.rfq_id && !rfqOptionsById.has(sub.rfq_id)) {
+          rfqOptionsById.set(sub.rfq_id, sub.rfqs ? sub.rfqs.rfq_name : sub.rfq_id);
+        }
+      });
+      rfqFilterEl.innerHTML = '<option value="">All RFQs</option>' +
+        Array.from(rfqOptionsById.entries()).map(([id, name]) => `<option value="${id}">${name}</option>`).join('');
+      rfqFilterEl.value = previousSelection && rfqOptionsById.has(previousSelection) ? previousSelection : '';
+    }
+
+    const rfqFilterValue = rfqFilterEl ? rfqFilterEl.value : '';
+    const statusFilterValue = document.getElementById('status-filter') ? document.getElementById('status-filter').value : '';
+
+    const submissions = (allSubmissions || []).filter(sub => {
+      if (rfqFilterValue && sub.rfq_id !== rfqFilterValue) return false;
+      if (statusFilterValue && sub.status !== statusFilterValue) return false;
+      return true;
+    });
+
+    if (submissions.length === 0) {
+      document.getElementById('submissions-list').innerHTML = `<p style="text-align: center; color: var(--border); padding: 40px;">${(allSubmissions || []).length === 0 ? 'No submissions yet' : 'No submissions match this filter'}</p>`;
       return;
     }
 
