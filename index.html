@@ -263,13 +263,23 @@
             <form id="settings-form" style="display:flex; flex-direction:column; gap:20px; max-width:600px;">
               <div>
                 <label style="font-weight:bold;">Logo</label>
-                <div style="display:flex; align-items:center; gap:15px; margin-top:8px;">
-                  <img id="settings-logo-preview" src="" alt="Logo preview" style="width:80px; height:80px; object-fit:contain; border:1px solid var(--border); border-radius:8px; background:var(--bg-2); display:none;">
-                  <div id="settings-logo-placeholder" style="width:80px; height:80px; border:1px dashed var(--border); border-radius:8px; display:flex; align-items:center; justify-content:center; color:var(--border); font-size:11px; text-align:center;">No logo</div>
+                <div style="display:flex; align-items:center; gap:15px; margin-top:8px; flex-wrap:wrap;">
+                  <div style="width:140px; height:140px; border:1px solid var(--border); border-radius:8px; background:var(--bg-2); display:flex; align-items:center; justify-content:center; overflow:hidden; flex-shrink:0;">
+                    <img id="settings-logo-preview" src="" alt="Logo preview" style="max-width:260px; height:84px; width:auto; object-fit:contain; display:none;">
+                    <span id="settings-logo-placeholder" style="color:var(--border); font-size:11px; text-align:center; padding:0 10px;">No logo</span>
+                  </div>
                   <div>
                     <input type="file" id="settings-logo-file" accept="image/png,image/jpeg,image/svg+xml,image/webp">
                     <p style="font-size:12px; color:var(--border); margin-top:5px;">PNG, JPG, SVG or WebP. Uploads immediately.</p>
                   </div>
+                </div>
+                <div style="margin-top:14px; max-width:320px;">
+                  <label style="font-weight:bold; font-size:13px; display:flex; justify-content:space-between;">
+                    <span>Logo Size</span>
+                    <span id="settings-logo-scale-label" style="font-weight:normal; color:var(--border);">100%</span>
+                  </label>
+                  <input type="range" id="settings-logo-scale" min="50" max="150" step="5" value="100" style="width:100%;">
+                  <p style="font-size:12px; color:var(--border); margin-top:5px;">Scales your logo in the site header and on the public RFQ portal. The preview above matches the header size.</p>
                 </div>
               </div>
               <div>
@@ -361,13 +371,23 @@
         <div class="card">
           <h2 style="margin-top:0;">Platform Branding</h2>
           <p style="color:var(--border); font-size:14px; margin-bottom:20px;">This logo appears on the main public portal (the "RFQ Hub" landing page) whenever no specific company is in context.</p>
-          <div style="display:flex; align-items:center; gap:15px;">
-            <img id="platform-logo-preview" src="" alt="Platform logo preview" style="width:80px; height:80px; object-fit:contain; border:1px solid var(--border); border-radius:8px; background:var(--bg-2); display:none;">
-            <div id="platform-logo-placeholder" style="width:80px; height:80px; border:1px dashed var(--border); border-radius:8px; display:flex; align-items:center; justify-content:center; color:var(--border); font-size:11px; text-align:center;">No logo</div>
+          <div style="display:flex; align-items:center; gap:15px; flex-wrap:wrap;">
+            <div style="width:140px; height:140px; border:1px solid var(--border); border-radius:8px; background:var(--bg-2); display:flex; align-items:center; justify-content:center; overflow:hidden; flex-shrink:0;">
+              <img id="platform-logo-preview" src="" alt="Platform logo preview" style="max-width:260px; height:84px; width:auto; object-fit:contain; display:none;">
+              <span id="platform-logo-placeholder" style="color:var(--border); font-size:11px; text-align:center; padding:0 10px;">No logo</span>
+            </div>
             <div>
               <input type="file" id="platform-logo-file" accept="image/png,image/jpeg,image/svg+xml,image/webp">
               <p style="font-size:12px; color:var(--border); margin-top:5px;">PNG, JPG, SVG or WebP. Uploads immediately.</p>
             </div>
+          </div>
+          <div style="margin-top:14px; max-width:320px;">
+            <label style="font-weight:bold; font-size:13px; display:flex; justify-content:space-between;">
+              <span>Logo Size</span>
+              <span id="platform-logo-scale-label" style="font-weight:normal; color:var(--border);">100%</span>
+            </label>
+            <input type="range" id="platform-logo-scale" min="50" max="150" step="5" value="100" style="width:100%;">
+            <p style="font-size:12px; color:var(--border); margin-top:5px;">Scales the platform logo in the site header. The preview above matches the header size.</p>
           </div>
         </div>
 
