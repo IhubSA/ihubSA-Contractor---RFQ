@@ -310,6 +310,16 @@ label {
   color: #D32F2F;
 }
 
+.submission-status.info_requested {
+  background: #FFF8E1;
+  color: #B8860B;
+}
+
+.submission-status.response_received {
+  background: #E1F0FF;
+  color: #0B2A4A;
+}
+
 /* SUBMISSION CARDS */
 .submission-card {
   background: white;
