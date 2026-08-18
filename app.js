@@ -280,6 +280,9 @@ function hideAllTopLevelViews() {
   document.getElementById('public-view').style.display = 'none';
   document.getElementById('admin-view').style.display = 'none';
   document.getElementById('super-admin-view').style.display = 'none';
+  const heroExtras = document.getElementById('hero-marketplace-extras');
+  if (heroExtras) heroExtras.style.display = 'none';
+  closeMobileNav();
 }
 
 function hideAllPublicSections() {
@@ -289,16 +292,86 @@ function hideAllPublicSections() {
   });
 }
 
+// mode: 'loggedOut' (landing — full Sign In + Register Free), 'contractor'
+// (viewing/applying to a specific RFQ — Sign In only, Register Free would
+// be redundant mid-flow), 'form' (already on the login/set-password page —
+// no action buttons needed). Admin/super-admin views never call this, so
+// whatever the last mode was (always 'form', reached via login) persists,
+// which correctly shows no public CTAs while logged in.
 function setHeaderActions(mode) {
   const el = document.getElementById('header-actions');
   if (!el) return;
   if (mode === 'loggedOut') {
     el.innerHTML = `
-      <button onclick="showLoginForm()" class="btn gold" style="padding:8px 16px;">Log In</button>
+      <button onclick="showLoginForm()" class="btn header-signin" type="button">Sign In</button>
+      <button onclick="openApplicantGate(null)" class="btn header-register" type="button">Register Free</button>
+    `;
+  } else if (mode === 'contractor') {
+    el.innerHTML = `
+      <button onclick="showLoginForm()" class="btn header-signin" type="button">Sign In</button>
     `;
   } else {
     el.innerHTML = '';
   }
+}
+
+function toggleMobileNav() {
+  const wrap = document.getElementById('site-nav-wrap');
+  const toggle = document.getElementById('mobile-nav-toggle');
+  if (!wrap) return;
+  const isOpen = wrap.classList.toggle('open');
+  if (toggle) toggle.setAttribute('aria-expanded', isOpen ? 'true' : 'false');
+}
+
+function closeMobileNav() {
+  const wrap = document.getElementById('site-nav-wrap');
+  const toggle = document.getElementById('mobile-nav-toggle');
+  if (wrap) wrap.classList.remove('open');
+  if (toggle) toggle.setAttribute('aria-expanded', 'false');
+}
+
+// ===== PUBLIC NAV LINKS =====
+// "Opportunities" / "How It Works" always route back to the landing page
+// first (they need to work from any public page — an RFQ detail page, the
+// login form, etc.) then scroll to the relevant section once it's rendered.
+function navGoOpportunities() {
+  showLandingView();
+  setTimeout(() => {
+    const el = document.getElementById('public-rfq-list');
+    if (el) el.scrollIntoView({ behavior: 'smooth' });
+  }, 50);
+}
+
+function navGoHowItWorks() {
+  showLandingView();
+  setTimeout(() => {
+    const el = document.getElementById('how-it-works-section');
+    if (el) el.scrollIntoView({ behavior: 'smooth' });
+  }, 50);
+}
+
+// About/Help/Terms don't have real content yet — a placeholder modal is
+// shown rather than inventing company copy or legal text. Easy to swap for
+// a real page later without touching any of the calling code.
+function showInfoPlaceholder(title, body) {
+  document.getElementById('info-page-modal-title').textContent = title;
+  document.getElementById('info-page-modal-body').textContent = body;
+  openModal('info-page-modal');
+}
+
+function navGoAbout() {
+  closeMobileNav();
+  showInfoPlaceholder('About', 'This page is coming soon. In the meantime, reach out using the Help link if you have questions about the platform.');
+}
+
+function navGoHelp() {
+  closeMobileNav();
+  showInfoPlaceholder('Need Help?', "If you run into any issues, or anything doesn't match what you're seeing on screen, email ihubsa@gmail.com and we'll help you sort it out.");
+}
+
+function navGoTerms() {
+  closeMobileNav();
+  showInfoPlaceholder('Terms & Conditions', 'This page is coming soon.');
 }
 
 function showLandingView() {
@@ -307,7 +380,14 @@ function showLandingView() {
   hideAllPublicSections();
   document.getElementById('landing-section').style.display = 'block';
   setHeaderActions('loggedOut');
+
+  document.getElementById('hero-title').textContent = 'Find Your Next Business Opportunity';
+  document.getElementById('hero-subtitle').textContent = 'Discover open Requests for Quotation from organisations looking for qualified suppliers and service providers.';
+  const heroExtras = document.getElementById('hero-marketplace-extras');
+  if (heroExtras) heroExtras.style.display = 'block';
+
   loadPublicRFQList();
+  loadPublicPortalStats();
 }
 
 // ===== PUBLIC RFQ PORTAL =====
@@ -330,6 +410,17 @@ function computeCountdownParts(deadlineIso) {
   };
 }
 
+// Buckets remaining time into an urgency status so cards can visually
+// communicate how soon an RFQ closes, not just show raw numbers.
+function computeUrgency(deadlineIso) {
+  const diffMs = new Date(deadlineIso).getTime() - Date.now();
+  const hrsRemaining = diffMs / 3600000;
+  if (diffMs <= 0) return { status: 'closed', label: 'Closed', badgeClass: 'badge-closed' };
+  if (hrsRemaining < 24) return { status: 'closing-today', label: 'Closing Today', badgeClass: 'badge-closing-today' };
+  if (hrsRemaining < 48) return { status: 'closing-soon', label: 'Closing Soon', badgeClass: 'badge-closing-soon' };
+  return { status: 'open', label: 'Open', badgeClass: 'badge-open' };
+}
+
 let countdownIntervalStarted = false;
 function updateAllCountdowns() {
   document.querySelectorAll('.countdown-units[data-deadline]').forEach(el => {
@@ -340,12 +431,43 @@ function updateAllCountdowns() {
     if (daysEl) daysEl.textContent = parts.days;
     if (hrsEl) hrsEl.textContent = parts.hrs;
     if (minsEl) minsEl.textContent = parts.mins;
+
+    const urgency = computeUrgency(el.dataset.deadline);
+    const box = el.closest('.countdown-box');
+    if (box) {
+      box.classList.remove('urgency-closing-soon', 'urgency-closing-today', 'urgency-closed');
+      if (urgency.status !== 'open') box.classList.add(`urgency-${urgency.status}`);
+      const labelEl = box.querySelector('.countdown-urgency-label');
+      if (labelEl) {
+        labelEl.textContent = urgency.status === 'closed' ? 'Closed' : (urgency.status === 'open' ? 'Closing In' : urgency.label);
+        labelEl.className = `countdown-urgency-label ${urgency.status}`;
+      }
+    }
+
+    // Keep the card's top status badge in sync too, in case a visitor
+    // lingers long enough for an RFQ to cross an urgency threshold.
+    const card = el.closest('.opportunity-card');
+    const badgeEl = card ? card.querySelector('.opportunity-status-badge') : null;
+    if (badgeEl) {
+      badgeEl.className = `opportunity-status-badge ${urgency.badgeClass}`;
+      badgeEl.textContent = urgency.label;
+    }
   });
 }
 function ensureCountdownTicking() {
   if (countdownIntervalStarted) return;
   countdownIntervalStarted = true;
   setInterval(updateAllCountdowns, 30000);
+}
+
+function clearOpportunityFilters() {
+  const provinceEl = document.getElementById('public-rfq-province-filter');
+  const searchEl = document.getElementById('hero-search-input');
+  const sortEl = document.getElementById('public-rfq-sort');
+  if (provinceEl) provinceEl.value = '';
+  if (searchEl) searchEl.value = '';
+  if (sortEl) sortEl.value = 'deadline_asc';
+  loadPublicRFQList();
 }
 
 async function loadPublicRFQList() {
@@ -358,6 +480,7 @@ async function loadPublicRFQList() {
   const province = provinceEl ? provinceEl.value : '';
   const searchText = (searchEl ? searchEl.value : '').trim().toLowerCase();
   const sortMode = sortEl ? sortEl.value : 'deadline_asc';
+  const hasActiveFilters = !!(province || searchText);
 
   listEl.innerHTML = '<p style="color:var(--border);">Loading...</p>';
 
@@ -377,12 +500,31 @@ async function loadPublicRFQList() {
 
     let rfqs = fetchedRfqs || [];
 
+    // Fetch companies before filtering/rendering so search can match on
+    // company name too, and so the "Organisations Using the Platform"
+    // strip can be built from the same real, already-public data — no
+    // separate query and nothing invented.
+    const companyIds = [...new Set(rfqs.map(r => r.company_id).filter(Boolean))];
+    let companiesById = {};
+    if (companyIds.length > 0) {
+      const { data: companies } = await client
+        .from('companies')
+        .select('id, name, logo_url, logo_scale')
+        .in('id', companyIds);
+      companiesById = Object.fromEntries((companies || []).map(c => [c.id, c]));
+    }
+    renderOrgLogos(companiesById);
+
     if (searchText) {
-      rfqs = rfqs.filter(r =>
-        (r.rfq_name || '').toLowerCase().includes(searchText) ||
-        (r.project_name || '').toLowerCase().includes(searchText) ||
-        (r.description || '').toLowerCase().includes(searchText)
-      );
+      rfqs = rfqs.filter(r => {
+        const company = companiesById[r.company_id];
+        return (r.rfq_name || '').toLowerCase().includes(searchText) ||
+          (r.project_name || '').toLowerCase().includes(searchText) ||
+          (r.description || '').toLowerCase().includes(searchText) ||
+          (r.location_area || '').toLowerCase().includes(searchText) ||
+          (r.province || '').toLowerCase().includes(searchText) ||
+          (company && company.name || '').toLowerCase().includes(searchText);
+      });
     }
 
     if (sortMode === 'deadline_desc') {
@@ -394,20 +536,17 @@ async function loadPublicRFQList() {
     }
 
     if (rfqs.length === 0) {
-      listEl.innerHTML = (province || searchText)
-        ? '<p style="color:var(--border); font-style:italic;">No open RFQs match your search right now.</p>'
-        : '<p style="color:var(--border); font-style:italic;">No open RFQs right now. Check back soon.</p>';
+      listEl.innerHTML = hasActiveFilters
+        ? `<div class="opp-empty-state">
+             <h4>No Open Opportunities</h4>
+             <p>There are currently no open RFQs matching your search.</p>
+             <button type="button" class="btn secondary" onclick="clearOpportunityFilters()">Clear Filters</button>
+           </div>`
+        : `<div class="opp-empty-state">
+             <h4>No Open Opportunities</h4>
+             <p>There are currently no open RFQs. Check back soon for new opportunities.</p>
+           </div>`;
       return;
-    }
-
-    const companyIds = [...new Set(rfqs.map(r => r.company_id).filter(Boolean))];
-    let companiesById = {};
-    if (companyIds.length > 0) {
-      const { data: companies } = await client
-        .from('companies')
-        .select('id, name, logo_url, logo_scale')
-        .in('id', companyIds);
-      companiesById = Object.fromEntries((companies || []).map(c => [c.id, c]));
     }
 
     listEl.innerHTML = rfqs.map(rfq => {
@@ -418,14 +557,19 @@ async function loadPublicRFQList() {
       const cardLogoScale = Math.min(1.5, Math.max(0.5, (company && company.logo_scale) || 1));
       const cardLogoHeight = Math.round(40 * cardLogoScale);
       const cardLogoMaxWidth = Math.round(130 * cardLogoScale);
+      const urgency = computeUrgency(rfq.deadline);
+      const refCode = `RFQ-${rfq.id.replace(/-/g, '').slice(0, 8).toUpperCase()}`;
       return `
         <div class="opportunity-card" onclick="openApplicantGate('${rfq.id}')">
           <div class="opportunity-card-grid">
             <div class="opportunity-col-info">
-              <span class="badge-open">Open</span>
-              ${company && company.logo_url ? `<div style="margin-bottom:6px;"><img src="${company.logo_url}" alt="${company.name}" style="height:${cardLogoHeight}px; width:auto; max-width:${cardLogoMaxWidth}px; object-fit:contain;"></div>` : ''}
-              <p style="margin:0 0 6px 0; font-size:12px; text-transform:uppercase; color:var(--border); font-weight:bold;">${company ? company.name : 'RFQ Hub'}</p>
-              <h3 style="margin:0 0 8px 0; color:var(--primary);">${rfq.rfq_name}</h3>
+              <span class="opportunity-status-badge ${urgency.badgeClass}">${urgency.label}</span>
+              <p class="opportunity-ref">${refCode}</p>
+              <h3 style="margin:0 0 6px 0; color:var(--primary);">${rfq.rfq_name}</h3>
+              <p style="margin:0 0 8px 0; font-size:12px; text-transform:uppercase; color:var(--border); font-weight:bold; display:flex; align-items:center; gap:8px;">
+                ${company && company.logo_url ? `<img src="${company.logo_url}" alt="${company.name}" style="height:${Math.min(cardLogoHeight, 22)}px; width:auto; max-width:${cardLogoMaxWidth}px; object-fit:contain;">` : ''}
+                ${company ? company.name : 'RFQ Hub'}
+              </p>
               <p style="margin:0; color:var(--ink); font-size:14px;">${rfq.description}</p>
             </div>
             <div class="opportunity-col-meta">
@@ -435,13 +579,13 @@ async function loadPublicRFQList() {
             </div>
             <div class="opportunity-col-countdown">
               <div class="countdown-box">
-                <p class="countdown-label">Time Remaining</p>
+                <p class="countdown-urgency-label ${urgency.status}">${urgency.status === 'closed' ? 'Closed' : 'Closing In'}</p>
                 <div class="countdown-units" data-deadline="${rfq.deadline}">
                   <div><div class="countdown-unit-num cd-days">--</div><div class="countdown-unit-label">Days</div></div>
                   <div><div class="countdown-unit-num cd-hrs">--</div><div class="countdown-unit-label">Hrs</div></div>
                   <div><div class="countdown-unit-num cd-mins">--</div><div class="countdown-unit-label">Mins</div></div>
                 </div>
-                <button type="button" class="btn gold" style="width:100%; padding:10px; margin-top:14px;" onclick="event.stopPropagation(); openApplicantGate('${rfq.id}')">View Opportunity</button>
+                <button type="button" class="btn gold" style="width:100%; padding:10px; margin-top:14px;" onclick="event.stopPropagation(); openApplicantGate('${rfq.id}')">View Opportunity →</button>
               </div>
             </div>
           </div>
@@ -454,6 +598,60 @@ async function loadPublicRFQList() {
   } catch (err) {
     console.error('Error loading public RFQ list:', err);
     listEl.innerHTML = '<p style="color:var(--warning);">Error loading open RFQs.</p>';
+  }
+}
+
+// Real, already-public data only: companies that currently have at least
+// one open RFQ listed and a logo on file. No invented organisations.
+function renderOrgLogos(companiesById) {
+  const section = document.getElementById('org-logos-section');
+  const grid = document.getElementById('org-logos-grid');
+  if (!section || !grid) return;
+
+  const withLogos = Object.values(companiesById).filter(c => c && c.logo_url);
+  if (withLogos.length === 0) {
+    section.style.display = 'none';
+    grid.innerHTML = '';
+    return;
+  }
+
+  grid.innerHTML = withLogos.map(c => `<img src="${c.logo_url}" alt="${c.name}" title="${c.name}">`).join('');
+  section.style.display = 'block';
+}
+
+// Narrow aggregate-only stats (see get_public_portal_stats RPC) — real
+// counts, never invented. Any stat that's currently zero is omitted
+// rather than shown as "0 X", and the whole row stays hidden if the call
+// fails or every count is zero.
+async function loadPublicPortalStats() {
+  const row = document.getElementById('hero-stats-row');
+  if (!row) return;
+  row.style.display = 'none';
+  row.innerHTML = '';
+
+  try {
+    const { data, error } = await client.rpc('get_public_portal_stats');
+    if (error) throw error;
+    const stats = Array.isArray(data) ? data[0] : data;
+    if (!stats) return;
+
+    const items = [
+      { num: stats.open_opportunities, label: 'Open Opportunities' },
+      { num: stats.registered_suppliers, label: 'Registered Suppliers' },
+      { num: stats.organisations, label: 'Organisations' }
+    ].filter(item => Number(item.num) > 0);
+
+    if (items.length === 0) return;
+
+    row.innerHTML = items.map(item => `
+      <div class="hero-stat">
+        <div class="hero-stat-num">${item.num}</div>
+        <div class="hero-stat-label">${item.label}</div>
+      </div>
+    `).join('');
+    row.style.display = 'flex';
+  } catch (err) {
+    console.warn('Could not load public portal stats:', err);
   }
 }
 
@@ -478,8 +676,19 @@ function openApplicantGate(rfqId) {
   if (companyNameInput) companyNameInput.value = '';
   if (phoneInput) phoneInput.value = '';
 
+  // "Register Free" / "Register as a Supplier" open this same gate with no
+  // specific RFQ in mind (rfqId is null) — swap the copy so it reads as a
+  // general supplier registration rather than implying a specific RFQ.
+  const titleEl = document.getElementById('gate-modal-title');
+  const introEl = document.getElementById('gate-modal-intro');
+  if (titleEl) titleEl.textContent = rfqId ? 'Register to View & Apply' : 'Register as a Supplier';
+  if (introEl) introEl.textContent = rfqId
+    ? "To view this RFQ's details and apply, please confirm your email. It only takes a moment."
+    : "Register your email to start browsing and applying to open RFQs. It only takes a moment.";
+
   document.getElementById('gate-email-section').style.display = 'block';
   document.getElementById('gate-register-section').style.display = 'none';
+  closeMobileNav();
   openModal('applicant-gate-modal');
 }
 
@@ -503,7 +712,7 @@ async function handleGateEmailSubmit(e) {
     if (error) throw error;
 
     if (isRegistered) {
-      showToast('👋 Welcome back! Loading RFQ...', 'success');
+      showToast(pendingGateRfqId ? '👋 Welcome back! Loading RFQ...' : '👋 Welcome back! You\'re already registered.', 'success');
       proceedPastGate();
     } else {
       document.getElementById('gate-email-section').style.display = 'none';
@@ -549,7 +758,7 @@ async function handleGateRegisterSubmit(e) {
     // either way, so let them through rather than showing an error.
     if (error && error.code !== '23505') throw error;
 
-    showToast('✅ Registered! Loading RFQ...', 'success');
+    showToast(pendingGateRfqId ? '✅ Registered! Loading RFQ...' : '✅ You\'re registered! Browse open opportunities below.', 'success');
     proceedPastGate();
   } catch (err) {
     console.error('Error registering applicant:', err);
@@ -564,7 +773,13 @@ function proceedPastGate() {
   closeModal('applicant-gate-modal');
   const rfqId = pendingGateRfqId;
   pendingGateRfqId = null;
-  if (!rfqId) return;
+  if (!rfqId) {
+    // Generic "Register Free" / "Register as a Supplier" — nothing to
+    // open, just take them to the listings they can now apply to.
+    const listEl = document.getElementById('public-rfq-list');
+    if (listEl) listEl.scrollIntoView({ behavior: 'smooth' });
+    return;
+  }
 
   const url = new URL(window.location.href);
   url.searchParams.set('open', rfqId);
