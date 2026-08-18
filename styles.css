@@ -489,6 +489,28 @@ label {
   border-color: var(--accent);
 }
 
+/* Three-column layout: RFQ info | closing date/location/category | countdown */
+.opportunity-card-grid {
+  display: grid;
+  grid-template-columns: 2fr 1.1fr 1fr;
+  gap: 28px;
+  align-items: start;
+}
+
+.opportunity-col-info {
+  min-width: 0;
+}
+
+.opportunity-col-meta {
+  border-left: 1px solid #E4E7EB;
+  border-right: 1px solid #E4E7EB;
+  padding: 2px 24px;
+}
+
+.opportunity-col-countdown {
+  min-width: 0;
+}
+
 .badge-open {
   display: inline-block;
   background: var(--success);
@@ -531,7 +553,7 @@ label {
   border-radius: 6px;
   padding: 14px 18px;
   text-align: center;
-  min-width: 190px;
+  width: 100%;
 }
 
 .countdown-label {
@@ -781,12 +803,17 @@ label {
     row-gap: 30px;
   }
 
-  .opportunity-card > div {
-    flex-direction: column;
+  .opportunity-card-grid {
+    grid-template-columns: 1fr;
+    gap: 16px;
   }
 
-  .countdown-box {
-    width: 100%;
+  .opportunity-col-meta {
+    border-left: none;
+    border-right: none;
+    border-top: 1px solid #E4E7EB;
+    border-bottom: 1px solid #E4E7EB;
+    padding: 14px 0;
   }
 }
 
