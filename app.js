@@ -302,9 +302,53 @@ function showLandingView() {
 }
 
 // ===== PUBLIC RFQ PORTAL =====
-async function loadPublicRFQList(province) {
+const ICON_CALENDAR = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></svg>';
+const ICON_PIN = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0z"/><circle cx="12" cy="10" r="3"/></svg>';
+const ICON_TAG = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20.59 13.41L11 3.83A2 2 0 0 0 9.59 3.24L4 3v5.59a2 2 0 0 0 .59 1.41l9.58 9.58a2 2 0 0 0 2.83 0l3.59-3.59a2 2 0 0 0 0-2.83z"/><circle cx="8" cy="8" r="1.5"/></svg>';
+
+// Computes {days, hrs, mins} remaining until an ISO deadline, clamped to
+// zero once it has passed (the public list only ever fetches future
+// deadlines, but a card can outlive its deadline while a visitor is
+// still on the page).
+function computeCountdownParts(deadlineIso) {
+  const diffMs = new Date(deadlineIso).getTime() - Date.now();
+  if (diffMs <= 0) return { days: 0, hrs: 0, mins: 0 };
+  const totalMins = Math.floor(diffMs / 60000);
+  return {
+    days: Math.floor(totalMins / 1440),
+    hrs: Math.floor((totalMins % 1440) / 60),
+    mins: totalMins % 60
+  };
+}
+
+let countdownIntervalStarted = false;
+function updateAllCountdowns() {
+  document.querySelectorAll('.countdown-units[data-deadline]').forEach(el => {
+    const parts = computeCountdownParts(el.dataset.deadline);
+    const daysEl = el.querySelector('.cd-days');
+    const hrsEl = el.querySelector('.cd-hrs');
+    const minsEl = el.querySelector('.cd-mins');
+    if (daysEl) daysEl.textContent = parts.days;
+    if (hrsEl) hrsEl.textContent = parts.hrs;
+    if (minsEl) minsEl.textContent = parts.mins;
+  });
+}
+function ensureCountdownTicking() {
+  if (countdownIntervalStarted) return;
+  countdownIntervalStarted = true;
+  setInterval(updateAllCountdowns, 30000);
+}
+
+async function loadPublicRFQList() {
   const listEl = document.getElementById('public-rfq-list');
   if (!listEl) return;
+
+  const provinceEl = document.getElementById('public-rfq-province-filter');
+  const searchEl = document.getElementById('hero-search-input');
+  const sortEl = document.getElementById('public-rfq-sort');
+  const province = provinceEl ? provinceEl.value : '';
+  const searchText = (searchEl ? searchEl.value : '').trim().toLowerCase();
+  const sortMode = sortEl ? sortEl.value : 'deadline_asc';
 
   listEl.innerHTML = '<p style="color:var(--border);">Loading...</p>';
 
@@ -313,20 +357,36 @@ async function loadPublicRFQList(province) {
       .from('rfqs')
       .select('id, rfq_name, project_name, description, deadline, budget, company_id, province, location_area')
       .eq('is_public', true)
-      .gt('deadline', new Date().toISOString())
-      .order('deadline', { ascending: true });
+      .gt('deadline', new Date().toISOString());
 
     if (province) {
       query = query.eq('province', province);
     }
 
-    const { data: rfqs, error } = await query;
-
+    const { data: fetchedRfqs, error } = await query;
     if (error) throw error;
 
-    if (!rfqs || rfqs.length === 0) {
-      listEl.innerHTML = province
-        ? '<p style="color:var(--border); font-style:italic;">No open RFQs in this province right now.</p>'
+    let rfqs = fetchedRfqs || [];
+
+    if (searchText) {
+      rfqs = rfqs.filter(r =>
+        (r.rfq_name || '').toLowerCase().includes(searchText) ||
+        (r.project_name || '').toLowerCase().includes(searchText) ||
+        (r.description || '').toLowerCase().includes(searchText)
+      );
+    }
+
+    if (sortMode === 'deadline_desc') {
+      rfqs.sort((a, b) => new Date(b.deadline) - new Date(a.deadline));
+    } else if (sortMode === 'budget_desc') {
+      rfqs.sort((a, b) => (b.budget || 0) - (a.budget || 0));
+    } else {
+      rfqs.sort((a, b) => new Date(a.deadline) - new Date(b.deadline));
+    }
+
+    if (rfqs.length === 0) {
+      listEl.innerHTML = (province || searchText)
+        ? '<p style="color:var(--border); font-style:italic;">No open RFQs match your search right now.</p>'
         : '<p style="color:var(--border); font-style:italic;">No open RFQs right now. Check back soon.</p>';
       return;
     }
@@ -350,29 +410,34 @@ async function loadPublicRFQList(province) {
       const cardLogoHeight = Math.round(40 * cardLogoScale);
       const cardLogoMaxWidth = Math.round(130 * cardLogoScale);
       return `
-        <div class="card" style="cursor:pointer;" onclick="openApplicantGate('${rfq.id}')">
-          <div style="display:flex; justify-content:space-between; align-items:flex-start; gap:15px; flex-wrap:wrap;">
-            <div style="flex:1; min-width:200px;">
-              <div style="display:flex; align-items:center; gap:8px; margin-bottom:8px; flex-wrap:wrap;">
-                ${company && company.logo_url ? `<img src="${company.logo_url}" alt="${company.name}" style="height:${cardLogoHeight}px; width:auto; max-width:${cardLogoMaxWidth}px; object-fit:contain;">` : ''}
-                <p style="margin:0; font-size:12px; text-transform:uppercase; color:var(--border); font-weight:bold;">${company ? company.name : 'RFQ Hub'}</p>
+        <div class="opportunity-card" onclick="openApplicantGate('${rfq.id}')">
+          <div style="display:flex; justify-content:space-between; align-items:flex-start; gap:20px; flex-wrap:wrap;">
+            <div style="flex:1; min-width:220px;">
+              <span class="badge-open">Open</span>
+              ${company && company.logo_url ? `<div style="margin-bottom:6px;"><img src="${company.logo_url}" alt="${company.name}" style="height:${cardLogoHeight}px; width:auto; max-width:${cardLogoMaxWidth}px; object-fit:contain;"></div>` : ''}
+              <p style="margin:0 0 6px 0; font-size:12px; text-transform:uppercase; color:var(--border); font-weight:bold;">${company ? company.name : 'RFQ Hub'}</p>
+              <h3 style="margin:0 0 8px 0; color:var(--primary);">${rfq.rfq_name}</h3>
+              <p style="margin:0 0 10px 0; color:var(--ink); font-size:14px;">${rfq.description}</p>
+              <div class="opportunity-meta-row">${ICON_CALENDAR}<div><span class="opportunity-meta-label">Closing Date</span>${deadlineDate.toLocaleDateString()} at ${deadlineDate.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</div></div>
+              ${locationText ? `<div class="opportunity-meta-row">${ICON_PIN}<div><span class="opportunity-meta-label">Location</span>${locationText}</div></div>` : ''}
+              <div class="opportunity-meta-row">${ICON_TAG}<div><span class="opportunity-meta-label">Project</span>${rfq.project_name}</div></div>
+            </div>
+            <div class="countdown-box">
+              <p class="countdown-label">Time Remaining</p>
+              <div class="countdown-units" data-deadline="${rfq.deadline}">
+                <div><div class="countdown-unit-num cd-days">--</div><div class="countdown-unit-label">Days</div></div>
+                <div><div class="countdown-unit-num cd-hrs">--</div><div class="countdown-unit-label">Hrs</div></div>
+                <div><div class="countdown-unit-num cd-mins">--</div><div class="countdown-unit-label">Mins</div></div>
               </div>
-              <h3 style="margin:0 0 6px 0; color:var(--primary);">${rfq.rfq_name}</h3>
-              <p style="margin:0; color:var(--border); font-size:14px;">Project: ${rfq.project_name}</p>
-              ${locationText ? `<p style="margin:4px 0 0 0; color:var(--border); font-size:13px;">📍 ${locationText}</p>` : ''}
+              <button type="button" class="btn gold" style="width:100%; padding:10px; margin-top:14px;" onclick="event.stopPropagation(); openApplicantGate('${rfq.id}')">View Opportunity</button>
             </div>
-            <div style="text-align:right;">
-              <p style="margin:0; font-size:13px; color:var(--border);">Deadline</p>
-              <p style="margin:0; font-weight:bold; color:var(--ink);">${deadlineDate.toLocaleDateString()}</p>
-            </div>
-          </div>
-          <p style="margin:12px 0 0 0; color:var(--ink); font-size:14px;">${rfq.description}</p>
-          <div style="margin-top:15px; text-align:right;">
-            <span class="btn gold" style="padding:8px 18px; display:inline-block;">View &amp; Apply</span>
           </div>
         </div>
       `;
     }).join('');
+
+    updateAllCountdowns();
+    ensureCountdownTicking();
   } catch (err) {
     console.error('Error loading public RFQ list:', err);
     listEl.innerHTML = '<p style="color:var(--warning);">Error loading open RFQs.</p>';
@@ -2176,8 +2241,19 @@ window.addEventListener('DOMContentLoaded', () => {
 
   const provinceFilter = document.getElementById('public-rfq-province-filter');
   if (provinceFilter) {
-    provinceFilter.addEventListener('change', () => {
-      loadPublicRFQList(provinceFilter.value || null);
+    provinceFilter.addEventListener('change', () => loadPublicRFQList());
+  }
+
+  const sortFilter = document.getElementById('public-rfq-sort');
+  if (sortFilter) {
+    sortFilter.addEventListener('change', () => loadPublicRFQList());
+  }
+
+  const heroSearchForm = document.getElementById('hero-search-form');
+  if (heroSearchForm) {
+    heroSearchForm.addEventListener('submit', (e) => {
+      e.preventDefault();
+      loadPublicRFQList();
     });
   }
 
