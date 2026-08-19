@@ -534,7 +534,7 @@
             <button class="sidebar-tab-btn super-tab-btn active" onclick="switchSuperAdminTab('super-invite', this)">Invite a Company</button>
             <button class="sidebar-tab-btn super-tab-btn" onclick="switchSuperAdminTab('super-branding', this)">Platform Branding</button>
             <button class="sidebar-tab-btn super-tab-btn" onclick="switchSuperAdminTab('super-companies', this)">All Companies</button>
-            <button class="sidebar-tab-btn super-tab-btn" onclick="switchSuperAdminTab('super-applicants', this)">Registered Applicants</button>
+            <button class="sidebar-tab-btn super-tab-btn" onclick="switchSuperAdminTab('super-applicants', this)">Supplier Database</button>
             <button class="sidebar-tab-btn super-tab-btn" onclick="switchSuperAdminTab('super-password', this)">Change Password</button>
           </div>
 
@@ -592,8 +592,8 @@
 
         <div id="super-applicants-tab" class="super-tab" style="display:none;">
           <div class="card">
-            <h2 style="margin-top:0;">Registered Applicants</h2>
-            <p style="color:var(--border); font-size:14px; margin-bottom:20px;">Everyone who has registered on the public portal in order to view and apply to open RFQs.</p>
+            <h2 style="margin-top:0;">Supplier Database</h2>
+            <p style="color:var(--border); font-size:14px; margin-bottom:20px;">Everyone who has registered on the IhubSA PRFQ Hub Supplier Database in order to view and apply to open RFQs, with their full registration details and uploaded documents.</p>
             <div id="super-admin-applicants-list"></div>
           </div>
         </div>
@@ -1099,7 +1099,7 @@
 
   <!-- APPLICANT REGISTRATION GATE MODAL -->
   <div id="applicant-gate-modal" class="modal" style="display:none;">
-    <div class="modal-content" style="max-width:480px;">
+    <div class="modal-content" style="max-width:680px;">
       <div class="modal-head">
         <h3 id="gate-modal-title">Register to View &amp; Apply</h3>
         <button class="drawer-close" onclick="closeModal('applicant-gate-modal')">✕</button>
@@ -1118,19 +1118,55 @@
         </div>
 
         <div id="gate-register-section" style="display:none;">
-          <p style="background:var(--bg-2); padding:12px; border-radius:4px; font-size:13px; color:var(--ink); margin-bottom:20px;">We don't have this email on file yet. Please complete a quick registration to continue.</p>
+          <p style="background:var(--bg-2); padding:12px; border-radius:4px; font-size:13px; color:var(--ink); margin-bottom:20px;">We don't have this email on file yet. Please complete registration on the IhubSA PRFQ Hub Supplier Database to continue.</p>
           <form id="gate-register-form">
+
+            <h4 style="margin:0 0 12px 0; color:var(--primary);">Company Details</h4>
             <div style="margin-bottom:15px;">
-              <label>Full Name *</label>
+              <label>Company Name *</label>
+              <input type="text" id="gate-company-name" required style="width:100%; box-sizing:border-box;">
+            </div>
+            <div style="margin-bottom:15px;">
+              <label>Number of Years in Business *</label>
+              <input type="number" id="gate-years-business" required min="0" step="1" style="width:100%; box-sizing:border-box;">
+            </div>
+
+            <h4 style="margin:20px 0 12px 0; color:var(--primary);">Main Contact Person</h4>
+            <div style="margin-bottom:15px;">
+              <label>Main Contact Person *</label>
               <input type="text" id="gate-full-name" required style="width:100%; box-sizing:border-box;">
             </div>
             <div style="margin-bottom:15px;">
-              <label>Company / Trading Name</label>
-              <input type="text" id="gate-company-name" style="width:100%; box-sizing:border-box;">
+              <label>Title *</label>
+              <select id="gate-title" required style="width:100%; box-sizing:border-box; padding:10px; border:1px solid var(--border); border-radius:4px; font-family:inherit;">
+                <option value="">Select...</option>
+                <option value="Ms">Ms</option>
+                <option value="Mrs">Mrs</option>
+                <option value="Mr">Mr</option>
+                <option value="Dr">Dr</option>
+                <option value="Professor">Professor</option>
+              </select>
             </div>
             <div style="margin-bottom:15px;">
-              <label>Phone Number</label>
-              <input type="tel" id="gate-phone" style="width:100%; box-sizing:border-box;">
+              <label>Designation *</label>
+              <input type="text" id="gate-designation" required style="width:100%; box-sizing:border-box;">
+            </div>
+            <div style="display:flex; gap:15px; flex-wrap:wrap;">
+              <div style="margin-bottom:15px; flex:1; min-width:200px;">
+                <label>Phone Number</label>
+                <input type="tel" id="gate-phone" style="width:100%; box-sizing:border-box;">
+              </div>
+              <div style="margin-bottom:15px; flex:1; min-width:200px;">
+                <label>Additional Contact Number</label>
+                <input type="tel" id="gate-additional-phone" style="width:100%; box-sizing:border-box;">
+              </div>
+            </div>
+
+            <h4 style="margin:20px 0 12px 0; color:var(--primary);">Location &amp; Reach</h4>
+            <div style="margin-bottom:15px;">
+              <label>Address *</label>
+              <textarea id="gate-address" required rows="2" style="width:100%; box-sizing:border-box; font-family:inherit; padding:10px; border:1px solid var(--border); border-radius:4px;"></textarea>
+              <p style="margin:6px 0 0 0; font-size:12px; color:var(--border);">Please note: preference will be given to businesses operating in the province/town listed on a given RFQ.</p>
             </div>
             <div style="margin-bottom:15px;">
               <label>Notify Me About New Opportunities In *</label>
@@ -1149,6 +1185,75 @@
               </select>
               <p style="margin:6px 0 0 0; font-size:12px; color:var(--border);">We'll email you when a new open RFQ is posted in this province. You can change this anytime from the link in those emails.</p>
             </div>
+            <div style="margin-bottom:15px;">
+              <label>Website / Social Media</label>
+              <input type="text" id="gate-website" placeholder="Paste a link and/or share social media handles" style="width:100%; box-sizing:border-box;">
+            </div>
+
+            <h4 style="margin:20px 0 12px 0; color:var(--primary);">Services</h4>
+            <div style="margin-bottom:15px;">
+              <label>Please describe the services or products offered by your company. *</label>
+              <textarea id="gate-services-description" required rows="3" style="width:100%; box-sizing:border-box; font-family:inherit; padding:10px; border:1px solid var(--border); border-radius:4px;"></textarea>
+            </div>
+            <div style="margin-bottom:15px;">
+              <label>Please list the geographical areas that your company can service. *</label>
+              <textarea id="gate-service-areas" required rows="2" style="width:100%; box-sizing:border-box; font-family:inherit; padding:10px; border:1px solid var(--border); border-radius:4px;"></textarea>
+            </div>
+
+            <h4 style="margin:20px 0 12px 0; color:var(--primary);">Document Submission</h4>
+            <p style="margin:0 0 12px 0; font-size:12px; color:var(--border);">Please upload all documents as a PDF file. Certain uploads allow for only 1 file (can be multiple pages).</p>
+            <div style="margin-bottom:15px;">
+              <label>CIPC Registration or ID for Sole Prop/NPO Certificate/Other *</label>
+              <input type="file" id="gate-doc-cipc" required accept="application/pdf" style="width:100%; box-sizing:border-box;">
+            </div>
+            <div style="margin-bottom:15px;">
+              <label>Proof of Address *</label>
+              <input type="file" id="gate-doc-proof-address" required accept="application/pdf" style="width:100%; box-sizing:border-box;">
+            </div>
+            <div style="margin-bottom:15px;">
+              <label>SARS Information (Tax Clearance Certificate/PIN and/or VAT/Tax Registration Proof) *</label>
+              <input type="file" id="gate-doc-sars" required accept="application/pdf" style="width:100%; box-sizing:border-box;">
+            </div>
+            <div style="margin-bottom:15px;">
+              <label>Proof of Banking</label>
+              <input type="file" id="gate-doc-banking" accept="application/pdf" style="width:100%; box-sizing:border-box;">
+            </div>
+            <div style="margin-bottom:15px;">
+              <label>B-BBEE Affidavit or Certificate <span style="font-weight:normal; color:var(--border);">(if applicable)</span></label>
+              <input type="file" id="gate-doc-bbbee" accept="application/pdf" style="width:100%; box-sizing:border-box;">
+            </div>
+            <div style="margin-bottom:15px;">
+              <label>Valid Health and Safety Certificate <span style="font-weight:normal; color:var(--border);">(if applicable)</span></label>
+              <input type="file" id="gate-doc-health-safety" accept="application/pdf" style="width:100%; box-sizing:border-box;">
+            </div>
+            <div style="margin-bottom:15px;">
+              <label>Any Special Permits or Registrations <span style="font-weight:normal; color:var(--border);">(as applicable)</span></label>
+              <input type="file" id="gate-doc-permits" accept="application/pdf" style="width:100%; box-sizing:border-box;">
+            </div>
+            <div style="margin-bottom:15px;">
+              <label>Any Other Documents</label>
+              <input type="file" id="gate-doc-other" accept="application/pdf" multiple style="width:100%; box-sizing:border-box;">
+            </div>
+
+            <h4 style="margin:20px 0 12px 0; color:var(--primary);">Declarations</h4>
+            <div style="background:var(--bg-2); padding:12px; border-radius:4px; font-size:12px; color:var(--ink); max-height:160px; overflow-y:auto; margin-bottom:15px;">
+              <p>By submitting this Supplier Registration Form, I declare and confirm that:</p>
+              <p>All information and supporting documentation provided in this application is, to the best of my knowledge, true, accurate, complete and current. I understand that the information provided may be relied upon when evaluating quotations, bids, proposals and other procurement opportunities.</p>
+              <p>I undertake to notify IhubSA RFQ Hub of any material changes to the information provided in this application within ten (10) days of such change.</p>
+              <p>I confirm that I have read and understood the applicable Terms and Conditions, together with any disclaimers and notices relating to supplier registration, and agree to comply with these requirements.</p>
+              <p>I acknowledge that the information submitted will be treated confidentially and processed and stored in accordance with the Protection of Personal Information Act, 4 of 2013 (POPIA) and applicable data protection requirements.</p>
+              <p>By submitting this form and accepting this Declaration, I further acknowledge and agree that:</p>
+              <p>My business may be registered as a potential service provider on the IhubSA RFQ Hub Supplier Database.</p>
+              <p>IhubSA RFQ Hub may contact me from time to time regarding relevant procurement opportunities and may invite or encourage my business to submit quotations, bids or proposals for applicable goods or services.</p>
+              <p>Registration on the Supplier Database does not constitute appointment, accreditation, preferred supplier status, or a guarantee of any work, procurement opportunity or contract.</p>
+              <p>Participation in any procurement opportunity will remain subject to the applicable procurement process, requirements, evaluation criteria and approvals.</p>
+              <p style="margin-bottom:0;">IhubSA RFQ Hub reserves the right to verify information and supporting documentation submitted as part of this registration.</p>
+            </div>
+            <div style="margin-bottom:15px; display:flex; align-items:flex-start; gap:8px;">
+              <input type="checkbox" id="gate-declaration-accept" required style="margin-top:3px;">
+              <label for="gate-declaration-accept" style="font-weight:normal;">I have read, understood and accept the above Declaration and the applicable Supplier Registration Terms and Conditions. *</label>
+            </div>
+
             <button type="submit" class="btn gold" id="gate-register-submit" style="width:100%; padding:12px;">Register &amp; Continue</button>
             <button type="button" class="btn secondary" style="width:100%; padding:12px; margin-top:10px;" onclick="gateBackToEmail()">← Use a different email</button>
           </form>
