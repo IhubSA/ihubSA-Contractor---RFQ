@@ -815,6 +815,71 @@
     </div>
   </div>
 
+  <!-- ASK A QUESTION MODAL -->
+  <div id="ask-question-modal" class="modal" style="display:none;">
+    <div class="modal-content" style="max-width:480px;">
+      <div class="modal-head">
+        <h3>Ask a Question</h3>
+        <button class="drawer-close" onclick="closeModal('ask-question-modal')">✕</button>
+      </div>
+      <div class="modal-body">
+        <p id="ask-question-rfq-name" style="color:var(--primary); margin-bottom:20px; font-weight:bold;"></p>
+        <form id="ask-question-form">
+          <div style="margin-bottom:15px;">
+            <label>Email Address *</label>
+            <input type="email" id="ask-question-email" required style="width:100%; box-sizing:border-box;" placeholder="you@company.com">
+          </div>
+          <div style="margin-bottom:15px;">
+            <label>Your Name</label>
+            <input type="text" id="ask-question-name" style="width:100%; box-sizing:border-box;">
+          </div>
+          <div style="margin-bottom:15px;">
+            <label>Your Question *</label>
+            <textarea id="ask-question-text" required rows="4" style="width:100%; box-sizing:border-box; padding:10px; border:1px solid var(--border); border-radius:4px; font-family:inherit;" placeholder="e.g. Does the delivery timeframe include installation?"></textarea>
+          </div>
+          <p style="font-size:12px; color:var(--border); margin-bottom:20px;">Your question goes to the company that posted this RFQ. If they publish an answer, it's shown publicly on the RFQ page without your name or email — otherwise they'll reply to you directly by email.</p>
+          <button type="submit" class="btn gold" id="ask-question-submit" style="width:100%; padding:12px;">Send Question</button>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <!-- ANSWER QUESTION MODAL (staff) -->
+  <div id="answer-question-modal" class="modal" style="display:none;">
+    <div class="modal-content" style="max-width:520px;">
+      <div class="modal-head">
+        <h3>Reply to Question</h3>
+        <button class="drawer-close" onclick="closeModal('answer-question-modal')">✕</button>
+      </div>
+      <div class="modal-body">
+        <div style="background:var(--bg-2); padding:12px; border-radius:4px; margin-bottom:20px;">
+          <p style="margin:0 0 4px 0; font-size:12px; text-transform:uppercase; color:var(--border); font-weight:bold;">Question</p>
+          <p id="answer-question-text" style="margin:0; white-space:pre-wrap;"></p>
+        </div>
+        <form id="answer-question-form">
+          <div style="margin-bottom:15px;">
+            <label>Your Answer *</label>
+            <textarea id="answer-question-response" required rows="4" style="width:100%; box-sizing:border-box; padding:10px; border:1px solid var(--border); border-radius:4px; font-family:inherit;"></textarea>
+          </div>
+          <div style="margin-bottom:15px;">
+            <label>Visibility *</label>
+            <div style="display:flex; flex-direction:column; gap:10px; margin-top:8px;">
+              <label style="font-weight:normal; display:flex; align-items:flex-start; gap:8px;">
+                <input type="radio" name="answer-visibility" value="public" checked style="margin-top:3px;">
+                <span><strong>Post publicly on the RFQ page</strong><br><span style="font-size:12px; color:var(--border);">Visible to all contractors viewing this RFQ. Also emailed to the asker. Their identity is never shown to others.</span></span>
+              </label>
+              <label style="font-weight:normal; display:flex; align-items:flex-start; gap:8px;">
+                <input type="radio" name="answer-visibility" value="private" style="margin-top:3px;">
+                <span><strong>Send by email only</strong><br><span style="font-size:12px; color:var(--border);">Sent privately to the contractor who asked — not shown on the public RFQ page.</span></span>
+              </label>
+            </div>
+          </div>
+          <button type="submit" class="btn gold" id="answer-question-submit" style="width:100%; padding:12px;">Send Answer</button>
+        </form>
+      </div>
+    </div>
+  </div>
+
   <!-- TOAST NOTIFICATIONS -->
   <div id="toast-wrap" style="position:fixed; top:20px; right:20px; z-index:9999; max-width:400px;"></div>
 
