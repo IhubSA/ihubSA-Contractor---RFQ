@@ -790,6 +790,23 @@
               <label>Phone Number</label>
               <input type="tel" id="gate-phone" style="width:100%; box-sizing:border-box;">
             </div>
+            <div style="margin-bottom:15px;">
+              <label>Notify Me About New Opportunities In *</label>
+              <select id="gate-province" required style="width:100%; box-sizing:border-box; padding:10px; border:1px solid var(--border); border-radius:4px; font-family:inherit;">
+                <option value="">Select a province...</option>
+                <option value="ALL">All Provinces</option>
+                <option value="Eastern Cape">Eastern Cape</option>
+                <option value="Free State">Free State</option>
+                <option value="Gauteng">Gauteng</option>
+                <option value="KwaZulu-Natal">KwaZulu-Natal</option>
+                <option value="Limpopo">Limpopo</option>
+                <option value="Mpumalanga">Mpumalanga</option>
+                <option value="Northern Cape">Northern Cape</option>
+                <option value="North West">North West</option>
+                <option value="Western Cape">Western Cape</option>
+              </select>
+              <p style="margin:6px 0 0 0; font-size:12px; color:var(--border);">We'll email you when a new open RFQ is posted in this province. You can change this anytime from the link in those emails.</p>
+            </div>
             <button type="submit" class="btn gold" id="gate-register-submit" style="width:100%; padding:12px;">Register &amp; Continue</button>
             <button type="button" class="btn secondary" style="width:100%; padding:12px; margin-top:10px;" onclick="gateBackToEmail()">← Use a different email</button>
           </form>
