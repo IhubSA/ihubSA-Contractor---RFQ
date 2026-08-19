@@ -444,9 +444,14 @@ function updateAllCountdowns() {
       }
     }
 
-    // Keep the card's top status badge in sync too, in case a visitor
-    // lingers long enough for an RFQ to cross an urgency threshold.
+    // Keep the card's top status badge (and its colour-coded left border)
+    // in sync too, in case a visitor lingers long enough for an RFQ to
+    // cross an urgency threshold.
     const card = el.closest('.opportunity-card');
+    if (card) {
+      card.classList.remove('status-open', 'status-closing-soon', 'status-closing-today', 'status-closed');
+      card.classList.add(`status-${urgency.status}`);
+    }
     const badgeEl = card ? card.querySelector('.opportunity-status-badge') : null;
     if (badgeEl) {
       badgeEl.className = `opportunity-status-badge ${urgency.badgeClass}`;
@@ -560,7 +565,7 @@ async function loadPublicRFQList() {
       const urgency = computeUrgency(rfq.deadline);
       const refCode = `RFQ-${rfq.id.replace(/-/g, '').slice(0, 8).toUpperCase()}`;
       return `
-        <div class="opportunity-card" onclick="openApplicantGate('${rfq.id}')">
+        <div class="opportunity-card status-${urgency.status}" onclick="openApplicantGate('${rfq.id}')">
           <div class="opportunity-card-grid">
             <div class="opportunity-col-info">
               <span class="opportunity-status-badge ${urgency.badgeClass}">${urgency.label}</span>
@@ -585,7 +590,7 @@ async function loadPublicRFQList() {
                   <div><div class="countdown-unit-num cd-hrs">--</div><div class="countdown-unit-label">Hrs</div></div>
                   <div><div class="countdown-unit-num cd-mins">--</div><div class="countdown-unit-label">Mins</div></div>
                 </div>
-                <button type="button" class="btn gold" style="width:100%; padding:10px; margin-top:14px;" onclick="event.stopPropagation(); openApplicantGate('${rfq.id}')">View Opportunity →</button>
+                <button type="button" class="btn navy" style="width:100%; padding:10px; margin-top:14px;" onclick="event.stopPropagation(); openApplicantGate('${rfq.id}')">View Opportunity →</button>
               </div>
             </div>
           </div>
@@ -793,6 +798,11 @@ function showLoginForm() {
   hideAllPublicSections();
   document.getElementById('login-section').style.display = 'block';
   setHeaderActions('form');
+  // The marketplace hero copy ("Find Your Next Business Opportunity...")
+  // is only meant for the public landing page — reset it back to the
+  // neutral default so it doesn't linger behind the login card when
+  // someone clicks "Sign In" straight off the landing page.
+  applyDefaultBranding();
 }
 
 function showSetPasswordView() {
@@ -801,6 +811,7 @@ function showSetPasswordView() {
   hideAllPublicSections();
   document.getElementById('set-password-section').style.display = 'block';
   setHeaderActions('form');
+  applyDefaultBranding();
 }
 
 // ===== BRANDING =====
