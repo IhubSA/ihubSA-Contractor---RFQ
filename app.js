@@ -28,6 +28,7 @@ async function initApp() {
   const rfqToken = params.get('rfq');
   const openRfqId = params.get('open');
   const infoToken = params.get('info');
+  const prefsToken = params.get('prefs');
   const wantsAdmin = params.has('admin');
   const authType = getUrlHashParams().get('type'); // 'invite' or 'recovery' when landing from an invite/reset link
 
@@ -55,6 +56,14 @@ async function initApp() {
     applyDefaultBranding();
     setHeaderActions('contractor');
     await loadInfoRequestView(infoToken);
+    return;
+  }
+
+  if (prefsToken) {
+    console.log('Loading supplier notification preferences with token:', prefsToken);
+    applyDefaultBranding();
+    setHeaderActions('contractor');
+    await loadSupplierPreferencesView(prefsToken);
     return;
   }
 
@@ -676,10 +685,12 @@ function openApplicantGate(rfqId) {
   const fullNameInput = document.getElementById('gate-full-name');
   const companyNameInput = document.getElementById('gate-company-name');
   const phoneInput = document.getElementById('gate-phone');
+  const provinceInput = document.getElementById('gate-province');
   if (emailInput) emailInput.value = '';
   if (fullNameInput) fullNameInput.value = '';
   if (companyNameInput) companyNameInput.value = '';
   if (phoneInput) phoneInput.value = '';
+  if (provinceInput) provinceInput.value = '';
 
   // "Register Free" / "Register as a Supplier" open this same gate with no
   // specific RFQ in mind (rfqId is null) — swap the copy so it reads as a
@@ -738,9 +749,15 @@ async function handleGateRegisterSubmit(e) {
   const fullName = document.getElementById('gate-full-name').value.trim();
   const companyName = document.getElementById('gate-company-name').value.trim();
   const phone = document.getElementById('gate-phone').value.trim();
+  const provinceEl = document.getElementById('gate-province');
+  const province = provinceEl ? provinceEl.value : '';
 
   if (!email || !fullName) {
     showToast('❌ Please enter your name and email.', 'error');
+    return;
+  }
+  if (!province) {
+    showToast('❌ Please select a province (or "All Provinces") so we know what to notify you about.', 'error');
     return;
   }
 
@@ -756,7 +773,8 @@ async function handleGateRegisterSubmit(e) {
         full_name: fullName,
         company_name: companyName || null,
         email,
-        phone: phone || null
+        phone: phone || null,
+        province
       });
     // A duplicate email (e.g. a race with another tab, or someone
     // double-submitting) isn't a real problem here — they're registered
@@ -1010,6 +1028,24 @@ async function sendRFQInviteEmails(rfqId, invitations) {
   }
 }
 
+// Fires automatically right after a new Open (public) RFQ is created —
+// emails every registered supplier whose notification province matches
+// this RFQ's province (or who chose "All Provinces"). Best-effort, same
+// as sendRFQInviteEmails: a failure here doesn't undo the RFQ itself, it
+// just means suppliers won't have been proactively emailed — the RFQ is
+// still live and browsable on the public portal either way.
+async function notifySuppliersNewRFQ(rfqId) {
+  try {
+    const result = await callEdgeFunction('notify-suppliers-new-rfq', { rfqId });
+    if (result.sent > 0) {
+      showToast(`✅ Notified ${result.sent} registered supplier(s) in this province`, 'success');
+    }
+  } catch (err) {
+    console.error('Error notifying suppliers:', err);
+    showToast('RFQ created, but notifying suppliers failed: ' + err.message, 'warning');
+  }
+}
+
 async function handleInviteCompanySubmit(e) {
   e.preventDefault();
   const companyName = document.getElementById('invite-company-name').value.trim();
@@ -1208,6 +1244,13 @@ let currentInfoRequestToken = null;
 let currentInfoRequestSubmissionId = null;
 let currentInfoRequestRfqId = null;
 
+// Public "update my notification preferences" page, reached via the
+// ?prefs=TOKEN link included in every new-RFQ notification email. Uses
+// get_applicant_preferences/update_applicant_province (SECURITY DEFINER)
+// since the supplier isn't logged in — the token is the credential, same
+// trust model as the info-request/invite-link tokens above.
+let currentPrefsToken = null;
+
 async function loadInfoRequestView(token) {
   try {
     hideAllTopLevelViews();
@@ -1355,6 +1398,97 @@ async function submitAdditionalInfoForm() {
     console.error('Error submitting response:', err);
     showToast('Error: ' + err.message, 'error');
   }
+}
+
+const PROVINCE_OPTIONS = [
+  'Eastern Cape', 'Free State', 'Gauteng', 'KwaZulu-Natal', 'Limpopo',
+  'Mpumalanga', 'Northern Cape', 'North West', 'Western Cape'
+];
+
+async function loadSupplierPreferencesView(token) {
+  try {
+    hideAllTopLevelViews();
+    document.getElementById('public-view').style.display = 'block';
+    hideAllPublicSections();
+
+    const { data, error } = await client.rpc('get_applicant_preferences', { p_token: token });
+    const row = Array.isArray(data) ? data[0] : data;
+
+    if (error || !row) {
+      console.error('Preferences link not found:', error);
+      document.getElementById('no-rfq-message').style.display = 'block';
+      document.getElementById('rfq-portal').style.display = 'none';
+      document.getElementById('no-rfq-message').innerHTML = '<div class="card"><h2>Invalid Link</h2><p>This link is invalid. Please use the link from your most recent RFQ Hub email.</p></div>';
+      return;
+    }
+
+    currentPrefsToken = token;
+
+    const optionsHtml = [
+      `<option value="ALL"${row.province === 'ALL' ? ' selected' : ''}>All Provinces</option>`,
+      ...PROVINCE_OPTIONS.map(p => `<option value="${p}"${row.province === p ? ' selected' : ''}>${p}</option>`)
+    ].join('');
+
+    const formHtml = `
+      <div class="card" style="max-width:480px; margin:0 auto;">
+        <h2 style="margin-top:0;">Notification Preferences</h2>
+        <p style="color: var(--border); margin-bottom: 20px;">${escapeHtmlClient(row.full_name)} (${escapeHtmlClient(row.email)})</p>
+
+        <form id="prefs-form">
+          <div style="margin-bottom: 15px;">
+            <label>Notify Me About New Opportunities In</label>
+            <select id="prefs-province" required style="width:100%; box-sizing:border-box; padding:10px; border:1px solid var(--border); border-radius:4px; font-family:inherit;">
+              ${row.province ? '' : '<option value="" selected disabled>Select a province...</option>'}
+              ${optionsHtml}
+            </select>
+            <p style="margin:6px 0 0 0; font-size:12px; color:var(--border);">Currently: ${row.province ? (row.province === 'ALL' ? 'All Provinces' : escapeHtmlClient(row.province)) : 'not set — you will not receive any RFQ notifications until you choose one.'}</p>
+          </div>
+          <button type="submit" class="btn gold" style="width: 100%; padding: 12px;">Save Preferences</button>
+        </form>
+      </div>
+    `;
+
+    document.getElementById('rfq-portal').innerHTML = formHtml;
+    document.getElementById('rfq-portal').style.display = 'block';
+    document.getElementById('no-rfq-message').style.display = 'none';
+
+    document.getElementById('prefs-form').addEventListener('submit', (e) => {
+      e.preventDefault();
+      submitSupplierPreferencesForm();
+    });
+
+  } catch (err) {
+    console.error('Error loading preferences view:', err);
+    showToast('Error loading page', 'error');
+  }
+}
+
+async function submitSupplierPreferencesForm() {
+  try {
+    const province = document.getElementById('prefs-province').value;
+    if (!province) {
+      showToast('Please select a province', 'error');
+      return;
+    }
+
+    const { error } = await client.rpc('update_applicant_province', {
+      p_token: currentPrefsToken,
+      p_province: province
+    });
+
+    if (error) throw error;
+
+    showToast('✅ Preferences saved', 'success');
+  } catch (err) {
+    console.error('Error saving preferences:', err);
+    showToast('Error: ' + err.message, 'error');
+  }
+}
+
+// Small standalone HTML-escaper for the preferences page (mirrors the
+// inline escaping style used elsewhere in this file for user-supplied text).
+function escapeHtmlClient(s) {
+  return String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 }
 
 async function loadOpenRFQView(rfqId) {
@@ -1973,6 +2107,11 @@ async function createNewRFQ() {
     console.log('✅ RFQ created:', rfq.id);
 
     await uploadRFQAttachments(rfq.id);
+
+    if (isPublic) {
+      // Fire-and-forget: don't block the rest of RFQ creation on this.
+      notifySuppliersNewRFQ(rfq.id);
+    }
 
     if (contractorEmails.length > 0) {
       const invitations = contractorEmails.map(email => ({
