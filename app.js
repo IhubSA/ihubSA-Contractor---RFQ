@@ -698,16 +698,30 @@ let pendingGateRfqId = null;
 function openApplicantGate(rfqId) {
   pendingGateRfqId = rfqId;
 
-  const emailInput = document.getElementById('gate-email');
-  const fullNameInput = document.getElementById('gate-full-name');
-  const companyNameInput = document.getElementById('gate-company-name');
-  const phoneInput = document.getElementById('gate-phone');
-  const provinceInput = document.getElementById('gate-province');
-  if (emailInput) emailInput.value = '';
-  if (fullNameInput) fullNameInput.value = '';
-  if (companyNameInput) companyNameInput.value = '';
-  if (phoneInput) phoneInput.value = '';
-  if (provinceInput) provinceInput.value = '';
+  // Reset every field on the gate — both the quick email step and the full
+  // Supplier Database registration form (name/company/contact/address/
+  // services/documents/declaration) — so a previous attempt never bleeds
+  // into a fresh one.
+  const fieldIds = [
+    'gate-email', 'gate-company-name', 'gate-years-business', 'gate-full-name',
+    'gate-title', 'gate-designation', 'gate-phone', 'gate-additional-phone',
+    'gate-address', 'gate-province', 'gate-website', 'gate-services-description',
+    'gate-service-areas'
+  ];
+  fieldIds.forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.value = '';
+  });
+  const fileIds = [
+    'gate-doc-cipc', 'gate-doc-proof-address', 'gate-doc-sars', 'gate-doc-banking',
+    'gate-doc-bbbee', 'gate-doc-health-safety', 'gate-doc-permits', 'gate-doc-other'
+  ];
+  fileIds.forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.value = '';
+  });
+  const declarationEl = document.getElementById('gate-declaration-accept');
+  if (declarationEl) declarationEl.checked = false;
 
   // "Register Free" / "Register as a Supplier" open this same gate with no
   // specific RFQ in mind (rfqId is null) — swap the copy so it reads as a
@@ -760,38 +774,139 @@ async function handleGateEmailSubmit(e) {
   }
 }
 
+// Uploads one supplier registration document to the private
+// 'supplier-documents' bucket, folder-scoped by the client-generated
+// applicant id so files from different registrants never collide. Returns
+// the storage path (not a public URL — the bucket is private and only
+// readable by the super admin, same trust model as the table itself).
+async function uploadSupplierDocument(applicantId, keyPrefix, file) {
+  const filePath = `applicant-${applicantId}/${keyPrefix}-${Date.now()}-${file.name}`;
+  const { error } = await client.storage.from('supplier-documents').upload(filePath, file);
+  if (error) throw error;
+  return filePath;
+}
+
 async function handleGateRegisterSubmit(e) {
   e.preventDefault();
   const email = document.getElementById('gate-email').value.trim();
-  const fullName = document.getElementById('gate-full-name').value.trim();
   const companyName = document.getElementById('gate-company-name').value.trim();
+  const yearsInBusiness = document.getElementById('gate-years-business').value.trim();
+  const fullName = document.getElementById('gate-full-name').value.trim();
+  const title = document.getElementById('gate-title').value;
+  const designation = document.getElementById('gate-designation').value.trim();
   const phone = document.getElementById('gate-phone').value.trim();
+  const additionalPhone = document.getElementById('gate-additional-phone').value.trim();
+  const address = document.getElementById('gate-address').value.trim();
   const provinceEl = document.getElementById('gate-province');
   const province = provinceEl ? provinceEl.value : '';
+  const website = document.getElementById('gate-website').value.trim();
+  const servicesDescription = document.getElementById('gate-services-description').value.trim();
+  const serviceAreas = document.getElementById('gate-service-areas').value.trim();
+  const declarationAccepted = document.getElementById('gate-declaration-accept').checked;
 
-  if (!email || !fullName) {
-    showToast('❌ Please enter your name and email.', 'error');
+  const cipcFile = document.getElementById('gate-doc-cipc').files[0];
+  const proofAddressFile = document.getElementById('gate-doc-proof-address').files[0];
+  const sarsFile = document.getElementById('gate-doc-sars').files[0];
+  const bankingFile = document.getElementById('gate-doc-banking').files[0];
+  const bbbeeFile = document.getElementById('gate-doc-bbbee').files[0];
+  const healthSafetyFile = document.getElementById('gate-doc-health-safety').files[0];
+  const permitsFile = document.getElementById('gate-doc-permits').files[0];
+  const otherFiles = Array.from(document.getElementById('gate-doc-other').files || []);
+
+  // The form's own `required` attributes already block submission for most
+  // of these (native HTML5 validation), but the email field belongs to the
+  // earlier step's form, not this one, so it's not covered by that — worth
+  // a defensive check. A couple of others are double-checked too since a
+  // clear error here beats a confusing DB constraint failure below.
+  if (!email || !companyName || !fullName) {
+    showToast('❌ Please fill in your email, company name and main contact person.', 'error');
     return;
   }
   if (!province) {
     showToast('❌ Please select a province (or "All Provinces") so we know what to notify you about.', 'error');
     return;
   }
+  if (!cipcFile || !proofAddressFile || !sarsFile) {
+    showToast('❌ Please upload CIPC Registration/ID, Proof of Address, and SARS Information — these are required.', 'error');
+    return;
+  }
+  if (!declarationAccepted) {
+    showToast('❌ Please accept the Declaration to continue.', 'error');
+    return;
+  }
 
   const submitBtn = document.getElementById('gate-register-submit');
   const originalLabel = submitBtn.textContent;
   submitBtn.disabled = true;
-  submitBtn.textContent = 'Registering...';
+  submitBtn.textContent = 'Uploading documents...';
+
+  // Generate the row's id client-side (same pattern used for rfq_submissions
+  // and rfq_questions) so uploaded files can be folder-scoped to it before
+  // the row exists, and so we never need to chain .select() onto the insert
+  // below — applicant_registrations' SELECT policy is super-admin-only, so
+  // an anonymous registrant reading the row back via RETURNING would 401.
+  const applicantId = generateUUID();
 
   try {
+    const [cipcPath, proofAddressPath, sarsPath] = await Promise.all([
+      uploadSupplierDocument(applicantId, 'cipc', cipcFile),
+      uploadSupplierDocument(applicantId, 'proof-of-address', proofAddressFile),
+      uploadSupplierDocument(applicantId, 'sars', sarsFile)
+    ]);
+
+    // Optional documents: upload what was provided, but don't let a single
+    // optional-upload failure block the whole registration — the required
+    // documents above already succeeded, so log and continue.
+    const uploadOptional = async (file, key) => {
+      if (!file) return null;
+      try {
+        return await uploadSupplierDocument(applicantId, key, file);
+      } catch (err) {
+        console.warn(`⚠️ Optional document "${key}" failed to upload:`, err.message);
+        return null;
+      }
+    };
+    const [bankingPath, bbbeePath, healthSafetyPath, permitsPath] = await Promise.all([
+      uploadOptional(bankingFile, 'banking'),
+      uploadOptional(bbbeeFile, 'bbbee'),
+      uploadOptional(healthSafetyFile, 'health-safety'),
+      uploadOptional(permitsFile, 'permits')
+    ]);
+
+    const otherDocuments = [];
+    for (const file of otherFiles) {
+      const path = await uploadOptional(file, 'other');
+      if (path) otherDocuments.push({ name: file.name, path });
+    }
+
+    submitBtn.textContent = 'Registering...';
+
     const { error } = await client
       .from('applicant_registrations')
       .insert({
+        id: applicantId,
         full_name: fullName,
-        company_name: companyName || null,
+        company_name: companyName,
         email,
         phone: phone || null,
-        province
+        province,
+        years_in_business: parseInt(yearsInBusiness, 10) || 0,
+        title,
+        designation,
+        additional_phone: additionalPhone || null,
+        address,
+        website_social: website || null,
+        services_description: servicesDescription,
+        service_areas: serviceAreas,
+        declaration_accepted: declarationAccepted,
+        cipc_document_path: cipcPath,
+        proof_of_address_document_path: proofAddressPath,
+        sars_document_path: sarsPath,
+        proof_of_banking_document_path: bankingPath,
+        bbbee_document_path: bbbeePath,
+        health_safety_document_path: healthSafetyPath,
+        special_permits_document_path: permitsPath,
+        other_documents: otherDocuments
       });
     // A duplicate email (e.g. a race with another tab, or someone
     // double-submitting) isn't a real problem here — they're registered
@@ -2992,16 +3107,48 @@ async function loadSuperAdminApplicants() {
       return;
     }
 
+    // Document fields present on the row, each rendered as a download
+    // button when a path exists (private bucket — signed URL only).
+    const docFields = (a) => {
+      const fields = [
+        ['CIPC/ID', a.cipc_document_path],
+        ['Proof of Address', a.proof_of_address_document_path],
+        ['SARS Info', a.sars_document_path],
+        ['Proof of Banking', a.proof_of_banking_document_path],
+        ['B-BBEE', a.bbbee_document_path],
+        ['Health & Safety', a.health_safety_document_path],
+        ['Special Permits', a.special_permits_document_path]
+      ].filter(([, path]) => !!path);
+      (a.other_documents || []).forEach(doc => fields.push([doc.name || 'Other Document', doc.path]));
+      return fields;
+    };
+
     list.innerHTML = `
-      <p style="color:var(--border); font-size:13px; margin-bottom:10px;">${applicants.length} registered applicant${applicants.length === 1 ? '' : 's'}</p>
-      <div style="max-height:500px; overflow-y:auto;">
+      <p style="color:var(--border); font-size:13px; margin-bottom:10px;">${applicants.length} registered supplier${applicants.length === 1 ? '' : 's'}</p>
+      <div style="max-height:600px; overflow-y:auto;">
         ${applicants.map(a => `
-          <div style="display:flex; justify-content:space-between; align-items:center; padding:15px; border:1px solid var(--border); border-radius:4px; margin-bottom:10px; flex-wrap:wrap; gap:10px;">
-            <div>
-              <p style="margin:0; font-weight:600;">${a.full_name}</p>
-              <p style="margin:0; font-size:12px; color:var(--border);">${a.company_name ? a.company_name + ' · ' : ''}${a.email}${a.phone ? ' · ' + a.phone : ''}</p>
+          <div style="padding:15px; border:1px solid var(--border); border-radius:4px; margin-bottom:10px;">
+            <div style="display:flex; justify-content:space-between; align-items:flex-start; flex-wrap:wrap; gap:10px;">
+              <div>
+                <p style="margin:0; font-weight:600;">${a.company_name}</p>
+                <p style="margin:2px 0 0 0; font-size:13px; color:var(--ink);">${a.title ? a.title + ' ' : ''}${a.full_name}${a.designation ? ' · ' + a.designation : ''}</p>
+                <p style="margin:2px 0 0 0; font-size:12px; color:var(--border);">${a.email}${a.phone ? ' · ' + a.phone : ''}${a.additional_phone ? ' · ' + a.additional_phone : ''}</p>
+              </div>
+              <p style="margin:0; font-size:12px; color:var(--border); white-space:nowrap;">Registered ${new Date(a.created_at).toLocaleDateString()}</p>
             </div>
-            <p style="margin:0; font-size:12px; color:var(--border);">Registered ${new Date(a.created_at).toLocaleDateString()}</p>
+            <div style="margin-top:10px; display:grid; grid-template-columns:repeat(auto-fit, minmax(200px, 1fr)); gap:6px 20px; font-size:12px; color:var(--ink);">
+              <p style="margin:0;"><strong>Years in Business:</strong> ${a.years_in_business != null ? a.years_in_business : '—'}</p>
+              <p style="margin:0;"><strong>Notify Province:</strong> ${a.province || '—'}</p>
+              <p style="margin:0; grid-column:1/-1;"><strong>Address:</strong> ${a.address || '—'}</p>
+              ${a.website_social ? `<p style="margin:0; grid-column:1/-1;"><strong>Website/Social:</strong> ${a.website_social}</p>` : ''}
+              <p style="margin:0; grid-column:1/-1;"><strong>Services:</strong> ${a.services_description || '—'}</p>
+              <p style="margin:0; grid-column:1/-1;"><strong>Service Areas:</strong> ${a.service_areas || '—'}</p>
+            </div>
+            <div style="margin-top:12px; display:flex; flex-wrap:wrap; gap:8px;">
+              ${docFields(a).map(([label, path]) => `
+                <button type="button" class="btn secondary" style="padding:6px 12px; font-size:12px;" onclick="downloadSupplierDocument('${path}', '${label.replace(/'/g, "\\'")}')">📄 ${label}</button>
+              `).join('') || '<p style="margin:0; font-size:12px; color:var(--border);">No documents on file.</p>'}
+            </div>
           </div>
         `).join('')}
       </div>
@@ -3194,6 +3341,27 @@ function copyAllLinks() {
 async function downloadDocument(path, name) {
   try {
     const { data, error } = await client.storage.from('rfq-documents').createSignedUrl(path, 120);
+    if (error) throw error;
+    if (data && data.signedUrl) {
+      const link = document.createElement('a');
+      link.href = data.signedUrl;
+      link.download = name;
+      link.target = '_blank';
+      link.click();
+      showToast('✅ Download started', 'success');
+    }
+  } catch (err) {
+    console.error('Download error:', err);
+    showToast('Error downloading document: ' + err.message, 'error');
+  }
+}
+
+// Same pattern as downloadDocument() above, but against the private
+// 'supplier-documents' bucket (only readable by the super admin) used for
+// Supplier Database registration documents.
+async function downloadSupplierDocument(path, name) {
+  try {
+    const { data, error } = await client.storage.from('supplier-documents').createSignedUrl(path, 120);
     if (error) throw error;
     if (data && data.signedUrl) {
       const link = document.createElement('a');
