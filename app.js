@@ -12,6 +12,9 @@ let currentRFQData = null; // full RFQ row for the RFQ currently loaded in the c
 let isSubmittingRFQ = false;
 let platformSettings = { logo_url: null };
 window.lastInvitations = [];
+let pendingAskQuestionRfqId = null; // which RFQ the open "Ask a Question" modal is for
+let pendingAnswerQuestionId = null; // which rfq_questions row the open "Reply" modal is answering
+let rfqQuestionsById = {}; // populated by loadRFQConsole so the answer modal can look up question text without embedding free-form text in onclick attributes
 
 const DEFAULT_HERO_SUBTITLE = "Open requests for quotation. Apply directly online — you'll get a reference number and a confirmation the moment your application is received.";
 
@@ -186,6 +189,18 @@ function setupStaticForms() {
   if (gateRegisterForm && !gateRegisterForm.dataset.wired) {
     gateRegisterForm.addEventListener('submit', handleGateRegisterSubmit);
     gateRegisterForm.dataset.wired = 'true';
+  }
+
+  const askQuestionForm = document.getElementById('ask-question-form');
+  if (askQuestionForm && !askQuestionForm.dataset.wired) {
+    askQuestionForm.addEventListener('submit', handleAskQuestionSubmit);
+    askQuestionForm.dataset.wired = 'true';
+  }
+
+  const answerQuestionForm = document.getElementById('answer-question-form');
+  if (answerQuestionForm && !answerQuestionForm.dataset.wired) {
+    answerQuestionForm.addEventListener('submit', handleAnswerQuestionSubmit);
+    answerQuestionForm.dataset.wired = 'true';
   }
 }
 
@@ -601,6 +616,7 @@ async function loadPublicRFQList() {
                   <div><div class="countdown-unit-num cd-mins">--</div><div class="countdown-unit-label">Mins</div></div>
                 </div>
                 <button type="button" class="btn navy" style="width:100%; padding:10px; margin-top:14px;" onclick="event.stopPropagation(); openApplicantGate('${rfq.id}')">View Opportunity →</button>
+                <button type="button" class="btn secondary" style="width:100%; padding:10px; margin-top:8px;" onclick="event.stopPropagation(); openAskQuestionModal('${rfq.id}', '${escapeHtmlClient(rfq.rfq_name).replace(/'/g, "\\'")}')">❓ Ask a Question</button>
               </div>
             </div>
           </div>
@@ -811,6 +827,122 @@ function proceedPastGate() {
   loadOpenRFQView(rfqId);
 }
 
+// ===== RFQ QUESTIONS & ANSWERS =====
+// Deliberately its own self-contained modal (own email/name fields) rather
+// than reusing the applicant-gate flow — contractors should be able to ask
+// a quick question without registering, and this avoids any risk of
+// disturbing the already-working gate/registration logic above.
+function openAskQuestionModal(rfqId, rfqName) {
+  pendingAskQuestionRfqId = rfqId;
+  const nameEl = document.getElementById('ask-question-rfq-name');
+  if (nameEl) nameEl.textContent = rfqName || '';
+  const form = document.getElementById('ask-question-form');
+  if (form) form.reset();
+  closeMobileNav();
+  openModal('ask-question-modal');
+}
+
+async function handleAskQuestionSubmit(e) {
+  e.preventDefault();
+  if (!pendingAskQuestionRfqId) return;
+
+  const email = document.getElementById('ask-question-email').value.trim();
+  const name = document.getElementById('ask-question-name').value.trim();
+  const question = document.getElementById('ask-question-text').value.trim();
+
+  if (!email || !question) {
+    showToast('❌ Please enter your email and a question.', 'error');
+    return;
+  }
+
+  const submitBtn = document.getElementById('ask-question-submit');
+  const originalLabel = submitBtn.textContent;
+  submitBtn.disabled = true;
+  submitBtn.textContent = 'Sending...';
+
+  try {
+    const { data: inserted, error } = await client
+      .from('rfq_questions')
+      .insert({
+        rfq_id: pendingAskQuestionRfqId,
+        applicant_email: email,
+        applicant_name: name || null,
+        question
+      })
+      .select('id')
+      .maybeSingle();
+
+    if (error) throw error;
+
+    showToast('✅ Your question has been sent.', 'success');
+    closeModal('ask-question-modal');
+
+    // Best-effort staff notification — the question is already saved either
+    // way, so a failure here (e.g. no contact email on file, Resend hiccup)
+    // shouldn't be shown to the asker as an error.
+    if (inserted && inserted.id) {
+      callPublicEdgeFunction('notify-new-rfq-question', { questionId: inserted.id })
+        .catch(err => console.error('notify-new-rfq-question failed:', err));
+    }
+  } catch (err) {
+    console.error('Error submitting question:', err);
+    showToast('❌ Could not send your question: ' + err.message, 'error');
+  } finally {
+    submitBtn.disabled = false;
+    submitBtn.textContent = originalLabel;
+  }
+}
+
+function openAnswerQuestionModal(questionId) {
+  pendingAnswerQuestionId = questionId;
+  const textEl = document.getElementById('answer-question-text');
+  // Looked up from the map built while rendering the RFQ Console rather
+  // than passed inline through onclick, since question text is free-form
+  // (can contain quotes/newlines) and unsafe to embed in an HTML attribute.
+  if (textEl) textEl.textContent = (rfqQuestionsById[questionId] && rfqQuestionsById[questionId].question) || '';
+  const form = document.getElementById('answer-question-form');
+  if (form) form.reset();
+  openModal('answer-question-modal');
+}
+
+async function handleAnswerQuestionSubmit(e) {
+  e.preventDefault();
+  if (!pendingAnswerQuestionId) return;
+
+  const answer = document.getElementById('answer-question-response').value.trim();
+  const visibilityInput = document.querySelector('input[name="answer-visibility"]:checked');
+  const visibility = visibilityInput ? visibilityInput.value : 'public';
+
+  if (!answer) {
+    showToast('❌ Please enter an answer.', 'error');
+    return;
+  }
+
+  const submitBtn = document.getElementById('answer-question-submit');
+  const originalLabel = submitBtn.textContent;
+  submitBtn.disabled = true;
+  submitBtn.textContent = 'Sending...';
+
+  try {
+    await callEdgeFunction('answer-rfq-question', {
+      questionId: pendingAnswerQuestionId,
+      answer,
+      visibility
+    });
+
+    showToast('✅ Answer sent.', 'success');
+    closeModal('answer-question-modal');
+    pendingAnswerQuestionId = null;
+    loadRFQConsole();
+  } catch (err) {
+    console.error('Error sending answer:', err);
+    showToast('❌ Could not send answer: ' + err.message, 'error');
+  } finally {
+    submitBtn.disabled = false;
+    submitBtn.textContent = originalLabel;
+  }
+}
+
 function showLoginForm() {
   hideAllTopLevelViews();
   document.getElementById('public-view').style.display = 'block';
@@ -1009,6 +1141,23 @@ async function callEdgeFunction(functionName, payload) {
 
 async function callInviteFunction(payload) {
   return callEdgeFunction('invite-member', payload);
+}
+
+// Like callEdgeFunction, but for Edge Functions meant to be called by an
+// unauthenticated caller (e.g. a contractor who just asked a question with
+// no login) — no session/Authorization header is required or sent.
+async function callPublicEdgeFunction(functionName, payload) {
+  const response = await fetch(`${SUPABASE_URL}/functions/v1/${functionName}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload)
+  });
+
+  const result = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    throw new Error(result.error || `Request failed (${response.status})`);
+  }
+  return result;
 }
 
 // Emails each contractor their unique RFQ link via the send-rfq-invites
@@ -1587,6 +1736,14 @@ async function loadRFQDetails(rfqId, isOpenAccess = false) {
           </div>
         ` : ''}
 
+        <div style="margin: 20px 0; padding: 15px; background: var(--bg-2); border-radius: 4px;">
+          <div style="display:flex; justify-content:space-between; align-items:center; gap:12px; flex-wrap:wrap;">
+            <h4 style="margin:0;">Questions &amp; Answers</h4>
+            <button type="button" class="btn secondary" style="padding:8px 14px;" onclick="openAskQuestionModal('${rfq.id}', '${escapeHtmlClient(rfq.rfq_name).replace(/'/g, "\\'")}')">❓ Ask a Question</button>
+          </div>
+          <div id="rfq-qa-list" style="margin-top:12px;"><p style="color: var(--border); font-size: 13px; margin:0;">Loading...</p></div>
+        </div>
+
         <form id="contractor-form" style="margin-top: 30px;">
           <h3>Your Company Information</h3>
 
@@ -1640,9 +1797,40 @@ async function loadRFQDetails(rfqId, isOpenAccess = false) {
       submitContractorForm(token);
     });
 
+    loadPublicQA(rfq.id);
+
   } catch (err) {
     console.error('Error loading RFQ details:', err);
     showToast('Error loading RFQ', 'error');
+  }
+}
+
+// Renders only questions the owning company chose to answer publicly —
+// get_public_rfq_questions() is a SECURITY DEFINER RPC that deliberately
+// excludes applicant_email/applicant_name so the asker stays anonymous to
+// other contractors viewing this page.
+async function loadPublicQA(rfqId) {
+  const listEl = document.getElementById('rfq-qa-list');
+  if (!listEl) return;
+
+  try {
+    const { data: qa, error } = await client.rpc('get_public_rfq_questions', { p_rfq_id: rfqId });
+    if (error) throw error;
+
+    if (!qa || qa.length === 0) {
+      listEl.innerHTML = '<p style="color: var(--border); font-size: 13px; margin:0;">No published questions yet. Be the first to ask.</p>';
+      return;
+    }
+
+    listEl.innerHTML = qa.map(item => `
+      <div style="background:white; border:1px solid var(--border); border-radius:4px; padding:12px; margin-bottom:10px;">
+        <p style="margin:0 0 6px 0; font-weight:bold; color:var(--ink);">Q: ${escapeHtmlClient(item.question)}</p>
+        <p style="margin:0; color:var(--ink); white-space:pre-wrap;">A: ${escapeHtmlClient(item.answer)}</p>
+      </div>
+    `).join('');
+  } catch (err) {
+    console.error('Error loading public Q&A:', err);
+    listEl.innerHTML = '<p style="color: var(--border); font-size: 13px; margin:0;">Could not load questions right now.</p>';
   }
 }
 
@@ -2252,6 +2440,7 @@ async function loadRFQConsole() {
 
     let consoleHtml = '';
     const baseUrl = window.location.origin + window.location.pathname;
+    rfqQuestionsById = {};
 
     for (const rfq of rfqs) {
       const { data: invitations } = await client
@@ -2263,6 +2452,15 @@ async function loadRFQConsole() {
         .from('rfq_submissions')
         .select('*')
         .eq('rfq_id', rfq.id);
+
+      const { data: questions } = await client
+        .from('rfq_questions')
+        .select('*')
+        .eq('rfq_id', rfq.id)
+        .order('created_at', { ascending: false });
+
+      (questions || []).forEach(q => { rfqQuestionsById[q.id] = q; });
+      const pendingQuestionCount = (questions || []).filter(q => q.status === 'pending').length;
 
       const deadlineDate = new Date(rfq.deadline);
       const isExpired = deadlineDate < new Date();
@@ -2343,6 +2541,26 @@ async function loadRFQConsole() {
                   </button>
                 </div>
               `).join('') : '<p style="margin: 0; color: var(--border); font-style: italic;">No invitations sent yet</p>'}
+            </div>
+          </div>
+
+          <div style="background: var(--bg-2); padding: 15px; border-radius: 4px; margin-bottom: 15px; max-height: 320px; overflow-y: auto;">
+            <h4 style="margin-top: 0; margin-bottom: 10px; color: var(--ink);">Questions ${pendingQuestionCount > 0 ? `<span class="submission-status info_requested" style="vertical-align:middle; margin-left:6px;">${pendingQuestionCount} pending</span>` : `(${(questions || []).length})`}</h4>
+            <div style="display: flex; flex-direction: column; gap: 8px;">
+              ${questions && questions.length > 0 ? questions.map(q => `
+                <div style="padding: 10px; background: white; border: 1px solid var(--border); border-radius: 3px;">
+                  <p style="margin: 0 0 6px 0; font-size: 13px; font-weight: bold; color: var(--ink);">${escapeHtmlClient(q.question)}</p>
+                  <p style="margin: 0 0 8px 0; font-size: 11px; color: var(--border);">From ${escapeHtmlClient(q.applicant_name || q.applicant_email)} · ${new Date(q.created_at).toLocaleDateString()}</p>
+                  ${q.status === 'answered' ? `
+                    <div style="background: var(--bg-2); border-radius: 3px; padding: 8px; margin-bottom: 6px;">
+                      <p style="margin: 0; font-size: 13px; color: var(--ink); white-space:pre-wrap;">${escapeHtmlClient(q.answer)}</p>
+                    </div>
+                    <p style="margin: 0; font-size: 11px; color: var(--border);">${q.answer_visibility === 'public' ? '🌐 Posted publicly' : '✉️ Sent privately'} · answered ${q.answered_at ? new Date(q.answered_at).toLocaleDateString() : ''}</p>
+                  ` : `
+                    <button onclick="openAnswerQuestionModal('${q.id}')" class="btn gold" style="padding: 6px 12px; font-size: 12px;">Reply</button>
+                  `}
+                </div>
+              `).join('') : '<p style="margin: 0; color: var(--border); font-style: italic;">No questions yet</p>'}
             </div>
           </div>
 
