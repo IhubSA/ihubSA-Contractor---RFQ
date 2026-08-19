@@ -8,6 +8,7 @@ let currentUser = null;
 let currentCompany = null;
 let isSuperAdmin = false;
 let currentRFQId = null;
+let currentRFQData = null; // full RFQ row for the RFQ currently loaded in the contractor form, so submitContractorForm can read required_documents (name/mandatory/requires_expiry) without a second fetch
 let isSubmittingRFQ = false;
 let platformSettings = { logo_url: null };
 window.lastInvitations = [];
@@ -1521,6 +1522,8 @@ async function loadRFQDetails(rfqId, isOpenAccess = false) {
       throw new Error('RFQ not found');
     }
 
+    currentRFQData = rfq;
+
     // Direct public-portal access must be to an RFQ the company actually
     // marked "Open" — a closed RFQ is only reachable via its invite link,
     // even if someone guesses/shares its id.
@@ -1569,7 +1572,7 @@ async function loadRFQDetails(rfqId, isOpenAccess = false) {
           <div style="margin: 20px 0;">
             <h4>Required Documents:</h4>
             <ul>
-              ${rfq.required_documents.map(doc => `<li>${doc}</li>`).join('')}
+              ${rfq.required_documents.map(doc => `<li>${escapeHtmlClient(doc.name)}${doc.mandatory ? ' <strong style="color:var(--accent);">(Mandatory)</strong>' : ''}${doc.requires_expiry ? ' <span style="color:var(--border); font-size:12px;">— expiry date required</span>' : ''}</li>`).join('')}
             </ul>
           </div>
         ` : ''}
@@ -1609,11 +1612,17 @@ async function loadRFQDetails(rfqId, isOpenAccess = false) {
 
           <div style="margin-top: 30px;">
             <h4>Upload Documents</h4>
-            <p style="color: var(--border); font-size: 14px;">Optional: Upload any supporting documents</p>
+            <p style="color: var(--border); font-size: 14px;">Documents marked * are mandatory and must be uploaded to submit.</p>
             ${rfq.required_documents.map((doc, idx) => `
               <div style="margin-bottom: 15px;">
-                <label>${doc}</label>
-                <input type="file" id="doc-${idx}" accept=".pdf,.doc,.docx,.xls,.xlsx">
+                <label>${escapeHtmlClient(doc.name)}${doc.mandatory ? ' *' : ''}</label>
+                <input type="file" id="doc-${idx}" data-doc-name="${escapeHtmlClient(doc.name)}" accept=".pdf,.doc,.docx,.xls,.xlsx"${doc.mandatory ? ' required' : ''}>
+                ${doc.requires_expiry ? `
+                  <div style="margin-top:6px;">
+                    <label style="font-size:13px; font-weight:normal;">Expiry Date for ${escapeHtmlClient(doc.name)} *</label>
+                    <input type="date" id="doc-expiry-${idx}" required style="padding:8px; border:1px solid var(--border); border-radius:4px;">
+                  </div>
+                ` : ''}
               </div>
             `).join('')}
           </div>
@@ -1672,8 +1681,12 @@ async function submitContractorForm(token) {
 
     console.log('✅ Submission created:', submissionId);
 
-    // Upload files (optional - don't fail if this doesn't work)
-    const fileInputs = document.querySelectorAll('[id^="doc-"]');
+    // Upload files. Non-mandatory documents are optional, so a failed/missing
+    // upload here doesn't abort the whole submission — mandatory documents
+    // and required expiry dates are already enforced by the form's own
+    // `required` attributes before this handler ever runs (native HTML5
+    // validation blocks the submit event otherwise).
+    const fileInputs = document.querySelectorAll('input[type="file"][id^="doc-"]');
     let filesUploaded = 0;
 
     for (let input of fileInputs) {
@@ -1691,11 +1704,20 @@ async function submitContractorForm(token) {
             continue;
           }
 
+          // Pair this upload back to its required-document entry (name +
+          // whether an expiry date was collected for it) using the same
+          // index the form was rendered with.
+          const idx = input.id.replace('doc-', '');
+          const docMeta = (currentRFQData && currentRFQData.required_documents && currentRFQData.required_documents[idx]) || null;
+          const expiryInput = docMeta && docMeta.requires_expiry ? document.getElementById(`doc-expiry-${idx}`) : null;
+
           await client.from('rfq_submission_documents').insert([{
             submission_id: submissionId,
             file_name: file.name,
             file_path: filePath,
-            file_size: file.size
+            file_size: file.size,
+            document_type: docMeta ? docMeta.name : null,
+            expiry_date: (expiryInput && expiryInput.value) ? expiryInput.value : null
           }]);
 
           filesUploaded++;
@@ -1982,12 +2004,22 @@ function updateVisibilityHint() {
 
 function addDocumentField() {
   const builder = document.getElementById('required-docs-builder');
-  const idx = builder.children.length;
   const field = document.createElement('div');
-  field.style.cssText = 'display:flex; gap:10px; margin-bottom:10px;';
+  field.className = 'doc-row';
+  field.style.cssText = 'border:1px solid var(--border); border-radius:6px; padding:10px; margin-bottom:10px;';
   field.innerHTML = `
-    <input type="text" class="doc-field" placeholder="e.g., Insurance Certificate" style="flex:1; padding:8px; border:1px solid var(--border); border-radius:4px;">
-    <button type="button" onclick="this.parentElement.remove()" class="btn secondary" style="padding:8px 12px;">Remove</button>
+    <div style="display:flex; gap:10px; margin-bottom:8px;">
+      <input type="text" class="doc-field" placeholder="e.g., Insurance Certificate" style="flex:1; padding:8px; border:1px solid var(--border); border-radius:4px;">
+      <button type="button" onclick="this.closest('.doc-row').remove()" class="btn secondary" style="padding:8px 12px;">Remove</button>
+    </div>
+    <div style="display:flex; gap:20px; flex-wrap:wrap; font-size:13px; color:var(--ink);">
+      <label style="display:flex; align-items:center; gap:6px; font-weight:normal; cursor:pointer;">
+        <input type="checkbox" class="doc-mandatory-field"> Mandatory for submission
+      </label>
+      <label style="display:flex; align-items:center; gap:6px; font-weight:normal; cursor:pointer;">
+        <input type="checkbox" class="doc-expiry-field"> Requires an expiry date (e.g. COIDA, insurance)
+      </label>
+    </div>
   `;
   builder.appendChild(field);
 }
@@ -2038,10 +2070,21 @@ async function createNewRFQ() {
       .map(e => e.trim())
       .filter(e => e.length > 0);
 
-    const docInputs = document.querySelectorAll('.doc-field');
-    const requiredDocs = Array.from(docInputs)
-      .map(input => input.value ? input.value.trim() : '')
-      .filter(val => val.length > 0);
+    const docRows = document.querySelectorAll('#required-docs-builder .doc-row');
+    const requiredDocs = Array.from(docRows)
+      .map(row => {
+        const nameInput = row.querySelector('.doc-field');
+        const name = nameInput && nameInput.value ? nameInput.value.trim() : '';
+        if (!name) return null;
+        const mandatoryInput = row.querySelector('.doc-mandatory-field');
+        const expiryInput = row.querySelector('.doc-expiry-field');
+        return {
+          name,
+          mandatory: !!(mandatoryInput && mandatoryInput.checked),
+          requires_expiry: !!(expiryInput && expiryInput.checked)
+        };
+      })
+      .filter(Boolean);
 
     if (!name) {
       showToast('❌ Please enter RFQ Name', 'error');
@@ -2270,7 +2313,7 @@ async function loadRFQConsole() {
             <div style="background: var(--bg-2); padding: 15px; border-radius: 4px; margin-bottom: 15px;">
               <h4 style="margin: 0 0 10px 0; font-size: 12px; text-transform: uppercase; color: var(--border); font-weight: bold;">Required Documents</h4>
               <ul style="margin: 0; padding-left: 20px; color: var(--ink);">
-                ${rfq.required_documents.map(doc => `<li style="margin-bottom: 5px;">${doc}</li>`).join('')}
+                ${rfq.required_documents.map(doc => `<li style="margin-bottom: 5px;">${escapeHtmlClient(doc.name)}${doc.mandatory ? ' <strong style="color:var(--accent);">(Mandatory)</strong>' : ''}${doc.requires_expiry ? ' <span style="color:var(--border); font-size:12px;">— expiry date required</span>' : ''}</li>`).join('')}
               </ul>
             </div>
           ` : ''}
@@ -2339,6 +2382,27 @@ async function loadSubmissions() {
 
     console.log('Submissions loaded:', allSubmissions ? allSubmissions.length : 0);
 
+    // Flag any submission that has at least one document whose expiry date
+    // had already passed by the time it was submitted, so staff can spot
+    // problem submissions from the list without opening every one.
+    const submissionIds = (allSubmissions || []).map(s => s.id);
+    const expiredSubmissionIds = new Set();
+    if (submissionIds.length > 0) {
+      const { data: docsWithExpiry } = await client
+        .from('rfq_submission_documents')
+        .select('submission_id, expiry_date')
+        .in('submission_id', submissionIds)
+        .not('expiry_date', 'is', null);
+
+      const createdAtById = new Map((allSubmissions || []).map(s => [s.id, s.created_at]));
+      (docsWithExpiry || []).forEach(doc => {
+        const submittedAt = createdAtById.get(doc.submission_id);
+        if (submittedAt && new Date(doc.expiry_date) < new Date(submittedAt)) {
+          expiredSubmissionIds.add(doc.submission_id);
+        }
+      });
+    }
+
     // Populate the RFQ filter's options from the full (unfiltered) set so the
     // dropdown always lists every RFQ that has submissions, regardless of the
     // currently-selected filters — rebuilding it from an already-filtered
@@ -2373,7 +2437,7 @@ async function loadSubmissions() {
 
     const listHtml = submissions.map(sub => `
       <div class="submission-card" onclick="openSubmissionDetail('${sub.id}')">
-        <h3 style="margin: 0 0 10px 0; color: var(--ink);">${sub.contractor_name}</h3>
+        <h3 style="margin: 0 0 10px 0; color: var(--ink);">${sub.contractor_name}${expiredSubmissionIds.has(sub.id) ? ' <span title="Contains a document that was already expired at submission" style="color:var(--closing-today, #D8452B); font-size:14px; font-weight:bold;">🚩 Expired document</span>' : ''}</h3>
         <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 15px; margin-bottom: 15px; font-size: 14px;">
           <div>
             <p style="margin: 0; color: var(--border);">Email: <strong>${sub.contractor_email}</strong></p>
@@ -2451,15 +2515,28 @@ async function openSubmissionDetail(id) {
     `;
 
     const docsHtml = documents && documents.length > 0
-      ? documents.map(doc => `
-          <div style="padding: 8px; border: 1px solid var(--border); border-radius: 4px; margin-bottom: 8px; display: flex; justify-content: space-between; align-items: center;">
-            <span style="color: var(--ink);">📄 ${doc.file_name}</span>
-            <button onclick="downloadDocument('${doc.file_path}', '${doc.file_name}')"
-              class="btn" style="padding: 4px 12px; font-size: 12px;">
-              Download
-            </button>
+      ? documents.map(doc => {
+          // "Expired" here means the document's own expiry date had already
+          // passed by the time it was submitted — not that it has since
+          // expired — since that's the compliance check that matters (did
+          // the contractor submit a document that was already out of date).
+          const isExpired = !!(doc.expiry_date && submission.created_at && new Date(doc.expiry_date) < new Date(submission.created_at));
+          return `
+          <div style="padding: 8px; border: 1px solid ${isExpired ? 'var(--closing-today, #D8452B)' : 'var(--border)'}; border-radius: 4px; margin-bottom: 8px;${isExpired ? ' background:#FDECEA;' : ''}">
+            <div style="display: flex; justify-content: space-between; align-items: center; gap: 10px;">
+              <span style="color: var(--ink);">📄 ${escapeHtmlClient(doc.file_name)}</span>
+              <button onclick="downloadDocument('${doc.file_path}', '${doc.file_name}')"
+                class="btn" style="padding: 4px 12px; font-size: 12px; flex-shrink:0;">
+                Download
+              </button>
+            </div>
+            ${doc.document_type ? `<p style="margin:6px 0 0 0; font-size:12px; color:var(--border);">Type: ${escapeHtmlClient(doc.document_type)}</p>` : ''}
+            ${doc.expiry_date ? `<p style="margin:2px 0 0 0; font-size:12px; ${isExpired ? 'color:var(--closing-today, #D8452B); font-weight:bold;' : 'color:var(--border);'}">
+              Expiry: ${new Date(doc.expiry_date).toLocaleDateString()}${isExpired ? ' — 🚩 Already expired at time of submission' : ''}
+            </p>` : ''}
           </div>
-        `).join('')
+        `;
+        }).join('')
       : '<p style="color: var(--border); font-style: italic;">No documents submitted</p>';
 
     const detailsContent = document.getElementById('submission-details-content');
