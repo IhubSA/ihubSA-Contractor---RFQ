@@ -861,16 +861,23 @@ async function handleAskQuestionSubmit(e) {
   submitBtn.textContent = 'Sending...';
 
   try {
-    const { data: inserted, error } = await client
+    // Generate the id client-side (same pattern as submitContractorForm's
+    // submissionId) rather than using .select() to read the row back after
+    // insert. The asker is unauthenticated and rfq_questions' SELECT policy
+    // is scoped to the RFQ's own company/super-admin only, so a post-insert
+    // .select() has no RLS permission to read the row back and fails with a
+    // 401 — the row is still inserted, but the client never sees it.
+    const questionId = generateUUID();
+
+    const { error } = await client
       .from('rfq_questions')
       .insert({
+        id: questionId,
         rfq_id: pendingAskQuestionRfqId,
         applicant_email: email,
         applicant_name: name || null,
         question
-      })
-      .select('id')
-      .maybeSingle();
+      });
 
     if (error) throw error;
 
@@ -880,10 +887,8 @@ async function handleAskQuestionSubmit(e) {
     // Best-effort staff notification — the question is already saved either
     // way, so a failure here (e.g. no contact email on file, Resend hiccup)
     // shouldn't be shown to the asker as an error.
-    if (inserted && inserted.id) {
-      callPublicEdgeFunction('notify-new-rfq-question', { questionId: inserted.id })
-        .catch(err => console.error('notify-new-rfq-question failed:', err));
-    }
+    callPublicEdgeFunction('notify-new-rfq-question', { questionId })
+      .catch(err => console.error('notify-new-rfq-question failed:', err));
   } catch (err) {
     console.error('Error submitting question:', err);
     showToast('❌ Could not send your question: ' + err.message, 'error');
