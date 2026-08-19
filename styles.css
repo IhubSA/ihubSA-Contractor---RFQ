@@ -43,6 +43,22 @@ body {
   min-height: 100vh;
   display: flex;
   flex-direction: column;
+  /* Soft ambient colour wash instead of flat white/grey — large, very
+     low-opacity brand-colour blobs that stay fixed while the page
+     scrolls, so every section reads as part of one coloured page rather
+     than a stack of plain-white boxes. Layered on top of a fine tiled
+     dot-grid texture (blueprint/technical-drawing feel, fitting a
+     procurement marketplace) so the page reads as textured rather than
+     a flat gradient wash. */
+  background-color: #F5F7FA;
+  background-image:
+    radial-gradient(circle at 8% 8%, rgba(15,53,87,0.06) 0%, transparent 32%),
+    radial-gradient(circle at 92% 6%, rgba(245,124,0,0.05) 0%, transparent 28%),
+    radial-gradient(circle at 95% 75%, rgba(15,53,87,0.05) 0%, transparent 32%),
+    radial-gradient(circle at 4% 80%, rgba(245,124,0,0.04) 0%, transparent 30%),
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='44' height='44' viewBox='0 0 44 44'%3E%3Ccircle cx='2' cy='2' r='1.6' fill='%230F3557' fill-opacity='0.05'/%3E%3C/svg%3E");
+  background-repeat: no-repeat, no-repeat, no-repeat, no-repeat, repeat;
+  background-attachment: fixed;
 }
 
 #app-container {
@@ -54,6 +70,35 @@ h1, h2, h3, h4, h5, h6 {
   font-family: var(--sans);
   font-weight: 700;
   line-height: 1.2;
+}
+
+/* Faint skyline watermark behind the public "Open Opportunities" landing
+   section — reuses the same silhouette motif as the hero banner (an
+   abstract skyline, not a stock photo) at very low opacity, purely as a
+   subtle background texture. Non-interactive and hidden from AT. */
+#landing-section {
+  position: relative;
+}
+
+#landing-section::before {
+  content: "";
+  position: absolute;
+  top: -10px;
+  left: 0;
+  right: 0;
+  height: 220px;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 1200 300'%3E%3Cpath d='M0,300 L0,180 L60,180 L60,140 L110,140 L110,100 L150,100 L150,160 L200,160 L200,120 L240,120 L240,190 L300,190 L300,90 L340,90 L340,60 L380,60 L380,150 L440,150 L440,110 L480,110 L480,170 L540,170 L540,130 L590,130 L590,80 L630,80 L630,200 L690,200 L690,140 L740,140 L740,100 L790,100 L790,180 L850,180 L850,120 L900,120 L900,70 L940,70 L940,160 L1000,160 L1000,110 L1050,110 L1050,190 L1100,190 L1100,150 L1150,150 L1150,100 L1200,100 L1200,300 Z' fill='%230F3557'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: top center;
+  background-size: cover;
+  opacity: 0.045;
+  pointer-events: none;
+  z-index: 0;
+}
+
+#landing-section > * {
+  position: relative;
+  z-index: 1;
 }
 
 /* Small bold uppercase label used above section titles (e.g. "CURRENT
@@ -72,10 +117,11 @@ h4 { font-size: 18px; }
 
 /* CARDS */
 .card {
-  background: white;
-  border-radius: 4px;
+  background: linear-gradient(180deg, #FFFFFF 0%, #FCFDFE 100%);
+  border-radius: 12px;
   padding: 30px;
-  box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+  box-shadow: 0 2px 6px rgba(15,53,87,0.06), 0 10px 28px rgba(15,53,87,0.05);
+  border: 1px solid rgba(15,53,87,0.06);
   margin-bottom: 20px;
 }
 
@@ -93,7 +139,7 @@ h4 { font-size: 18px; }
 .btn {
   padding: 10px 20px;
   border: none;
-  border-radius: 4px;
+  border-radius: 6px;
   cursor: pointer;
   font-family: var(--sans);
   font-weight: 500;
@@ -101,14 +147,19 @@ h4 { font-size: 18px; }
   display: inline-block;
 }
 
+/* Reserved for the platform's true primary conversion actions (Register
+   Free, Create Free Supplier Account) — kept deliberately rare so it
+   still reads as "the important button" rather than the default. */
 .btn.gold {
-  background: var(--gold);
+  background: linear-gradient(135deg, #FF9838 0%, var(--gold) 100%);
   color: white;
+  box-shadow: 0 3px 10px rgba(245,124,0,0.28);
 }
 
 .btn.gold:hover {
-  background: #CC6109;
-  box-shadow: 0 2px 8px rgba(242, 121, 12, 0.35);
+  background: linear-gradient(135deg, #FF9838 0%, #CC6109 100%);
+  box-shadow: 0 5px 16px rgba(245,124,0,0.4);
+  transform: translateY(-1px);
 }
 
 .btn.secondary {
@@ -122,9 +173,25 @@ h4 { font-size: 18px; }
   border-color: var(--primary-light);
 }
 
+/* Used for the frequently-repeated action buttons (per-card "View
+   Opportunity", the search button) — a professional navy alternative so
+   orange stays reserved for the handful of true primary CTAs above. */
+.btn.navy {
+  background: linear-gradient(135deg, var(--primary-light) 0%, var(--primary) 100%);
+  color: white;
+  box-shadow: 0 3px 10px rgba(15,53,87,0.25);
+}
+
+.btn.navy:hover {
+  background: linear-gradient(135deg, var(--primary-light) 0%, var(--primary-dark) 100%);
+  box-shadow: 0 5px 16px rgba(15,53,87,0.35);
+  transform: translateY(-1px);
+}
+
 .btn:disabled {
   opacity: 0.5;
   cursor: not-allowed;
+  transform: none;
 }
 
 /* FORMS */
@@ -420,20 +487,31 @@ label {
 
 /* RFQ OPPORTUNITY CARDS (public portal) */
 .opportunity-card {
-  background: white;
-  border-radius: 6px;
-  border: 1px solid #E4E7EB;
+  background: linear-gradient(180deg, #FFFFFF 0%, #FCFDFE 100%);
+  border-radius: 12px;
+  border: 1px solid #E9ECF0;
+  border-left: 5px solid var(--success);
   padding: 24px;
   margin-bottom: 20px;
-  box-shadow: 0 1px 3px rgba(0,0,0,0.06);
-  transition: box-shadow 0.2s, border-color 0.2s;
+  box-shadow: 0 2px 6px rgba(15,53,87,0.05), 0 10px 24px rgba(15,53,87,0.05);
+  transition: box-shadow 0.2s, border-color 0.2s, transform 0.2s;
   cursor: pointer;
 }
 
 .opportunity-card:hover {
-  box-shadow: 0 6px 20px rgba(11,42,74,0.12);
-  border-color: var(--accent);
+  box-shadow: 0 8px 24px rgba(15,53,87,0.14);
+  border-top-color: var(--accent);
+  border-right-color: var(--accent);
+  border-bottom-color: var(--accent);
+  transform: translateY(-2px);
 }
+
+/* Left-border colour mirrors the urgency badge — kept in sync with the
+   badge as the countdown ticks over a threshold (see updateAllCountdowns). */
+.opportunity-card.status-open { border-left-color: var(--success); }
+.opportunity-card.status-closing-soon { border-left-color: var(--closing-soon); }
+.opportunity-card.status-closing-today { border-left-color: var(--closing-today); }
+.opportunity-card.status-closed { border-left-color: var(--grey-closed); }
 
 /* Three-column layout: RFQ info | closing date/location/category | countdown */
 .opportunity-card-grid {
@@ -457,10 +535,14 @@ label {
   min-width: 0;
 }
 
+/* Status badges use a soft tinted style (light fill + coloured text +
+   thin coloured border) rather than a solid colour block with white
+   text — reads as more refined and less like an alert/error chip. */
 .badge-open {
   display: inline-block;
-  background: var(--success);
-  color: white;
+  background: #E7F6EE;
+  color: var(--success);
+  border: 1px solid rgba(30,158,90,0.28);
   font-size: 11px;
   font-weight: 700;
   letter-spacing: 0.04em;
@@ -468,6 +550,7 @@ label {
   padding: 5px 12px;
   border-radius: 20px;
   margin-bottom: 10px;
+  box-shadow: 0 1px 2px rgba(0,0,0,0.04);
 }
 
 .opportunity-meta-row {
@@ -532,7 +615,16 @@ label {
   letter-spacing: 0.03em;
 }
 
-/* WHY REGISTER SIDEBAR */
+/* WHY REGISTER SIDEBAR — a soft tinted panel with a coloured top accent
+   so it visually stands out as "the" conversion panel next to the plain
+   opportunity list, rather than blending into another white box. */
+#why-register-card {
+  background: linear-gradient(165deg, #FFFFFF 0%, #FFF8F0 100%);
+  border-top: 4px solid var(--accent);
+  position: sticky;
+  top: 20px;
+}
+
 .why-register-item {
   display: flex;
   gap: 14px;
@@ -688,15 +780,16 @@ label {
 }
 
 .btn.header-register {
-  background: var(--accent);
+  background: linear-gradient(135deg, #FF9838 0%, var(--accent) 100%);
   color: white;
   padding: 8px 18px;
   font-weight: 700;
+  box-shadow: 0 2px 8px rgba(245,124,0,0.3);
 }
 
 .btn.header-register:hover {
-  background: #CC6109;
-  box-shadow: 0 2px 8px rgba(245, 124, 0, 0.35);
+  background: linear-gradient(135deg, #FF9838 0%, #CC6109 100%);
+  box-shadow: 0 4px 12px rgba(245, 124, 0, 0.4);
 }
 
 .mobile-nav-toggle {
@@ -725,7 +818,7 @@ label {
   background: transparent;
   color: white;
   border: 2px solid rgba(255,255,255,0.55);
-  border-radius: 4px;
+  border-radius: 6px;
   padding: 12px 24px;
   font-size: 15px;
   font-weight: 600;
@@ -773,10 +866,10 @@ label {
 .opp-search-bar {
   display: flex;
   background: white;
-  border-radius: 6px;
+  border-radius: 10px;
   overflow: hidden;
   border: 1px solid #E4E7EB;
-  box-shadow: 0 1px 3px rgba(0,0,0,0.06);
+  box-shadow: 0 2px 8px rgba(15,53,87,0.06);
 }
 
 .opp-search-bar input {
@@ -794,17 +887,17 @@ label {
 
 .opp-search-bar button {
   border: none;
-  background: var(--accent);
+  background: linear-gradient(135deg, var(--primary-light) 0%, var(--primary) 100%);
   color: white;
   font-weight: 700;
   letter-spacing: 0.03em;
   padding: 0 24px;
   cursor: pointer;
-  transition: background 0.2s;
+  transition: all 0.2s;
 }
 
 .opp-search-bar button:hover {
-  background: #CC6109;
+  background: linear-gradient(135deg, var(--primary-light) 0%, var(--primary-dark) 100%);
 }
 
 .opp-filter-row {
@@ -817,7 +910,7 @@ label {
 .opp-filter-pill {
   background: white;
   border: 1px solid #D5DAE1;
-  border-radius: 6px;
+  border-radius: 8px;
   color: var(--ink);
   padding: 9px 12px;
   font-size: 13px;
@@ -838,8 +931,9 @@ label {
 /* ===== OPPORTUNITY CARD STATUS BADGES ===== */
 .badge-closing-soon {
   display: inline-block;
-  background: var(--closing-soon);
-  color: white;
+  background: #FFF3E6;
+  color: var(--closing-soon);
+  border: 1px solid rgba(245,124,0,0.3);
   font-size: 11px;
   font-weight: 700;
   letter-spacing: 0.04em;
@@ -847,12 +941,14 @@ label {
   padding: 5px 12px;
   border-radius: 20px;
   margin-bottom: 10px;
+  box-shadow: 0 1px 2px rgba(0,0,0,0.04);
 }
 
 .badge-closing-today {
   display: inline-block;
-  background: var(--closing-today);
-  color: white;
+  background: #FDEAE6;
+  color: var(--closing-today);
+  border: 1px solid rgba(216,69,43,0.3);
   font-size: 11px;
   font-weight: 700;
   letter-spacing: 0.04em;
@@ -860,12 +956,14 @@ label {
   padding: 5px 12px;
   border-radius: 20px;
   margin-bottom: 10px;
+  box-shadow: 0 1px 2px rgba(0,0,0,0.04);
 }
 
 .badge-closed {
   display: inline-block;
-  background: var(--grey-closed);
-  color: white;
+  background: #EEF0F2;
+  color: var(--grey-closed);
+  border: 1px solid rgba(138,148,160,0.3);
   font-size: 11px;
   font-weight: 700;
   letter-spacing: 0.04em;
@@ -873,6 +971,7 @@ label {
   padding: 5px 12px;
   border-radius: 20px;
   margin-bottom: 10px;
+  box-shadow: 0 1px 2px rgba(0,0,0,0.04);
 }
 
 .opportunity-ref {
@@ -909,31 +1008,44 @@ label {
 }
 
 /* ===== TRUST SECTION ===== */
+/* Full panel treatment (tinted gradient + rounded corners + shadow) so
+   this section reads as a distinct, coloured "area" rather than another
+   flat stretch of white page. */
+.trust-section-band {
+  background: linear-gradient(155deg, #EFF4F9 0%, #F7FAFD 100%);
+  border-radius: 16px;
+  border: 1px solid rgba(15,53,87,0.08);
+  box-shadow: 0 4px 14px rgba(15,53,87,0.06);
+  padding: 44px 36px;
+}
+
 .trust-grid {
   display: grid;
   grid-template-columns: repeat(4, 1fr);
-  gap: 30px;
+  gap: 24px;
 }
 
 .trust-item {
   text-align: center;
   padding: 24px 16px;
-  background: var(--surface-light);
-  border-radius: 6px;
+  background: white;
+  border-radius: 10px;
   border: 1px solid #E4E7EB;
+  box-shadow: 0 2px 8px rgba(15,53,87,0.05);
 }
 
 .trust-icon {
   width: 48px;
   height: 48px;
   border-radius: 50%;
-  background: white;
-  border: 2px solid var(--primary);
-  color: var(--primary);
+  background: linear-gradient(135deg, var(--primary-light) 0%, var(--primary) 100%);
+  border: none;
+  color: white;
   display: flex;
   align-items: center;
   justify-content: center;
   margin: 0 auto 14px auto;
+  box-shadow: 0 3px 8px rgba(15,53,87,0.25);
 }
 
 .trust-item h4 {
@@ -1100,8 +1212,16 @@ textarea:focus-visible {
     grid-template-columns: 1fr !important;
   }
 
+  #why-register-card {
+    position: static;
+  }
+
   .trust-grid {
     grid-template-columns: repeat(2, 1fr);
+  }
+
+  .trust-section-band {
+    padding: 32px 24px;
   }
 
   .footer-columns {
@@ -1296,6 +1416,11 @@ textarea:focus-visible {
 
   .trust-grid {
     grid-template-columns: 1fr;
+  }
+
+  .trust-section-band {
+    padding: 24px 18px;
+    border-radius: 12px;
   }
 
   .footer-columns {
