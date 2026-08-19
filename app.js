@@ -396,7 +396,7 @@ function navGoHelp() {
 
 function navGoTerms() {
   closeMobileNav();
-  showInfoPlaceholder('Terms & Conditions', 'This page is coming soon.');
+  openModal('terms-modal');
 }
 
 function showLandingView() {
