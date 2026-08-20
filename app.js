@@ -7,6 +7,7 @@ let client = null;
 let currentUser = null;
 let currentCompany = null;
 let isSuperAdmin = false;
+let isAdminManager = false; // can this super admin invite/remove other super admins? (see super_admins.can_manage_admins)
 let currentRFQId = null;
 let currentRFQData = null; // full RFQ row for the RFQ currently loaded in the contractor form, so submitContractorForm can read required_documents (name/mandatory/requires_expiry) without a second fetch
 let isSubmittingRFQ = false;
@@ -165,6 +166,12 @@ function setupStaticForms() {
   if (inviteCompanyForm && !inviteCompanyForm.dataset.wired) {
     inviteCompanyForm.addEventListener('submit', handleInviteCompanySubmit);
     inviteCompanyForm.dataset.wired = 'true';
+  }
+
+  const inviteSuperAdminForm = document.getElementById('invite-super-admin-form');
+  if (inviteSuperAdminForm && !inviteSuperAdminForm.dataset.wired) {
+    inviteSuperAdminForm.addEventListener('submit', handleInviteSuperAdminSubmit);
+    inviteSuperAdminForm.dataset.wired = 'true';
   }
 
   const platformLogoFile = document.getElementById('platform-logo-file');
@@ -1496,6 +1503,82 @@ async function handleInviteCompanySubmit(e) {
   }
 }
 
+// Manage Admins: only ever reachable by the admin-manager (see
+// isAdminManager / showSuperAdminView) — the Edge Function itself also
+// re-checks this server-side, so the tab being hidden for everyone else
+// is a UX convenience, not the actual enforcement.
+async function loadSuperAdminsList() {
+  try {
+    const { data: admins, error } = await client
+      .from('super_admins')
+      .select('*')
+      .order('created_at', { ascending: true });
+
+    if (error) throw error;
+
+    const list = document.getElementById('super-admins-list');
+    if (!list) return;
+
+    list.innerHTML = (admins || []).map(a => `
+      <div style="display:flex; justify-content:space-between; align-items:center; padding:15px; border:1px solid var(--border); border-radius:4px; margin-bottom:10px; flex-wrap:wrap; gap:10px;">
+        <div>
+          <p style="margin:0; font-weight:600;">${escapeHtmlClient(a.email)} ${a.can_manage_admins ? '<span class="submission-status approved">Owner</span>' : '<span class="submission-status" style="background:var(--bg-2); color:var(--ink); border:1px solid var(--border);">Super Admin</span>'}</p>
+          <p style="margin:2px 0 0 0; font-size:12px; color:var(--border);">${a.invited_by ? 'Invited by ' + escapeHtmlClient(a.invited_by) + ' · ' : ''}${new Date(a.created_at).toLocaleDateString()}</p>
+        </div>
+        ${a.can_manage_admins ? '' : `<button type="button" class="btn secondary" style="padding:6px 12px; font-size:12px; color:#D32F2F; border-color:#D32F2F;" onclick="removeSuperAdminEntry('${a.email.replace(/'/g, "\\'")}')">Remove</button>`}
+      </div>
+    `).join('') || '<p style="color:var(--border); text-align:center; padding:20px;">No admins yet.</p>';
+  } catch (err) {
+    console.error('Error loading admins:', err);
+    const list = document.getElementById('super-admins-list');
+    if (list) list.innerHTML = '<p style="color:var(--warning);">Error loading admins.</p>';
+  }
+}
+
+async function handleInviteSuperAdminSubmit(e) {
+  e.preventDefault();
+  const email = document.getElementById('invite-super-admin-email').value.trim();
+  if (!email) {
+    showToast('Please enter an email address', 'error');
+    return;
+  }
+
+  try {
+    showToast('Sending invite...', 'info');
+    const result = await callEdgeFunction('invite-super-admin', { email });
+    if (result.alreadyAdmin) {
+      showToast(`ℹ️ ${email} is already a Super Admin.`, 'info');
+    } else if (result.existingAccount) {
+      showToast(`✅ ${email} now has Super Admin access — they already had an account, so we emailed them instead of an invite link.`, 'success');
+    } else {
+      showToast(`✅ Invited ${email} — they'll get an email to set their own password.`, 'success');
+    }
+    document.getElementById('invite-super-admin-form').reset();
+    loadSuperAdminsList();
+  } catch (err) {
+    console.error('Invite super admin error:', err);
+    showToast('Error: ' + err.message, 'error');
+  }
+}
+
+async function removeSuperAdminEntry(email) {
+  if (email === (currentUser ? currentUser.email : null)) {
+    showToast("❌ You can't remove your own admin access from here.", 'error');
+    return;
+  }
+  if (!confirm(`Remove Super Admin access for "${email}"? Their login account isn't deleted — this only revokes platform admin access. You can re-invite them later.`)) return;
+
+  try {
+    const { error } = await client.from('super_admins').delete().eq('email', email);
+    if (error) throw error;
+    showToast(`✅ Removed ${email} from Super Admins.`, 'success');
+    loadSuperAdminsList();
+  } catch (err) {
+    console.error('Error removing admin:', err);
+    showToast('❌ Error: ' + err.message, 'error');
+  }
+}
+
 async function handleInviteTeammateSubmit(e) {
   e.preventDefault();
   if (!currentCompany) return;
@@ -1573,10 +1656,11 @@ async function loadCurrentCompanyAndRoute(wantsAdmin) {
     // and reach Platform Admin even if they don't belong to any company.
     const { data: adminCheck } = await client
       .from('super_admins')
-      .select('email')
+      .select('email, can_manage_admins')
       .eq('email', currentUser.email)
       .maybeSingle();
     isSuperAdmin = !!adminCheck;
+    isAdminManager = !!(adminCheck && adminCheck.can_manage_admins);
 
     const { data: membership, error } = await client
       .from('company_members')
@@ -1624,6 +1708,7 @@ async function logoutAdmin() {
   currentUser = null;
   currentCompany = null;
   isSuperAdmin = false;
+  isAdminManager = false;
   window.location.href = window.location.pathname;
 }
 
@@ -3238,12 +3323,21 @@ function showSuperAdminView() {
   loadSuperAdminCompanies();
   loadSuperAdminApplicants();
 
+  // "Manage Admins" is only usable by the admin-manager (see
+  // isAdminManager) — hidden entirely for any other super admin, since
+  // they have full platform access otherwise but can't invite/remove
+  // other admins.
+  const manageAdminsBtn = document.getElementById('super-manage-admins-tab-btn');
+  if (manageAdminsBtn) manageAdminsBtn.style.display = isAdminManager ? '' : 'none';
+  if (isAdminManager) loadSuperAdminsList();
+
   // Always open on the first section for a predictable landing spot,
   // matching the company admin dashboard's reset-to-first-tab behavior.
   document.getElementById('super-invite-tab').style.display = 'block';
   document.getElementById('super-branding-tab').style.display = 'none';
   document.getElementById('super-companies-tab').style.display = 'none';
   document.getElementById('super-applicants-tab').style.display = 'none';
+  document.getElementById('super-manage-admins-tab').style.display = 'none';
   document.getElementById('super-password-tab').style.display = 'none';
   document.querySelectorAll('.super-tab-btn').forEach((btn, idx) => {
     btn.classList.toggle('active', idx === 0);
