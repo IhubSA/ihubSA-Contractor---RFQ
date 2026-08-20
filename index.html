@@ -1327,6 +1327,22 @@
     </div>
   </div>
 
+  <div id="expand-search-modal" class="modal" style="display:none;">
+    <div class="modal-content" style="max-width:480px;">
+      <div class="modal-head">
+        <h3>Expand Supplier Search</h3>
+        <button class="drawer-close" onclick="closeModal('expand-search-modal')">✕</button>
+      </div>
+      <div class="modal-body">
+        <p style="margin:0 0 15px 0; font-size:13px; color:var(--border);">Not getting enough applications? Notify registered suppliers in other provinces about this RFQ too. Provinces already notified aren't shown &mdash; nobody gets a duplicate notification.</p>
+        <form id="expand-search-form">
+          <div id="expand-search-provinces" style="display:flex; flex-direction:column; gap:8px; margin-bottom:20px;"></div>
+          <button type="submit" class="btn gold" id="expand-search-submit" style="width:100%; padding:12px;">Notify Selected Provinces</button>
+        </form>
+      </div>
+    </div>
+  </div>
+
   <!-- TOAST NOTIFICATIONS -->
   <div id="toast-wrap" style="position:fixed; top:20px; right:20px; z-index:9999; max-width:400px;"></div>
 
