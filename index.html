@@ -322,19 +322,14 @@
 
               <div class="form-grid-2">
                 <div>
-                  <label style="font-weight:bold; display:block; margin-bottom:8px;">Province *</label>
-                  <select name="rfq_province" style="width:100%; padding:10px; border:1px solid var(--border); border-radius:4px; box-sizing:border-box;">
-                    <option value="">Select a province...</option>
-                    <option value="Eastern Cape">Eastern Cape</option>
-                    <option value="Free State">Free State</option>
-                    <option value="Gauteng">Gauteng</option>
-                    <option value="KwaZulu-Natal">KwaZulu-Natal</option>
-                    <option value="Limpopo">Limpopo</option>
-                    <option value="Mpumalanga">Mpumalanga</option>
-                    <option value="Northern Cape">Northern Cape</option>
-                    <option value="North West">North West</option>
-                    <option value="Western Cape">Western Cape</option>
-                  </select>
+                  <label style="font-weight:bold; display:block; margin-bottom:8px;">Province(s) *</label>
+                  <p style="font-size:12px; color:var(--border); margin:0 0 8px 0;">Select every province you want this RFQ to be visible in and to notify registered suppliers in.</p>
+                  <div style="border:1px solid var(--border); border-radius:4px; padding:12px; box-sizing:border-box;">
+                    <label style="display:flex; align-items:center; gap:8px; font-weight:600; margin-bottom:8px; padding-bottom:8px; border-bottom:1px solid var(--border); cursor:pointer;">
+                      <input type="checkbox" id="rfq-province-select-all"> Select All Provinces
+                    </label>
+                    <div id="rfq-province-checkboxes" style="display:grid; grid-template-columns:1fr 1fr; gap:8px;"></div>
+                  </div>
                 </div>
                 <div>
                   <label style="font-weight:bold; display:block; margin-bottom:8px;">Town / Area (optional)</label>
