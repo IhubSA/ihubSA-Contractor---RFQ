@@ -14,6 +14,7 @@ let platformSettings = { logo_url: null };
 window.lastInvitations = [];
 let pendingAskQuestionRfqId = null; // which RFQ the open "Ask a Question" modal is for
 let pendingAnswerQuestionId = null; // which rfq_questions row the open "Reply" modal is answering
+let pendingExpandSearchRfqId = null; // which RFQ the open "Expand Supplier Search" modal is for
 let rfqQuestionsById = {}; // populated by loadRFQConsole so the answer modal can look up question text without embedding free-form text in onclick attributes
 
 const DEFAULT_HERO_SUBTITLE = "Open requests for quotation. Apply directly online — you'll get a reference number and a confirmation the moment your application is received.";
@@ -201,6 +202,12 @@ function setupStaticForms() {
   if (answerQuestionForm && !answerQuestionForm.dataset.wired) {
     answerQuestionForm.addEventListener('submit', handleAnswerQuestionSubmit);
     answerQuestionForm.dataset.wired = 'true';
+  }
+
+  const expandSearchForm = document.getElementById('expand-search-form');
+  if (expandSearchForm && !expandSearchForm.dataset.wired) {
+    expandSearchForm.addEventListener('submit', handleExpandSearchSubmit);
+    expandSearchForm.dataset.wired = 'true';
   }
 }
 
@@ -519,6 +526,7 @@ async function loadPublicRFQList() {
       .from('rfqs')
       .select('id, rfq_name, project_name, description, deadline, budget, company_id, province, location_area')
       .eq('is_public', true)
+      .eq('is_withdrawn', false)
       .gt('deadline', new Date().toISOString());
 
     if (province) {
@@ -1083,6 +1091,121 @@ async function handleAnswerQuestionSubmit(e) {
   } catch (err) {
     console.error('Error sending answer:', err);
     showToast('❌ Could not send answer: ' + err.message, 'error');
+  } finally {
+    submitBtn.disabled = false;
+    submitBtn.textContent = originalLabel;
+  }
+}
+
+// Unpublishing removes an Open RFQ from the public portal (listing, direct
+// links, and the applicant gate) without deleting anything — submissions
+// already received stay intact and reviewable, and the RFQ can be
+// republished once whatever prompted the unpublish (e.g. an error in the
+// listing) is fixed. The real enforcement is the rfqs_select_scoped RLS
+// policy (is_public = true AND is_withdrawn = false); this update is what
+// flips that gate.
+async function unpublishRFQ(rfqId) {
+  if (!confirm('Unpublish this RFQ from the public portal? It will no longer be visible or reachable by contractors browsing or with a direct link. Submissions already received are kept, and you can republish it later.')) return;
+
+  try {
+    const { error } = await client
+      .from('rfqs')
+      .update({ is_withdrawn: true, withdrawn_at: new Date().toISOString() })
+      .eq('id', rfqId);
+    if (error) throw error;
+    showToast('✅ RFQ unpublished — no longer visible on the public portal.', 'success');
+    loadRFQConsole();
+  } catch (err) {
+    showToast('Error: ' + err.message, 'error');
+  }
+}
+
+async function republishRFQ(rfqId) {
+  if (!confirm('Republish this RFQ? It will become visible on the public portal again.')) return;
+
+  try {
+    const { error } = await client
+      .from('rfqs')
+      .update({ is_withdrawn: false, withdrawn_at: null })
+      .eq('id', rfqId);
+    if (error) throw error;
+    showToast('✅ RFQ republished — visible on the public portal again.', 'success');
+    loadRFQConsole();
+  } catch (err) {
+    showToast('Error: ' + err.message, 'error');
+  }
+}
+
+// "Expand Supplier Search" lets staff broaden which provinces' registered
+// suppliers get notified about an already-published RFQ, e.g. when the
+// original province didn't produce enough applications. Only provinces not
+// already in the RFQ's notified_provinces are offered, so nobody already
+// notified gets a duplicate email/SMS.
+function openExpandSearchModal(rfqId, notifiedProvincesJson) {
+  pendingExpandSearchRfqId = rfqId;
+  let notified = [];
+  try { notified = JSON.parse(notifiedProvincesJson) || []; } catch { notified = []; }
+
+  const container = document.getElementById('expand-search-provinces');
+  const remaining = PROVINCE_OPTIONS.filter(p => !notified.includes(p));
+
+  if (remaining.length === 0) {
+    container.innerHTML = '<p style="margin:0; color:var(--border); font-style:italic;">All provinces have already been notified for this RFQ.</p>';
+    document.getElementById('expand-search-submit').style.display = 'none';
+  } else {
+    document.getElementById('expand-search-submit').style.display = '';
+    container.innerHTML = remaining.map(p => `
+      <label style="font-weight:normal; display:flex; align-items:center; gap:8px;">
+        <input type="checkbox" name="expand-province" value="${p}">
+        <span>${p}</span>
+      </label>
+    `).join('');
+  }
+
+  openModal('expand-search-modal');
+}
+
+async function handleExpandSearchSubmit(e) {
+  e.preventDefault();
+  if (!pendingExpandSearchRfqId) return;
+
+  const additionalProvinces = Array.from(document.querySelectorAll('input[name="expand-province"]:checked')).map(el => el.value);
+  if (additionalProvinces.length === 0) {
+    showToast('❌ Select at least one province.', 'error');
+    return;
+  }
+
+  const submitBtn = document.getElementById('expand-search-submit');
+  const originalLabel = submitBtn.textContent;
+  submitBtn.disabled = true;
+  submitBtn.textContent = 'Notifying...';
+
+  try {
+    const result = await callEdgeFunction('notify-suppliers-new-rfq', {
+      rfqId: pendingExpandSearchRfqId,
+      additionalProvinces
+    });
+
+    const parts = [];
+    if (result.sent > 0) parts.push(`${result.sent} emailed`);
+    if (result.smsSent > 0) parts.push(`${result.smsSent} texted`);
+    if (parts.length > 0) {
+      showToast(`✅ Notified suppliers in ${additionalProvinces.join(', ')} (${parts.join(', ')})`, 'success');
+    } else if (result.alreadyNotified) {
+      showToast('Those provinces were already notified for this RFQ.', 'info');
+    } else {
+      showToast('No registered suppliers found in the selected province(s) yet.', 'info');
+    }
+    if (result.smsError) {
+      showToast('Note: SMS notifications for the new province(s) did not go out — ' + result.smsError, 'warning');
+    }
+
+    closeModal('expand-search-modal');
+    pendingExpandSearchRfqId = null;
+    loadRFQConsole();
+  } catch (err) {
+    console.error('Error expanding supplier search:', err);
+    showToast('❌ Could not notify additional provinces: ' + err.message, 'error');
   } finally {
     submitBtn.disabled = false;
     submitBtn.textContent = originalLabel;
@@ -1830,9 +1953,16 @@ async function loadRFQDetails(rfqId, isOpenAccess = false) {
 
     // Direct public-portal access must be to an RFQ the company actually
     // marked "Open" — a closed RFQ is only reachable via its invite link,
-    // even if someone guesses/shares its id.
-    if (isOpenAccess && !rfq.is_public) {
-      document.getElementById('rfq-portal').innerHTML = '<div class="card"><h2 style="margin-top:0;">Not Available</h2><p>This RFQ is invite-only and can\'t be accessed from the public portal.</p></div>';
+    // even if someone guesses/shares its id. An unpublished (withdrawn) RFQ
+    // is blocked the same way, even though it was originally Open — the
+    // real enforcement is the rfqs_select_scoped RLS policy (a withdrawn
+    // RFQ simply won't come back for an anonymous visitor at all), this is
+    // just the friendlier message for the rare case a company member views
+    // their own withdrawn RFQ via this same code path.
+    if (isOpenAccess && (!rfq.is_public || rfq.is_withdrawn)) {
+      document.getElementById('rfq-portal').innerHTML = rfq.is_withdrawn
+        ? '<div class="card"><h2 style="margin-top:0;">Not Available</h2><p>This opportunity has been unpublished by the issuing company and is no longer available.</p></div>'
+        : '<div class="card"><h2 style="margin-top:0;">Not Available</h2><p>This RFQ is invite-only and can\'t be accessed from the public portal.</p></div>';
       document.getElementById('rfq-portal').style.display = 'block';
       applyDefaultBranding();
       return;
@@ -2656,10 +2786,11 @@ async function loadRFQConsole() {
             <div style="flex: 1; min-width: 220px;">
               <h3 style="margin: 0 0 5px 0; color: var(--primary);">
                 ${rfq.rfq_name}
-                <span class="submission-status ${rfq.is_public ? 'approved' : 'under_review'}" style="vertical-align:middle; margin-left:8px;">${rfq.is_public ? 'Open — Public' : 'Closed — Invite Only'}</span>
+                <span class="submission-status ${rfq.is_withdrawn ? 'rejected' : (rfq.is_public ? 'approved' : 'under_review')}" style="vertical-align:middle; margin-left:8px;">${rfq.is_withdrawn ? '🚫 Unpublished' : (rfq.is_public ? 'Open — Public' : 'Closed — Invite Only')}</span>
               </h3>
               <p style="margin: 0 0 8px 0; font-size: 14px; color: var(--border);">Project: <strong>${rfq.project_name}</strong></p>
               ${(rfq.location_area || rfq.province) ? `<p style="margin: 0 0 8px 0; font-size: 14px; color: var(--border);">📍 ${[rfq.location_area, rfq.province].filter(Boolean).join(', ')}</p>` : ''}
+              ${(rfq.is_public && rfq.notified_provinces && rfq.notified_provinces.length > 0) ? `<p style="margin: 0 0 8px 0; font-size: 13px; color: var(--border);">📢 Suppliers notified in: ${rfq.notified_provinces.map(p => escapeHtmlClient(p)).join(', ')}</p>` : ''}
               <p style="margin: 0; font-size: 14px; color: var(--border);">
                 Deadline: ${deadlineDate.toLocaleDateString()}
                 <span style="color: ${isExpired ? 'var(--warning)' : 'var(--success)'}; font-weight: bold; margin-left: 8px;">
@@ -2753,6 +2884,23 @@ async function loadRFQConsole() {
               Copy All Links
             </button>
           </div>
+
+          ${rfq.is_public ? `
+            <div style="display: grid; grid-template-columns: ${rfq.is_withdrawn ? '1fr' : '1fr 1fr'}; gap: 10px; margin-top: 10px;">
+              ${rfq.is_withdrawn ? `
+                <button onclick="republishRFQ('${rfq.id}')" class="btn gold" style="padding: 10px;">
+                  🔓 Republish
+                </button>
+              ` : `
+                <button onclick='openExpandSearchModal("${rfq.id}", ${JSON.stringify(JSON.stringify(rfq.notified_provinces || []))})' class="btn secondary" style="padding: 10px;">
+                  📢 Expand Supplier Search
+                </button>
+                <button onclick="unpublishRFQ('${rfq.id}')" class="btn" style="padding: 10px; background: var(--bg-2); color: var(--warning);">
+                  🚫 Unpublish
+                </button>
+              `}
+            </div>
+          ` : ''}
         </div>
       `;
     }
