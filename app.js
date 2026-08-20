@@ -3304,11 +3304,188 @@ async function loadSuperAdminCompanies() {
 // removeSupplier below) — this toggles whether the list also shows them.
 let showRemovedSuppliers = false;
 
+// Full, unfiltered list fetched from the DB, cached here so the search box
+// and the two filter dropdowns can re-render instantly from memory on
+// every keystroke/change instead of re-querying the database each time.
+let allSupplierApplicants = [];
+
 function toggleShowRemovedSuppliers() {
   showRemovedSuppliers = !showRemovedSuppliers;
-  loadSuperAdminApplicants();
+  renderSupplierList();
 }
 
+// Re-renders the Supplier Database list from the already-fetched
+// allSupplierApplicants cache, applying the search box + province/status
+// filters. Called on every keystroke/change in those controls, and after
+// loadSuperAdminApplicants() re-fetches from the DB.
+function filterSupplierDatabase() {
+  renderSupplierList();
+}
+
+function renderSupplierList() {
+  const list = document.getElementById('super-admin-applicants-list');
+  if (!list) return;
+
+  const allApplicants = allSupplierApplicants;
+  const removedCount = allApplicants.filter(a => a.status === 'removed').length;
+
+  const searchInput = document.getElementById('supplier-search-input');
+  const provinceFilter = document.getElementById('supplier-province-filter');
+  const statusFilter = document.getElementById('supplier-status-filter');
+  const searchTerm = (searchInput ? searchInput.value : '').trim().toLowerCase();
+  const provinceValue = provinceFilter ? provinceFilter.value : '';
+  const statusValue = statusFilter ? statusFilter.value : '';
+
+  let visibleApplicants = allApplicants.filter(a => {
+    // An explicit "Removed" status filter always wins over the show/hide
+    // toggle below; otherwise the toggle keeps its existing behavior of
+    // hiding removed suppliers from the default view.
+    if (statusValue) {
+      if (a.status !== statusValue) return false;
+    } else if (a.status === 'removed' && !showRemovedSuppliers) {
+      return false;
+    }
+    if (provinceValue && a.province !== provinceValue) return false;
+    if (searchTerm) {
+      const haystack = [a.company_name, a.full_name, a.email, a.phone, a.additional_phone]
+        .filter(Boolean).join(' ').toLowerCase();
+      if (!haystack.includes(searchTerm)) return false;
+    }
+    return true;
+  });
+
+  const toggleHtml = `
+    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px; flex-wrap:wrap; gap:10px;">
+      <p style="color:var(--border); font-size:13px; margin:0;">${visibleApplicants.length} supplier${visibleApplicants.length === 1 ? '' : 's'} shown</p>
+      ${removedCount > 0 ? `<button type="button" class="btn secondary" style="padding:6px 12px; font-size:12px;" onclick="toggleShowRemovedSuppliers()">${showRemovedSuppliers ? 'Hide' : 'Show'} Removed (${removedCount})</button>` : ''}
+    </div>
+  `;
+
+  if (allApplicants.length === 0) {
+    list.innerHTML = '<p style="color:var(--border); text-align:center; padding:20px;">No one has registered yet.</p>';
+    return;
+  }
+  if (visibleApplicants.length === 0) {
+    list.innerHTML = toggleHtml + '<p style="color:var(--border); text-align:center; padding:20px;">No suppliers match your search/filters.</p>';
+    return;
+  }
+
+  // The 3 documents an admin can upload/replace directly (see
+  // uploadOrReplaceSupplierDocument below) — kept separate from the
+  // remaining optional documents below, which stay download-only.
+  const MANAGED_DOC_FIELDS = [
+    ['cipc_document_path', 'CIPC/ID'],
+    ['proof_of_address_document_path', 'Proof of Address'],
+    ['sars_document_path', 'SARS Info']
+  ];
+
+  const managedDocButtons = (a) => MANAGED_DOC_FIELDS.map(([col, label]) => {
+    const path = a[col];
+    if (path) {
+      return `
+        <span style="display:inline-flex; gap:4px;">
+          <button type="button" class="btn secondary" style="padding:6px 10px; font-size:12px;" onclick="downloadSupplierDocument('${path}', '${label.replace(/'/g, "\\'")}')">📄 ${label}</button>
+          <button type="button" class="btn secondary" style="padding:6px 10px; font-size:12px;" onclick="uploadOrReplaceSupplierDocument('${a.id}', '${col}', '${label.replace(/'/g, "\\'")}')">🔄 Replace</button>
+        </span>
+      `;
+    }
+    return `<button type="button" class="btn secondary" style="padding:6px 10px; font-size:12px; border-color:var(--warning); color:var(--warning);" onclick="uploadOrReplaceSupplierDocument('${a.id}', '${col}', '${label.replace(/'/g, "\\'")}')">⬆️ Upload ${label}</button>`;
+  }).join('');
+
+  // Remaining optional documents stay download-only, same as before.
+  const otherDocFields = (a) => {
+    const fields = [
+      ['Proof of Banking', a.proof_of_banking_document_path],
+      ['B-BBEE', a.bbbee_document_path],
+      ['Health & Safety', a.health_safety_document_path],
+      ['Special Permits', a.special_permits_document_path]
+    ].filter(([, path]) => !!path);
+    (a.other_documents || []).forEach(doc => fields.push([doc.name || 'Other Document', doc.path]));
+    return fields;
+  };
+
+  const statusBadge = (a) => {
+    if (a.status === 'suspended') return '<span class="submission-status info_requested">Suspended</span>';
+    if (a.status === 'removed') return '<span class="submission-status rejected">Removed</span>';
+    return '<span class="submission-status approved">Active</span>';
+  };
+
+  // Shown regardless of status: flags a row missing any of the 3
+  // mandatory documents (always true right after a bulk import, since
+  // documents aren't part of that flow — see openImportSuppliersModal)
+  // so it's easy to spot who still needs paperwork uploaded.
+  const docsPendingBadge = (a) => {
+    const missing = MANAGED_DOC_FIELDS.some(([col]) => !a[col]);
+    if (!missing) return '';
+    return ' <span class="submission-status info_requested" title="Missing one or more of CIPC/ID, Proof of Address, or SARS Info">📋 Documents Pending</span>';
+  };
+
+  const importedBadge = (a) => a.registration_source === 'imported'
+    ? ' <span class="submission-status" style="background:var(--bg-2); color:var(--border); border:1px solid var(--border);">Imported</span>'
+    : '';
+
+  const statusActions = (a) => {
+    const escapedName = (a.company_name || a.full_name || '').replace(/'/g, "\\'");
+    if (a.status === 'active') {
+      return `
+        <button type="button" class="btn secondary" style="padding:6px 12px; font-size:12px;" onclick="suspendSupplier('${a.id}', '${escapedName}')">Suspend</button>
+        <button type="button" class="btn secondary" style="padding:6px 12px; font-size:12px; color:#D32F2F; border-color:#D32F2F;" onclick="removeSupplier('${a.id}', '${escapedName}')">Remove</button>
+      `;
+    }
+    if (a.status === 'suspended') {
+      return `
+        <button type="button" class="btn secondary" style="padding:6px 12px; font-size:12px;" onclick="reactivateSupplier('${a.id}', '${escapedName}')">Reactivate</button>
+        <button type="button" class="btn secondary" style="padding:6px 12px; font-size:12px; color:#D32F2F; border-color:#D32F2F;" onclick="removeSupplier('${a.id}', '${escapedName}')">Remove</button>
+      `;
+    }
+    // removed
+    return `<button type="button" class="btn secondary" style="padding:6px 12px; font-size:12px;" onclick="restoreSupplier('${a.id}', '${escapedName}')">Restore</button>`;
+  };
+
+  list.innerHTML = toggleHtml + `
+    <div style="max-height:600px; overflow-y:auto;">
+      ${visibleApplicants.map(a => `
+        <div style="padding:15px; border:1px solid var(--border); border-radius:4px; margin-bottom:10px; ${a.status !== 'active' ? 'background:var(--bg-2);' : ''}">
+          <div style="display:flex; justify-content:space-between; align-items:flex-start; flex-wrap:wrap; gap:10px;">
+            <div>
+              <p style="margin:0; font-weight:600;">${a.company_name}${statusBadge(a)}${docsPendingBadge(a)}${importedBadge(a)}</p>
+              <p style="margin:2px 0 0 0; font-size:13px; color:var(--ink);">${a.title ? a.title + ' ' : ''}${a.full_name}${a.designation ? ' · ' + a.designation : ''}</p>
+              <p style="margin:2px 0 0 0; font-size:12px; color:var(--border);">${a.email}${a.phone ? ' · ' + a.phone : ''}${a.additional_phone ? ' · ' + a.additional_phone : ''}</p>
+            </div>
+            <p style="margin:0; font-size:12px; color:var(--border); white-space:nowrap;">Registered ${new Date(a.created_at).toLocaleDateString()}</p>
+          </div>
+          ${a.status !== 'active' ? `
+            <div style="margin-top:10px; padding:10px; background:white; border:1px solid var(--border); border-radius:4px; font-size:12px;">
+              <p style="margin:0;"><strong>${a.status === 'suspended' ? 'Suspended' : 'Removed'} — reason:</strong> ${a.status_reason || '—'}</p>
+              <p style="margin:4px 0 0 0; color:var(--border);">${a.status_changed_by ? 'By ' + a.status_changed_by + ' · ' : ''}${a.status_changed_at ? new Date(a.status_changed_at).toLocaleString() : ''}</p>
+            </div>
+          ` : ''}
+          <div style="margin-top:10px; display:grid; grid-template-columns:repeat(auto-fit, minmax(200px, 1fr)); gap:6px 20px; font-size:12px; color:var(--ink);">
+            <p style="margin:0;"><strong>Years in Business:</strong> ${a.years_in_business != null ? a.years_in_business : '—'}</p>
+            <p style="margin:0;"><strong>Notify Province:</strong> ${a.province || '—'}</p>
+            <p style="margin:0; grid-column:1/-1;"><strong>Address:</strong> ${a.address || '—'}</p>
+            ${a.website_social ? `<p style="margin:0; grid-column:1/-1;"><strong>Website/Social:</strong> ${a.website_social}</p>` : ''}
+            <p style="margin:0; grid-column:1/-1;"><strong>Services:</strong> ${a.services_description || '—'}</p>
+            <p style="margin:0; grid-column:1/-1;"><strong>Service Areas:</strong> ${a.service_areas || '—'}</p>
+          </div>
+          <div style="margin-top:12px; display:flex; flex-wrap:wrap; gap:8px; align-items:center;">
+            ${managedDocButtons(a)}
+            ${otherDocFields(a).map(([label, path]) => `
+              <button type="button" class="btn secondary" style="padding:6px 10px; font-size:12px;" onclick="downloadSupplierDocument('${path}', '${label.replace(/'/g, "\\'")}')">📄 ${label}</button>
+            `).join('')}
+          </div>
+          <div style="margin-top:10px; display:flex; flex-wrap:wrap; gap:8px; border-top:1px solid var(--border); padding-top:10px;">
+            ${statusActions(a)}
+          </div>
+        </div>
+      `).join('')}
+    </div>
+  `;
+}
+
+// Fetches the full Supplier Database from the DB and populates the
+// province filter's options (once), then hands off to renderSupplierList()
+// for the actual (filterable, cheap) rendering.
 async function loadSuperAdminApplicants() {
   try {
     const { data: applicants, error } = await client
@@ -3318,111 +3495,287 @@ async function loadSuperAdminApplicants() {
 
     if (error) throw error;
 
-    const list = document.getElementById('super-admin-applicants-list');
-    if (!list) return;
+    allSupplierApplicants = applicants || [];
 
-    const allApplicants = applicants || [];
-    const removedCount = allApplicants.filter(a => a.status === 'removed').length;
-    const visibleApplicants = showRemovedSuppliers ? allApplicants : allApplicants.filter(a => a.status !== 'removed');
-
-    const toggleHtml = `
-      <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px; flex-wrap:wrap; gap:10px;">
-        <p style="color:var(--border); font-size:13px; margin:0;">${visibleApplicants.length} supplier${visibleApplicants.length === 1 ? '' : 's'} shown</p>
-        ${removedCount > 0 ? `<button type="button" class="btn secondary" style="padding:6px 12px; font-size:12px;" onclick="toggleShowRemovedSuppliers()">${showRemovedSuppliers ? 'Hide' : 'Show'} Removed (${removedCount})</button>` : ''}
-      </div>
-    `;
-
-    if (allApplicants.length === 0) {
-      list.innerHTML = '<p style="color:var(--border); text-align:center; padding:20px;">No one has registered yet.</p>';
-      return;
-    }
-    if (visibleApplicants.length === 0) {
-      list.innerHTML = toggleHtml + '<p style="color:var(--border); text-align:center; padding:20px;">No suppliers to show.</p>';
-      return;
+    const provinceFilter = document.getElementById('supplier-province-filter');
+    if (provinceFilter && !provinceFilter.dataset.populated) {
+      provinceFilter.insertAdjacentHTML('beforeend', PROVINCE_OPTIONS.map(p => `<option value="${p}">${p}</option>`).join(''));
+      provinceFilter.dataset.populated = 'true';
     }
 
-    // Document fields present on the row, each rendered as a download
-    // button when a path exists (private bucket — signed URL only).
-    const docFields = (a) => {
-      const fields = [
-        ['CIPC/ID', a.cipc_document_path],
-        ['Proof of Address', a.proof_of_address_document_path],
-        ['SARS Info', a.sars_document_path],
-        ['Proof of Banking', a.proof_of_banking_document_path],
-        ['B-BBEE', a.bbbee_document_path],
-        ['Health & Safety', a.health_safety_document_path],
-        ['Special Permits', a.special_permits_document_path]
-      ].filter(([, path]) => !!path);
-      (a.other_documents || []).forEach(doc => fields.push([doc.name || 'Other Document', doc.path]));
-      return fields;
-    };
-
-    const statusBadge = (a) => {
-      if (a.status === 'suspended') return '<span class="submission-status info_requested">Suspended</span>';
-      if (a.status === 'removed') return '<span class="submission-status rejected">Removed</span>';
-      return '<span class="submission-status approved">Active</span>';
-    };
-
-    const statusActions = (a) => {
-      const escapedName = (a.company_name || a.full_name || '').replace(/'/g, "\\'");
-      if (a.status === 'active') {
-        return `
-          <button type="button" class="btn secondary" style="padding:6px 12px; font-size:12px;" onclick="suspendSupplier('${a.id}', '${escapedName}')">Suspend</button>
-          <button type="button" class="btn secondary" style="padding:6px 12px; font-size:12px; color:#D32F2F; border-color:#D32F2F;" onclick="removeSupplier('${a.id}', '${escapedName}')">Remove</button>
-        `;
-      }
-      if (a.status === 'suspended') {
-        return `
-          <button type="button" class="btn secondary" style="padding:6px 12px; font-size:12px;" onclick="reactivateSupplier('${a.id}', '${escapedName}')">Reactivate</button>
-          <button type="button" class="btn secondary" style="padding:6px 12px; font-size:12px; color:#D32F2F; border-color:#D32F2F;" onclick="removeSupplier('${a.id}', '${escapedName}')">Remove</button>
-        `;
-      }
-      // removed
-      return `<button type="button" class="btn secondary" style="padding:6px 12px; font-size:12px;" onclick="restoreSupplier('${a.id}', '${escapedName}')">Restore</button>`;
-    };
-
-    list.innerHTML = toggleHtml + `
-      <div style="max-height:600px; overflow-y:auto;">
-        ${visibleApplicants.map(a => `
-          <div style="padding:15px; border:1px solid var(--border); border-radius:4px; margin-bottom:10px; ${a.status !== 'active' ? 'background:var(--bg-2);' : ''}">
-            <div style="display:flex; justify-content:space-between; align-items:flex-start; flex-wrap:wrap; gap:10px;">
-              <div>
-                <p style="margin:0; font-weight:600;">${a.company_name} ${statusBadge(a)}</p>
-                <p style="margin:2px 0 0 0; font-size:13px; color:var(--ink);">${a.title ? a.title + ' ' : ''}${a.full_name}${a.designation ? ' · ' + a.designation : ''}</p>
-                <p style="margin:2px 0 0 0; font-size:12px; color:var(--border);">${a.email}${a.phone ? ' · ' + a.phone : ''}${a.additional_phone ? ' · ' + a.additional_phone : ''}</p>
-              </div>
-              <p style="margin:0; font-size:12px; color:var(--border); white-space:nowrap;">Registered ${new Date(a.created_at).toLocaleDateString()}</p>
-            </div>
-            ${a.status !== 'active' ? `
-              <div style="margin-top:10px; padding:10px; background:white; border:1px solid var(--border); border-radius:4px; font-size:12px;">
-                <p style="margin:0;"><strong>${a.status === 'suspended' ? 'Suspended' : 'Removed'} — reason:</strong> ${a.status_reason || '—'}</p>
-                <p style="margin:4px 0 0 0; color:var(--border);">${a.status_changed_by ? 'By ' + a.status_changed_by + ' · ' : ''}${a.status_changed_at ? new Date(a.status_changed_at).toLocaleString() : ''}</p>
-              </div>
-            ` : ''}
-            <div style="margin-top:10px; display:grid; grid-template-columns:repeat(auto-fit, minmax(200px, 1fr)); gap:6px 20px; font-size:12px; color:var(--ink);">
-              <p style="margin:0;"><strong>Years in Business:</strong> ${a.years_in_business != null ? a.years_in_business : '—'}</p>
-              <p style="margin:0;"><strong>Notify Province:</strong> ${a.province || '—'}</p>
-              <p style="margin:0; grid-column:1/-1;"><strong>Address:</strong> ${a.address || '—'}</p>
-              ${a.website_social ? `<p style="margin:0; grid-column:1/-1;"><strong>Website/Social:</strong> ${a.website_social}</p>` : ''}
-              <p style="margin:0; grid-column:1/-1;"><strong>Services:</strong> ${a.services_description || '—'}</p>
-              <p style="margin:0; grid-column:1/-1;"><strong>Service Areas:</strong> ${a.service_areas || '—'}</p>
-            </div>
-            <div style="margin-top:12px; display:flex; flex-wrap:wrap; gap:8px;">
-              ${docFields(a).map(([label, path]) => `
-                <button type="button" class="btn secondary" style="padding:6px 12px; font-size:12px;" onclick="downloadSupplierDocument('${path}', '${label.replace(/'/g, "\\'")}')">📄 ${label}</button>
-              `).join('') || '<p style="margin:0; font-size:12px; color:var(--border);">No documents on file.</p>'}
-            </div>
-            <div style="margin-top:10px; display:flex; flex-wrap:wrap; gap:8px; border-top:1px solid var(--border); padding-top:10px;">
-              ${statusActions(a)}
-            </div>
-          </div>
-        `).join('')}
-      </div>
-    `;
+    renderSupplierList();
   } catch (err) {
     console.error('Error loading applicants:', err);
     const list = document.getElementById('super-admin-applicants-list');
     if (list) list.innerHTML = '<p style="color:var(--warning);">Error loading registered applicants.</p>';
+  }
+}
+
+// Uploads a new file for one of the 3 admin-manageable mandatory
+// documents (CIPC/ID, Proof of Address, SARS Info) and points the
+// supplier's row at it — used both to fill in a missing document (e.g.
+// after a bulk import) and to replace an existing one. The old file (if
+// any) is left in storage rather than deleted, same tradeoff already
+// accepted elsewhere in this app for superseded links/tokens.
+let pendingSupplierDocUpload = null; // { applicantId, column, label }
+
+function uploadOrReplaceSupplierDocument(applicantId, column, label) {
+  pendingSupplierDocUpload = { applicantId, column, label };
+  const input = document.getElementById('supplier-doc-upload-input');
+  if (!input) return;
+  input.value = '';
+  input.click();
+}
+
+async function handleSupplierDocFileSelected(e) {
+  const file = e.target.files[0];
+  const pending = pendingSupplierDocUpload;
+  pendingSupplierDocUpload = null;
+  if (!file || !pending) return;
+
+  try {
+    const path = await uploadSupplierDocument(pending.applicantId, pending.column, file);
+    const { error } = await client
+      .from('applicant_registrations')
+      .update({ [pending.column]: path })
+      .eq('id', pending.applicantId);
+    if (error) throw error;
+    showToast(`✅ ${pending.label} uploaded.`, 'success');
+    loadSuperAdminApplicants();
+  } catch (err) {
+    console.error('Error uploading supplier document:', err);
+    showToast('❌ Error uploading document: ' + err.message, 'error');
+  }
+}
+
+// ---------------------------------------------------------------------
+// Import Suppliers: upload a CSV/Excel export of an existing supplier
+// list, map its columns onto our fields (auto-guessed, editable), preview
+// what will and won't be imported, then bulk-insert. Documents and the
+// registration declaration are deliberately NOT part of this flow — per
+// Brent's instruction, imported suppliers get flagged "Documents Pending"
+// (see docsPendingBadge above) and documents/declaration are added later,
+// one at a time, via the per-supplier Upload/Replace buttons.
+// ---------------------------------------------------------------------
+
+const IMPORT_TARGET_FIELDS = [
+  { key: 'company_name', label: 'Company Name *', required: true, synonyms: ['company name', 'company', 'business name', 'organisation', 'organization', 'trading name'] },
+  { key: 'full_name', label: 'Contact Person *', required: true, synonyms: ['contact person', 'contact name', 'full name', 'name', 'contact'] },
+  { key: 'email', label: 'Email *', required: true, synonyms: ['email address', 'email', 'e-mail'] },
+  { key: 'phone', label: 'Phone', required: false, synonyms: ['phone', 'cell', 'cell number', 'mobile', 'telephone', 'contact number', 'tel'] },
+  { key: 'additional_phone', label: 'Additional Phone', required: false, synonyms: ['additional phone', 'alternative phone', 'alt phone', 'second number', 'other phone'] },
+  { key: 'title', label: 'Title (Ms/Mrs/Mr/Dr/Professor)', required: false, synonyms: ['title'] },
+  { key: 'designation', label: 'Designation', required: false, synonyms: ['designation', 'position', 'job title', 'role'] },
+  { key: 'years_in_business', label: 'Years in Business', required: false, synonyms: ['years in business', 'years trading', 'years operating', 'years'] },
+  { key: 'address', label: 'Address', required: false, synonyms: ['address', 'physical address', 'location'] },
+  { key: 'province', label: 'Notify Province', required: false, synonyms: ['province', 'region'] },
+  { key: 'website_social', label: 'Website / Social', required: false, synonyms: ['website', 'social media', 'social', 'url', 'web'] },
+  { key: 'services_description', label: 'Services', required: false, synonyms: ['services', 'service description', 'services offered', 'products/services'] },
+  { key: 'service_areas', label: 'Service Areas', required: false, synonyms: ['service areas', 'areas served', 'coverage area', 'areas covered'] }
+];
+
+let importWizardState = null; // { headers, rows, mapping }
+
+function openImportSuppliersModal() {
+  importWizardState = null;
+  document.getElementById('import-suppliers-body').innerHTML = `
+    <div>
+      <label style="display:block; margin-bottom:8px; font-weight:600; font-size:13px;">Choose a CSV or Excel (.xlsx/.xls) file</label>
+      <input type="file" id="import-file-input" accept=".csv,.xlsx,.xls" onchange="handleImportFileSelected(event)" style="padding:8px; border:1px solid var(--border); border-radius:4px; width:100%;">
+      <div id="import-file-status" style="margin-top:10px; font-size:12px; color:var(--border);"></div>
+    </div>
+  `;
+  openModal('import-suppliers-modal');
+}
+
+function guessColumnForField(headers, synonyms, usedHeaders) {
+  const available = headers.filter(h => !usedHeaders.has(h));
+  const normalized = available.map(h => (h || '').toString().trim().toLowerCase());
+  for (const syn of synonyms) {
+    const exactIdx = normalized.indexOf(syn);
+    if (exactIdx !== -1) return available[exactIdx];
+  }
+  // Substring fallback is intentionally last-resort and only matches a
+  // whole word/token (split on any non-alphanumeric run), not a raw
+  // substring — otherwise a synonym like "address" would wrongly latch
+  // onto an unrelated column such as "Email Address" before the real
+  // "Address" (or no) column is ever considered.
+  for (const syn of synonyms) {
+    const idx = normalized.findIndex(h => h.split(/[^a-z0-9]+/).includes(syn));
+    if (idx !== -1) return available[idx];
+  }
+  return '';
+}
+
+function handleImportFileSelected(e) {
+  const file = e.target.files[0];
+  if (!file) return;
+  const statusEl = document.getElementById('import-file-status');
+  if (statusEl) statusEl.textContent = 'Reading file...';
+
+  const reader = new FileReader();
+  reader.onload = (evt) => {
+    try {
+      if (typeof XLSX === 'undefined') {
+        throw new Error('File-reading library failed to load. Check your connection and try again.');
+      }
+      const workbook = XLSX.read(evt.target.result, { type: 'array' });
+      const firstSheetName = workbook.SheetNames[0];
+      const sheet = workbook.Sheets[firstSheetName];
+      const rows = XLSX.utils.sheet_to_json(sheet, { defval: '', raw: false });
+
+      if (!rows.length) {
+        if (statusEl) statusEl.textContent = 'No rows found in that file — check it has a header row and at least one data row.';
+        return;
+      }
+
+      const headers = Object.keys(rows[0]);
+      const mapping = {};
+      const usedHeaders = new Set();
+      IMPORT_TARGET_FIELDS.forEach(f => {
+        const guess = guessColumnForField(headers, f.synonyms, usedHeaders);
+        mapping[f.key] = guess;
+        if (guess) usedHeaders.add(guess);
+      });
+
+      importWizardState = { headers, rows, mapping };
+      renderImportMappingStep();
+    } catch (err) {
+      console.error('Error reading import file:', err);
+      if (statusEl) statusEl.textContent = '❌ Could not read that file: ' + err.message;
+    }
+  };
+  reader.onerror = () => {
+    if (statusEl) statusEl.textContent = '❌ Could not read that file.';
+  };
+  reader.readAsArrayBuffer(file);
+}
+
+function updateImportMapping(fieldKey, column) {
+  if (!importWizardState) return;
+  importWizardState.mapping[fieldKey] = column;
+}
+
+function renderImportMappingStep() {
+  const { headers, rows, mapping } = importWizardState;
+  const columnOptionsHtml = (selected) => [
+    `<option value=""${selected ? '' : ' selected'}>-- Not in file --</option>`,
+    ...headers.map(h => `<option value="${escapeHtmlClient(h)}"${h === selected ? ' selected' : ''}>${escapeHtmlClient(h)}</option>`)
+  ].join('');
+
+  document.getElementById('import-suppliers-body').innerHTML = `
+    <p style="margin:0 0 15px 0; font-size:13px;"><strong>${rows.length}</strong> row${rows.length === 1 ? '' : 's'} found. Match each field below to a column from your file (auto-matched where possible) — leave "Not in file" for anything you don't have.</p>
+    <div style="display:grid; grid-template-columns:1fr 1fr; gap:10px 16px; max-height:340px; overflow-y:auto; padding-right:4px;">
+      ${IMPORT_TARGET_FIELDS.map(f => `
+        <div>
+          <label style="display:block; font-size:12px; font-weight:600; margin-bottom:4px;">${f.label}</label>
+          <select onchange="updateImportMapping('${f.key}', this.value)" style="width:100%; padding:8px; border:1px solid var(--border); border-radius:4px; font-size:13px;">
+            ${columnOptionsHtml(mapping[f.key])}
+          </select>
+        </div>
+      `).join('')}
+    </div>
+    <div style="margin-top:20px; display:flex; gap:10px; justify-content:flex-end;">
+      <button type="button" class="btn secondary" onclick="openImportSuppliersModal()">Start Over</button>
+      <button type="button" class="btn gold" onclick="renderImportPreviewStep()">Preview Import</button>
+    </div>
+  `;
+}
+
+function renderImportPreviewStep() {
+  const { rows, mapping } = importWizardState;
+  const missingRequired = IMPORT_TARGET_FIELDS.filter(f => f.required && !mapping[f.key]);
+  if (missingRequired.length > 0) {
+    showToast('❌ Please map: ' + missingRequired.map(f => f.label).join(', '), 'error');
+    return;
+  }
+
+  const existingEmails = new Set(allSupplierApplicants.map(a => (a.email || '').trim().toLowerCase()));
+  const seenInFile = new Set();
+  const toImport = [];
+  let skippedMissing = 0;
+  let skippedDuplicate = 0;
+
+  const getVal = (row, key) => {
+    const col = mapping[key];
+    if (!col) return '';
+    return (row[col] === undefined || row[col] === null) ? '' : row[col].toString().trim();
+  };
+
+  rows.forEach(row => {
+    const companyName = getVal(row, 'company_name');
+    const fullName = getVal(row, 'full_name');
+    const email = getVal(row, 'email').toLowerCase();
+
+    if (!companyName || !fullName || !email) { skippedMissing++; return; }
+    if (existingEmails.has(email) || seenInFile.has(email)) { skippedDuplicate++; return; }
+    seenInFile.add(email);
+
+    const titleRaw = getVal(row, 'title');
+    const title = ['Ms', 'Mrs', 'Mr', 'Dr', 'Professor'].find(t => t.toLowerCase() === titleRaw.toLowerCase()) || null;
+
+    const provinceRaw = getVal(row, 'province');
+    const province = [...PROVINCE_OPTIONS, 'ALL'].find(p => p.toLowerCase() === provinceRaw.toLowerCase()) || null;
+
+    const yearsRaw = getVal(row, 'years_in_business');
+    const yearsParsed = parseInt(yearsRaw, 10);
+    const yearsInBusiness = (Number.isFinite(yearsParsed) && yearsParsed >= 0) ? yearsParsed : null;
+
+    toImport.push({
+      id: generateUUID(),
+      company_name: companyName,
+      full_name: fullName,
+      email,
+      phone: getVal(row, 'phone') || null,
+      additional_phone: getVal(row, 'additional_phone') || null,
+      title,
+      designation: getVal(row, 'designation') || null,
+      years_in_business: yearsInBusiness,
+      address: getVal(row, 'address') || null,
+      province,
+      website_social: getVal(row, 'website_social') || null,
+      services_description: getVal(row, 'services_description') || null,
+      service_areas: getVal(row, 'service_areas') || null,
+      declaration_accepted: false,
+      registration_source: 'imported'
+    });
+  });
+
+  importWizardState.toImport = toImport;
+
+  document.getElementById('import-suppliers-body').innerHTML = `
+    <div style="padding:12px; background:var(--bg-2); border-radius:4px; font-size:13px; margin-bottom:15px;">
+      <p style="margin:0;"><strong>${toImport.length}</strong> supplier${toImport.length === 1 ? '' : 's'} ready to import.</p>
+      ${skippedMissing > 0 ? `<p style="margin:4px 0 0 0; color:var(--warning);">${skippedMissing} row${skippedMissing === 1 ? '' : 's'} skipped — missing Company Name, Contact Person, or Email.</p>` : ''}
+      ${skippedDuplicate > 0 ? `<p style="margin:4px 0 0 0; color:var(--border);">${skippedDuplicate} row${skippedDuplicate === 1 ? '' : 's'} skipped — already in the Supplier Database (or duplicated in the file).</p>` : ''}
+    </div>
+    ${toImport.length > 0 ? `
+      <p style="margin:0 0 8px 0; font-size:12px; color:var(--border);">Preview (first 5):</p>
+      <div style="max-height:180px; overflow-y:auto; font-size:12px; border:1px solid var(--border); border-radius:4px; padding:10px;">
+        ${toImport.slice(0, 5).map(r => `<p style="margin:0 0 6px 0;">${escapeHtmlClient(r.company_name)} — ${escapeHtmlClient(r.full_name)} (${escapeHtmlClient(r.email)})</p>`).join('')}
+      </div>
+    ` : ''}
+    <div style="margin-top:20px; display:flex; gap:10px; justify-content:flex-end;">
+      <button type="button" class="btn secondary" onclick="renderImportMappingStep()">Back</button>
+      <button type="button" class="btn gold" ${toImport.length === 0 ? 'disabled' : ''} onclick="runSupplierImport()">Import ${toImport.length} Supplier${toImport.length === 1 ? '' : 's'}</button>
+    </div>
+  `;
+}
+
+async function runSupplierImport() {
+  if (!importWizardState || !importWizardState.toImport || importWizardState.toImport.length === 0) return;
+  const rows = importWizardState.toImport;
+
+  try {
+    const { error } = await client.from('applicant_registrations').insert(rows);
+    if (error) throw error;
+    showToast(`✅ Imported ${rows.length} supplier${rows.length === 1 ? '' : 's'}. They're flagged "Documents Pending" until documents are uploaded.`, 'success');
+    closeModal('import-suppliers-modal');
+    importWizardState = null;
+    loadSuperAdminApplicants();
+  } catch (err) {
+    console.error('Error importing suppliers:', err);
+    showToast('❌ Import failed: ' + err.message, 'error');
   }
 }
 
