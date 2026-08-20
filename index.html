@@ -535,6 +535,7 @@
             <button class="sidebar-tab-btn super-tab-btn" onclick="switchSuperAdminTab('super-branding', this)">Platform Branding</button>
             <button class="sidebar-tab-btn super-tab-btn" onclick="switchSuperAdminTab('super-companies', this)">All Companies</button>
             <button class="sidebar-tab-btn super-tab-btn" onclick="switchSuperAdminTab('super-applicants', this)">Supplier Database</button>
+            <button id="super-manage-admins-tab-btn" class="sidebar-tab-btn super-tab-btn" style="display:none;" onclick="switchSuperAdminTab('super-manage-admins', this)">Manage Admins</button>
             <button class="sidebar-tab-btn super-tab-btn" onclick="switchSuperAdminTab('super-password', this)">Change Password</button>
           </div>
 
@@ -627,6 +628,21 @@
               <p style="margin:0 0 15px 0; font-size:13px; color:var(--border);">Upload a CSV file of your existing supplier list. Imported suppliers appear as normal active suppliers, flagged "Documents Pending" until you upload their CIPC/ID, Proof of Address, and SARS documents (via the Upload buttons on each entry) and they aren't required to have accepted the registration declaration.</p>
               <div id="import-suppliers-body"></div>
             </div>
+          </div>
+        </div>
+
+        <div id="super-manage-admins-tab" class="super-tab" style="display:none;">
+          <div class="card">
+            <h2 style="margin-top:0;">Manage Admins</h2>
+            <p style="color:var(--border); font-size:14px; margin-bottom:20px;">Invite other people into the Super Admin section. They'll get an email to set their own password and will have the same full platform access you do, except they won't be able to invite or remove other admins.</p>
+            <form id="invite-super-admin-form" style="display:flex; gap:10px; flex-wrap:wrap; align-items:flex-end; margin-bottom:25px;">
+              <div style="flex:1; min-width:220px;">
+                <label style="font-weight:bold;">Email *</label>
+                <input type="email" id="invite-super-admin-email" required style="width:100%; padding:10px; border:1px solid var(--border); border-radius:4px; box-sizing:border-box;">
+              </div>
+              <button type="submit" class="btn gold" style="padding:10px 20px;">Invite Admin</button>
+            </form>
+            <div id="super-admins-list"></div>
           </div>
         </div>
 
