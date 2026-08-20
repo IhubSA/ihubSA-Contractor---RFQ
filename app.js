@@ -694,6 +694,14 @@ async function loadPublicPortalStats() {
 // exposes any applicant's data to the public. If the email isn't on
 // file, we collect a quick registration first.
 let pendingGateRfqId = null;
+// Status of the applicant who most recently passed the gate — { status,
+// status_reason } or null if unknown/active. Suspended/removed suppliers
+// can still browse/view RFQs (per Brent's explicit instruction) but the
+// contractor submission form uses this to warn them upfront and disable
+// the Submit button, backed by a hard DB-level block either way (see the
+// rfq_submissions insert policy) so this is a UX convenience, not the
+// actual enforcement.
+let currentApplicantStatus = null;
 
 function openApplicantGate(rfqId) {
   pendingGateRfqId = rfqId;
@@ -722,6 +730,7 @@ function openApplicantGate(rfqId) {
   });
   const declarationEl = document.getElementById('gate-declaration-accept');
   if (declarationEl) declarationEl.checked = false;
+  currentApplicantStatus = null;
 
   // "Register Free" / "Register as a Supplier" open this same gate with no
   // specific RFQ in mind (rfqId is null) — swap the copy so it reads as a
@@ -759,7 +768,24 @@ async function handleGateEmailSubmit(e) {
     if (error) throw error;
 
     if (isRegistered) {
-      showToast(pendingGateRfqId ? '👋 Welcome back! Loading RFQ...' : '👋 Welcome back! You\'re already registered.', 'success');
+      // Best-effort — used only to warn/disable-apply in the RFQ view
+      // below, never to block viewing itself. A failure here shouldn't
+      // stop an otherwise-fine registered visitor from proceeding.
+      currentApplicantStatus = null;
+      try {
+        const { data: statusRows } = await client.rpc('check_applicant_status', { p_email: email });
+        currentApplicantStatus = (statusRows && statusRows[0]) || null;
+      } catch (statusErr) {
+        console.warn('Could not check applicant status:', statusErr.message);
+      }
+
+      if (currentApplicantStatus && currentApplicantStatus.status === 'suspended') {
+        showToast('⚠️ Your supplier registration is suspended. You can view RFQs but can\'t apply — contact us for details.', 'error');
+      } else if (currentApplicantStatus && currentApplicantStatus.status === 'removed') {
+        showToast('⚠️ Your supplier registration has been removed. You can view RFQs but can\'t apply — contact us for details.', 'error');
+      } else {
+        showToast(pendingGateRfqId ? '👋 Welcome back! Loading RFQ...' : '👋 Welcome back! You\'re already registered.', 'success');
+      }
       proceedPastGate();
     } else {
       document.getElementById('gate-email-section').style.display = 'none';
@@ -1307,8 +1333,17 @@ async function sendRFQInviteEmails(rfqId, invitations) {
 async function notifySuppliersNewRFQ(rfqId) {
   try {
     const result = await callEdgeFunction('notify-suppliers-new-rfq', { rfqId });
-    if (result.sent > 0) {
-      showToast(`✅ Notified ${result.sent} registered supplier(s) in this province`, 'success');
+    const parts = [];
+    if (result.sent > 0) parts.push(`${result.sent} emailed`);
+    if (result.smsSent > 0) parts.push(`${result.smsSent} texted`);
+    if (parts.length > 0) {
+      showToast(`✅ Notified registered suppliers in this province (${parts.join(', ')})`, 'success');
+    }
+    if (result.smsError) {
+      // Best-effort second channel — email above may still have gone out fine,
+      // so this is a soft warning rather than blocking anything.
+      console.error('SMS notification issue:', result.smsError);
+      showToast('Note: supplier SMS notifications did not go out — ' + result.smsError, 'warning');
     }
   } catch (err) {
     console.error('Error notifying suppliers:', err);
@@ -1827,6 +1862,12 @@ async function loadRFQDetails(rfqId, isOpenAccess = false) {
       applyDefaultBranding();
     }
 
+    // Suspended/removed suppliers can still view this RFQ (per Brent's
+    // explicit instruction) but can't apply — this only drives the UI
+    // (banner + disabled button); the real enforcement is the DB-level
+    // rfq_submissions insert policy, which blocks it regardless of this.
+    const isApplicationBlocked = !!(currentApplicantStatus && (currentApplicantStatus.status === 'suspended' || currentApplicantStatus.status === 'removed'));
+
     // Build contractor form
     let formHtml = `
       <div class="card">
@@ -1863,6 +1904,13 @@ async function loadRFQDetails(rfqId, isOpenAccess = false) {
           </div>
           <div id="rfq-qa-list" style="margin-top:12px;"><p style="color: var(--border); font-size: 13px; margin:0;">Loading...</p></div>
         </div>
+
+        ${currentApplicantStatus && (currentApplicantStatus.status === 'suspended' || currentApplicantStatus.status === 'removed') ? `
+          <div style="margin: 20px 0; padding: 15px; background:#FDECEA; border:1px solid #D32F2F; border-radius:4px;">
+            <p style="margin:0; font-weight:600; color:#D32F2F;">⚠️ Your supplier registration has been ${currentApplicantStatus.status === 'suspended' ? 'suspended' : 'removed'}.</p>
+            <p style="margin:6px 0 0 0; font-size:13px; color:var(--ink);">You can still view this RFQ, but you can't submit an application. ${currentApplicantStatus.status_reason ? 'Reason: ' + escapeHtmlClient(currentApplicantStatus.status_reason) + '.' : ''} Please contact us if you believe this is a mistake.</p>
+          </div>
+        ` : ''}
 
         <form id="contractor-form" style="margin-top: 30px;">
           <h3>Your Company Information</h3>
@@ -1904,7 +1952,7 @@ async function loadRFQDetails(rfqId, isOpenAccess = false) {
             `).join('')}
           </div>
 
-          <button type="submit" class="btn gold" style="width: 100%; padding: 15px; margin-top: 20px;">Submit Application</button>
+          <button type="submit" class="btn gold" id="contractor-submit-btn" style="width: 100%; padding: 15px; margin-top: 20px;"${isApplicationBlocked ? ' disabled' : ''}>${isApplicationBlocked ? 'Application Unavailable' : 'Submit Application'}</button>
         </form>
       </div>
     `;
@@ -1913,6 +1961,10 @@ async function loadRFQDetails(rfqId, isOpenAccess = false) {
 
     document.getElementById('contractor-form').addEventListener('submit', (e) => {
       e.preventDefault();
+      if (isApplicationBlocked) {
+        showToast('❌ Your supplier registration doesn\'t allow applying to RFQs right now.', 'error');
+        return;
+      }
       const token = new URLSearchParams(window.location.search).get('rfq');
       submitContractorForm(token);
     });
@@ -2053,7 +2105,16 @@ async function submitContractorForm(token) {
 
   } catch (err) {
     console.error('Error submitting:', err);
-    showToast('Error: ' + err.message, 'error');
+    // A suspended/removed supplier's insert is rejected at the DB level
+    // (rfq_submissions' insert RLS policy) — this is the real enforcement,
+    // the disabled Submit button above is just a heads-up. Surface that
+    // specific case with a clear message instead of the raw Postgres
+    // "row violates row-level security policy" text.
+    if (err && err.code === '42501') {
+      showToast('❌ Your supplier registration doesn\'t allow applying to RFQs right now. Please contact us for details.', 'error');
+    } else {
+      showToast('Error: ' + err.message, 'error');
+    }
   }
 }
 
@@ -3090,6 +3151,16 @@ async function loadSuperAdminCompanies() {
   }
 }
 
+// "Removed" suppliers are hidden from the default Supplier Database list
+// (reversible removal, not a hard delete — see suspendSupplier/
+// removeSupplier below) — this toggles whether the list also shows them.
+let showRemovedSuppliers = false;
+
+function toggleShowRemovedSuppliers() {
+  showRemovedSuppliers = !showRemovedSuppliers;
+  loadSuperAdminApplicants();
+}
+
 async function loadSuperAdminApplicants() {
   try {
     const { data: applicants, error } = await client
@@ -3102,8 +3173,23 @@ async function loadSuperAdminApplicants() {
     const list = document.getElementById('super-admin-applicants-list');
     if (!list) return;
 
-    if (!applicants || applicants.length === 0) {
+    const allApplicants = applicants || [];
+    const removedCount = allApplicants.filter(a => a.status === 'removed').length;
+    const visibleApplicants = showRemovedSuppliers ? allApplicants : allApplicants.filter(a => a.status !== 'removed');
+
+    const toggleHtml = `
+      <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px; flex-wrap:wrap; gap:10px;">
+        <p style="color:var(--border); font-size:13px; margin:0;">${visibleApplicants.length} supplier${visibleApplicants.length === 1 ? '' : 's'} shown</p>
+        ${removedCount > 0 ? `<button type="button" class="btn secondary" style="padding:6px 12px; font-size:12px;" onclick="toggleShowRemovedSuppliers()">${showRemovedSuppliers ? 'Hide' : 'Show'} Removed (${removedCount})</button>` : ''}
+      </div>
+    `;
+
+    if (allApplicants.length === 0) {
       list.innerHTML = '<p style="color:var(--border); text-align:center; padding:20px;">No one has registered yet.</p>';
+      return;
+    }
+    if (visibleApplicants.length === 0) {
+      list.innerHTML = toggleHtml + '<p style="color:var(--border); text-align:center; padding:20px;">No suppliers to show.</p>';
       return;
     }
 
@@ -3123,19 +3209,48 @@ async function loadSuperAdminApplicants() {
       return fields;
     };
 
-    list.innerHTML = `
-      <p style="color:var(--border); font-size:13px; margin-bottom:10px;">${applicants.length} registered supplier${applicants.length === 1 ? '' : 's'}</p>
+    const statusBadge = (a) => {
+      if (a.status === 'suspended') return '<span class="submission-status info_requested">Suspended</span>';
+      if (a.status === 'removed') return '<span class="submission-status rejected">Removed</span>';
+      return '<span class="submission-status approved">Active</span>';
+    };
+
+    const statusActions = (a) => {
+      const escapedName = (a.company_name || a.full_name || '').replace(/'/g, "\\'");
+      if (a.status === 'active') {
+        return `
+          <button type="button" class="btn secondary" style="padding:6px 12px; font-size:12px;" onclick="suspendSupplier('${a.id}', '${escapedName}')">Suspend</button>
+          <button type="button" class="btn secondary" style="padding:6px 12px; font-size:12px; color:#D32F2F; border-color:#D32F2F;" onclick="removeSupplier('${a.id}', '${escapedName}')">Remove</button>
+        `;
+      }
+      if (a.status === 'suspended') {
+        return `
+          <button type="button" class="btn secondary" style="padding:6px 12px; font-size:12px;" onclick="reactivateSupplier('${a.id}', '${escapedName}')">Reactivate</button>
+          <button type="button" class="btn secondary" style="padding:6px 12px; font-size:12px; color:#D32F2F; border-color:#D32F2F;" onclick="removeSupplier('${a.id}', '${escapedName}')">Remove</button>
+        `;
+      }
+      // removed
+      return `<button type="button" class="btn secondary" style="padding:6px 12px; font-size:12px;" onclick="restoreSupplier('${a.id}', '${escapedName}')">Restore</button>`;
+    };
+
+    list.innerHTML = toggleHtml + `
       <div style="max-height:600px; overflow-y:auto;">
-        ${applicants.map(a => `
-          <div style="padding:15px; border:1px solid var(--border); border-radius:4px; margin-bottom:10px;">
+        ${visibleApplicants.map(a => `
+          <div style="padding:15px; border:1px solid var(--border); border-radius:4px; margin-bottom:10px; ${a.status !== 'active' ? 'background:var(--bg-2);' : ''}">
             <div style="display:flex; justify-content:space-between; align-items:flex-start; flex-wrap:wrap; gap:10px;">
               <div>
-                <p style="margin:0; font-weight:600;">${a.company_name}</p>
+                <p style="margin:0; font-weight:600;">${a.company_name} ${statusBadge(a)}</p>
                 <p style="margin:2px 0 0 0; font-size:13px; color:var(--ink);">${a.title ? a.title + ' ' : ''}${a.full_name}${a.designation ? ' · ' + a.designation : ''}</p>
                 <p style="margin:2px 0 0 0; font-size:12px; color:var(--border);">${a.email}${a.phone ? ' · ' + a.phone : ''}${a.additional_phone ? ' · ' + a.additional_phone : ''}</p>
               </div>
               <p style="margin:0; font-size:12px; color:var(--border); white-space:nowrap;">Registered ${new Date(a.created_at).toLocaleDateString()}</p>
             </div>
+            ${a.status !== 'active' ? `
+              <div style="margin-top:10px; padding:10px; background:white; border:1px solid var(--border); border-radius:4px; font-size:12px;">
+                <p style="margin:0;"><strong>${a.status === 'suspended' ? 'Suspended' : 'Removed'} — reason:</strong> ${a.status_reason || '—'}</p>
+                <p style="margin:4px 0 0 0; color:var(--border);">${a.status_changed_by ? 'By ' + a.status_changed_by + ' · ' : ''}${a.status_changed_at ? new Date(a.status_changed_at).toLocaleString() : ''}</p>
+              </div>
+            ` : ''}
             <div style="margin-top:10px; display:grid; grid-template-columns:repeat(auto-fit, minmax(200px, 1fr)); gap:6px 20px; font-size:12px; color:var(--ink);">
               <p style="margin:0;"><strong>Years in Business:</strong> ${a.years_in_business != null ? a.years_in_business : '—'}</p>
               <p style="margin:0;"><strong>Notify Province:</strong> ${a.province || '—'}</p>
@@ -3149,6 +3264,9 @@ async function loadSuperAdminApplicants() {
                 <button type="button" class="btn secondary" style="padding:6px 12px; font-size:12px;" onclick="downloadSupplierDocument('${path}', '${label.replace(/'/g, "\\'")}')">📄 ${label}</button>
               `).join('') || '<p style="margin:0; font-size:12px; color:var(--border);">No documents on file.</p>'}
             </div>
+            <div style="margin-top:10px; display:flex; flex-wrap:wrap; gap:8px; border-top:1px solid var(--border); padding-top:10px;">
+              ${statusActions(a)}
+            </div>
           </div>
         `).join('')}
       </div>
@@ -3157,6 +3275,106 @@ async function loadSuperAdminApplicants() {
     console.error('Error loading applicants:', err);
     const list = document.getElementById('super-admin-applicants-list');
     if (list) list.innerHTML = '<p style="color:var(--warning);">Error loading registered applicants.</p>';
+  }
+}
+
+// Suspend/remove/reactivate/restore a supplier. Suspended and removed both
+// stop them from applying to RFQs (enforced at the DB/RLS level, not just
+// here — see the rfq_submissions insert policy) but per Brent's explicit
+// instruction they can still browse/view RFQs either way. "Removed" is
+// reversible (restore below), not a hard delete — the record, reason, and
+// documents are kept, just hidden from the default list.
+async function suspendSupplier(applicantId, name) {
+  const reason = prompt(`Reason for suspending "${name}"?`);
+  if (reason === null) return; // cancelled
+  if (!reason.trim()) {
+    showToast('❌ A reason is required to suspend a supplier.', 'error');
+    return;
+  }
+  try {
+    const { error } = await client
+      .from('applicant_registrations')
+      .update({
+        status: 'suspended',
+        status_reason: reason.trim(),
+        status_changed_at: new Date().toISOString(),
+        status_changed_by: currentUser ? currentUser.email : 'unknown'
+      })
+      .eq('id', applicantId);
+    if (error) throw error;
+    showToast(`✅ ${name} suspended.`, 'success');
+    loadSuperAdminApplicants();
+  } catch (err) {
+    console.error('Error suspending supplier:', err);
+    showToast('❌ Error: ' + err.message, 'error');
+  }
+}
+
+async function removeSupplier(applicantId, name) {
+  const reason = prompt(`Reason for removing "${name}"? This can be undone later via "Restore".`);
+  if (reason === null) return; // cancelled
+  if (!reason.trim()) {
+    showToast('❌ A reason is required to remove a supplier.', 'error');
+    return;
+  }
+  try {
+    const { error } = await client
+      .from('applicant_registrations')
+      .update({
+        status: 'removed',
+        status_reason: reason.trim(),
+        status_changed_at: new Date().toISOString(),
+        status_changed_by: currentUser ? currentUser.email : 'unknown'
+      })
+      .eq('id', applicantId);
+    if (error) throw error;
+    showToast(`✅ ${name} removed from the Supplier Database.`, 'success');
+    loadSuperAdminApplicants();
+  } catch (err) {
+    console.error('Error removing supplier:', err);
+    showToast('❌ Error: ' + err.message, 'error');
+  }
+}
+
+async function reactivateSupplier(applicantId, name) {
+  if (!confirm(`Reactivate "${name}"? They will be able to apply to RFQs again.`)) return;
+  try {
+    const { error } = await client
+      .from('applicant_registrations')
+      .update({
+        status: 'active',
+        status_reason: null,
+        status_changed_at: new Date().toISOString(),
+        status_changed_by: currentUser ? currentUser.email : 'unknown'
+      })
+      .eq('id', applicantId);
+    if (error) throw error;
+    showToast(`✅ ${name} reactivated.`, 'success');
+    loadSuperAdminApplicants();
+  } catch (err) {
+    console.error('Error reactivating supplier:', err);
+    showToast('❌ Error: ' + err.message, 'error');
+  }
+}
+
+async function restoreSupplier(applicantId, name) {
+  if (!confirm(`Restore "${name}" to the Supplier Database as active?`)) return;
+  try {
+    const { error } = await client
+      .from('applicant_registrations')
+      .update({
+        status: 'active',
+        status_reason: null,
+        status_changed_at: new Date().toISOString(),
+        status_changed_by: currentUser ? currentUser.email : 'unknown'
+      })
+      .eq('id', applicantId);
+    if (error) throw error;
+    showToast(`✅ ${name} restored.`, 'success');
+    loadSuperAdminApplicants();
+  } catch (err) {
+    console.error('Error restoring supplier:', err);
+    showToast('❌ Error: ' + err.message, 'error');
   }
 }
 
