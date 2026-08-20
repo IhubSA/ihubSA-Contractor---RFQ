@@ -216,6 +216,38 @@ function setupStaticForms() {
     expandSearchForm.addEventListener('submit', handleExpandSearchSubmit);
     expandSearchForm.dataset.wired = 'true';
   }
+
+  renderRFQProvinceCheckboxes();
+}
+
+// Populates the "Province(s)" checkbox group on the Create RFQ form from
+// PROVINCE_OPTIONS (single source of truth, shared with the Expand Search
+// modal and the supplier preferences page) and wires the "Select All"
+// convenience toggle. Guarded by dataset.populated so it only runs once,
+// same pattern used for the Supplier Database province filter select.
+function renderRFQProvinceCheckboxes() {
+  const container = document.getElementById('rfq-province-checkboxes');
+  if (!container || container.dataset.populated) return;
+
+  container.innerHTML = PROVINCE_OPTIONS.map(p => `
+    <label style="display:flex; align-items:center; gap:6px; font-weight:normal; cursor:pointer;">
+      <input type="checkbox" class="rfq-province-checkbox" value="${p}"> ${p}
+    </label>
+  `).join('');
+  container.dataset.populated = 'true';
+
+  const selectAll = document.getElementById('rfq-province-select-all');
+  if (selectAll) {
+    selectAll.addEventListener('change', () => {
+      container.querySelectorAll('.rfq-province-checkbox').forEach(cb => { cb.checked = selectAll.checked; });
+    });
+  }
+  container.addEventListener('change', (e) => {
+    if (!e.target.classList.contains('rfq-province-checkbox')) return;
+    const all = container.querySelectorAll('.rfq-province-checkbox');
+    const checkedCount = container.querySelectorAll('.rfq-province-checkbox:checked').length;
+    if (selectAll) selectAll.checked = checkedCount === all.length;
+  });
 }
 
 function renderPlatformLogoPreview() {
@@ -531,13 +563,17 @@ async function loadPublicRFQList() {
   try {
     let query = client
       .from('rfqs')
-      .select('id, rfq_name, project_name, description, deadline, budget, company_id, province, location_area')
+      .select('id, rfq_name, project_name, description, deadline, budget, company_id, provinces, location_area')
       .eq('is_public', true)
       .eq('is_withdrawn', false)
       .gt('deadline', new Date().toISOString());
 
     if (province) {
-      query = query.eq('province', province);
+      // rfqs.provinces is a jsonb array — .contains() maps to Postgres' @>
+      // containment operator, so this matches any RFQ whose province list
+      // includes the one the visitor picked, regardless of how many others
+      // it also covers.
+      query = query.contains('provinces', [province]);
     }
 
     const { data: fetchedRfqs, error } = await query;
@@ -567,7 +603,7 @@ async function loadPublicRFQList() {
           (r.project_name || '').toLowerCase().includes(searchText) ||
           (r.description || '').toLowerCase().includes(searchText) ||
           (r.location_area || '').toLowerCase().includes(searchText) ||
-          (r.province || '').toLowerCase().includes(searchText) ||
+          (r.provinces || []).some(p => p.toLowerCase().includes(searchText)) ||
           (company && company.name || '').toLowerCase().includes(searchText);
       });
     }
@@ -597,7 +633,7 @@ async function loadPublicRFQList() {
     listEl.innerHTML = rfqs.map(rfq => {
       const company = companiesById[rfq.company_id];
       const deadlineDate = new Date(rfq.deadline);
-      const locationParts = [rfq.location_area, rfq.province].filter(Boolean);
+      const locationParts = [rfq.location_area, ...(rfq.provinces || [])].filter(Boolean);
       const locationText = locationParts.join(', ');
       const cardLogoScale = Math.min(1.5, Math.max(0.5, (company && company.logo_scale) || 1));
       const cardLogoHeight = Math.round(40 * cardLogoScale);
@@ -2089,7 +2125,7 @@ async function loadRFQDetails(rfqId, isOpenAccess = false) {
         <h2 style="margin-top:0;">${rfq.rfq_name}</h2>
         <p style="color: var(--border); margin-bottom: 20px;">${rfq.description}</p>
 
-        ${(rfq.location_area || rfq.province) ? `<p><strong>Location:</strong> ${[rfq.location_area, rfq.province].filter(Boolean).join(', ')}</p>` : ''}
+        ${(rfq.location_area || (rfq.provinces && rfq.provinces.length > 0)) ? `<p><strong>Location:</strong> ${[rfq.location_area, ...(rfq.provinces || [])].filter(Boolean).join(', ')}</p>` : ''}
         ${rfq.budget ? `<p><strong>Budget:</strong> R${rfq.budget.toLocaleString()}</p>` : ''}
         ${rfq.deadline ? `<p><strong>Deadline:</strong> ${new Date(rfq.deadline).toLocaleDateString()}</p>` : ''}
 
@@ -2636,7 +2672,6 @@ async function createNewRFQ() {
     const budgetInput = document.querySelector('input[name="rfq_budget"]');
     const emailInput = document.querySelector('textarea[name="contractor_emails"]');
     const visibilityInput = document.querySelector('input[name="rfq_visibility"]:checked');
-    const provinceInput = document.querySelector('select[name="rfq_province"]');
     const locationAreaInput = document.querySelector('input[name="rfq_location_area"]');
 
     const name = nameInput?.value?.trim() || '';
@@ -2646,7 +2681,7 @@ async function createNewRFQ() {
     const budget = budgetInput?.value?.trim() || '';
     const emailsText = emailInput?.value?.trim() || '';
     const isPublic = (visibilityInput?.value || 'closed') === 'open';
-    const province = provinceInput?.value || '';
+    const provinces = Array.from(document.querySelectorAll('.rfq-province-checkbox:checked')).map(cb => cb.value);
     const locationArea = locationAreaInput?.value?.trim() || '';
 
     const contractorEmails = emailsText
@@ -2690,8 +2725,8 @@ async function createNewRFQ() {
       isSubmittingRFQ = false;
       return;
     }
-    if (!province) {
-      showToast('❌ Please select a Province', 'error');
+    if (provinces.length === 0) {
+      showToast('❌ Please select at least one Province', 'error');
       isSubmittingRFQ = false;
       return;
     }
@@ -2721,7 +2756,8 @@ async function createNewRFQ() {
         created_by: currentUser ? currentUser.email : 'unknown',
         company_id: currentCompany.id,
         is_public: isPublic,
-        province: province,
+        provinces: provinces,
+        province: provinces[0] || null,
         location_area: locationArea || null
       }])
       .select()
@@ -2874,7 +2910,7 @@ async function loadRFQConsole() {
                 <span class="submission-status ${rfq.is_withdrawn ? 'rejected' : (rfq.is_public ? 'approved' : 'under_review')}" style="vertical-align:middle; margin-left:8px;">${rfq.is_withdrawn ? '🚫 Unpublished' : (rfq.is_public ? 'Open — Public' : 'Closed — Invite Only')}</span>
               </h3>
               <p style="margin: 0 0 8px 0; font-size: 14px; color: var(--border);">Project: <strong>${rfq.project_name}</strong></p>
-              ${(rfq.location_area || rfq.province) ? `<p style="margin: 0 0 8px 0; font-size: 14px; color: var(--border);">📍 ${[rfq.location_area, rfq.province].filter(Boolean).join(', ')}</p>` : ''}
+              ${(rfq.location_area || (rfq.provinces && rfq.provinces.length > 0)) ? `<p style="margin: 0 0 8px 0; font-size: 14px; color: var(--border);">📍 ${[rfq.location_area, ...(rfq.provinces || [])].filter(Boolean).join(', ')}</p>` : ''}
               ${(rfq.is_public && rfq.notified_provinces && rfq.notified_provinces.length > 0) ? `<p style="margin: 0 0 8px 0; font-size: 13px; color: var(--border);">📢 Suppliers notified in: ${rfq.notified_provinces.map(p => escapeHtmlClient(p)).join(', ')}</p>` : ''}
               <p style="margin: 0; font-size: 14px; color: var(--border);">
                 Deadline: ${deadlineDate.toLocaleDateString()}
