@@ -1455,6 +1455,69 @@ textarea:focus-visible {
   }
 }
 
+/* WHATSAPP HELP BUTTON — floating action button shown only on the public
+   contractor-facing pages (it lives inside #public-view, so it shows/hides
+   automatically with that view — no extra JS wiring needed). */
+.whatsapp-fab {
+  position: fixed;
+  right: 22px;
+  bottom: 22px;
+  z-index: 900;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  background: #25D366;
+  color: white;
+  text-decoration: none;
+  border-radius: 999px;
+  padding: 12px;
+  box-shadow: 0 4px 16px rgba(0,0,0,0.28);
+  transition: transform 0.15s ease, box-shadow 0.15s ease, padding 0.15s ease;
+}
+
+.whatsapp-fab:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 20px rgba(0,0,0,0.34);
+}
+
+.whatsapp-fab svg {
+  flex-shrink: 0;
+  display: block;
+}
+
+.whatsapp-fab-label {
+  font-family: var(--sans);
+  font-weight: 600;
+  font-size: 14px;
+  white-space: nowrap;
+  max-width: 0;
+  overflow: hidden;
+  opacity: 0;
+  transition: max-width 0.2s ease, opacity 0.2s ease, margin 0.2s ease;
+}
+
+.whatsapp-fab:hover .whatsapp-fab-label,
+.whatsapp-fab:focus-visible .whatsapp-fab-label {
+  max-width: 220px;
+  opacity: 1;
+  margin-right: 4px;
+}
+
+@media (max-width: 640px) {
+  .whatsapp-fab {
+    right: 16px;
+    bottom: 16px;
+  }
+  /* No hover on touch devices — always show the label so it's still clear
+     what the button does without relying on a hover state. */
+  .whatsapp-fab-label {
+    max-width: 220px;
+    opacity: 1;
+    margin-right: 2px;
+    font-size: 13px;
+  }
+}
+
 /* UTILITY CLASSES */
 .text-center { text-align: center; }
 .text-right { text-align: right; }
