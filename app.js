@@ -217,6 +217,12 @@ function setupStaticForms() {
     expandSearchForm.dataset.wired = 'true';
   }
 
+  const editSupplierForm = document.getElementById('edit-supplier-form');
+  if (editSupplierForm && !editSupplierForm.dataset.wired) {
+    editSupplierForm.addEventListener('submit', handleEditSupplierSubmit);
+    editSupplierForm.dataset.wired = 'true';
+  }
+
   renderRFQProvinceCheckboxes();
 }
 
@@ -3605,6 +3611,7 @@ function renderSupplierList() {
             `).join('')}
           </div>
           <div style="margin-top:10px; display:flex; flex-wrap:wrap; gap:8px; border-top:1px solid var(--border); padding-top:10px;">
+            <button type="button" class="btn secondary" style="padding:6px 12px; font-size:12px;" onclick="openEditSupplierModal('${a.id}')">✏️ Edit</button>
             ${statusActions(a)}
           </div>
         </div>
@@ -3631,6 +3638,12 @@ async function loadSuperAdminApplicants() {
     if (provinceFilter && !provinceFilter.dataset.populated) {
       provinceFilter.insertAdjacentHTML('beforeend', PROVINCE_OPTIONS.map(p => `<option value="${p}">${p}</option>`).join(''));
       provinceFilter.dataset.populated = 'true';
+    }
+
+    const editProvinceSelect = document.getElementById('edit-supplier-province');
+    if (editProvinceSelect && !editProvinceSelect.dataset.populated) {
+      editProvinceSelect.insertAdjacentHTML('beforeend', PROVINCE_OPTIONS.map(p => `<option value="${p}">${p}</option>`).join(''));
+      editProvinceSelect.dataset.populated = 'true';
     }
 
     renderSupplierList();
@@ -4006,6 +4019,99 @@ async function restoreSupplier(applicantId, name) {
   } catch (err) {
     console.error('Error restoring supplier:', err);
     showToast('❌ Error: ' + err.message, 'error');
+  }
+}
+
+// Edit a supplier's own profile fields directly (name/contact/address/
+// services/etc.) — separate from the status actions above (suspend/
+// remove/reactivate/restore) and from the per-document upload/replace
+// buttons, neither of which this touches. Available regardless of the
+// supplier's current status, since a suspended/removed supplier's details
+// can still need correcting.
+let pendingEditSupplierId = null;
+
+function openEditSupplierModal(applicantId) {
+  const a = allSupplierApplicants.find(x => x.id === applicantId);
+  if (!a) return;
+  pendingEditSupplierId = applicantId;
+
+  document.getElementById('edit-supplier-company-name').value = a.company_name || '';
+  document.getElementById('edit-supplier-full-name').value = a.full_name || '';
+  document.getElementById('edit-supplier-title').value = a.title || '';
+  document.getElementById('edit-supplier-designation').value = a.designation || '';
+  document.getElementById('edit-supplier-email').value = a.email || '';
+  document.getElementById('edit-supplier-province').value = a.province || '';
+  document.getElementById('edit-supplier-phone').value = a.phone || '';
+  document.getElementById('edit-supplier-additional-phone').value = a.additional_phone || '';
+  document.getElementById('edit-supplier-years').value = a.years_in_business != null ? a.years_in_business : '';
+  document.getElementById('edit-supplier-website').value = a.website_social || '';
+  document.getElementById('edit-supplier-address').value = a.address || '';
+  document.getElementById('edit-supplier-services').value = a.services_description || '';
+  document.getElementById('edit-supplier-service-areas').value = a.service_areas || '';
+
+  openModal('edit-supplier-modal');
+}
+
+async function handleEditSupplierSubmit(e) {
+  e.preventDefault();
+  if (!pendingEditSupplierId) return;
+
+  const companyName = document.getElementById('edit-supplier-company-name').value.trim();
+  const fullName = document.getElementById('edit-supplier-full-name').value.trim();
+  const email = document.getElementById('edit-supplier-email').value.trim();
+
+  if (!companyName || !fullName || !email) {
+    showToast('❌ Company Name, Contact Person, and Email are required.', 'error');
+    return;
+  }
+
+  const yearsRaw = document.getElementById('edit-supplier-years').value;
+
+  const payload = {
+    company_name: companyName,
+    full_name: fullName,
+    email: email,
+    title: document.getElementById('edit-supplier-title').value || null,
+    designation: document.getElementById('edit-supplier-designation').value.trim() || null,
+    province: document.getElementById('edit-supplier-province').value || null,
+    phone: document.getElementById('edit-supplier-phone').value.trim() || null,
+    additional_phone: document.getElementById('edit-supplier-additional-phone').value.trim() || null,
+    years_in_business: yearsRaw !== '' ? Number(yearsRaw) : null,
+    website_social: document.getElementById('edit-supplier-website').value.trim() || null,
+    address: document.getElementById('edit-supplier-address').value.trim() || null,
+    services_description: document.getElementById('edit-supplier-services').value.trim() || null,
+    service_areas: document.getElementById('edit-supplier-service-areas').value.trim() || null
+  };
+
+  const submitBtn = document.getElementById('edit-supplier-submit');
+  const originalLabel = submitBtn.textContent;
+  submitBtn.disabled = true;
+  submitBtn.textContent = 'Saving...';
+
+  try {
+    const { error } = await client
+      .from('applicant_registrations')
+      .update(payload)
+      .eq('id', pendingEditSupplierId);
+    if (error) {
+      // Postgres unique_violation — most likely the new email already
+      // belongs to another registered supplier (applicant_registrations
+      // has a unique index on lower(email)).
+      if (error.code === '23505') {
+        throw new Error('That email address is already used by another supplier.');
+      }
+      throw error;
+    }
+    showToast('✅ Supplier updated.', 'success');
+    closeModal('edit-supplier-modal');
+    pendingEditSupplierId = null;
+    loadSuperAdminApplicants();
+  } catch (err) {
+    console.error('Error updating supplier:', err);
+    showToast('❌ Error: ' + err.message, 'error');
+  } finally {
+    submitBtn.disabled = false;
+    submitBtn.textContent = originalLabel;
   }
 }
 
