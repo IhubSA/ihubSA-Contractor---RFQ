@@ -8,6 +8,8 @@ let currentUser = null;
 let currentCompany = null;
 let isSuperAdmin = false;
 let isAdminManager = false; // can this super admin invite/remove other super admins? (see super_admins.can_manage_admins)
+let currentAdminPermissions = {}; // this super admin's per-section {view,edit} grants (see super_admins.permissions) — ignored entirely for the admin-manager, who always has full access
+const ADMIN_PERMISSION_SECTIONS = ['invite_company', 'platform_branding', 'companies', 'applicants'];
 let currentRFQId = null;
 let currentRFQData = null; // full RFQ row for the RFQ currently loaded in the contractor form, so submitContractorForm can read required_documents (name/mandatory/requires_expiry) without a second fetch
 let isSubmittingRFQ = false;
@@ -173,6 +175,8 @@ function setupStaticForms() {
     inviteSuperAdminForm.addEventListener('submit', handleInviteSuperAdminSubmit);
     inviteSuperAdminForm.dataset.wired = 'true';
   }
+  wirePermissionCheckboxes('invite-perm');
+  wirePermissionCheckboxes('edit-perm');
 
   const platformLogoFile = document.getElementById('platform-logo-file');
   if (platformLogoFile && !platformLogoFile.dataset.wired) {
@@ -1549,6 +1553,22 @@ async function handleInviteCompanySubmit(e) {
 // isAdminManager / showSuperAdminView) — the Edge Function itself also
 // re-checks this server-side, so the tab being hidden for everyone else
 // is a UX convenience, not the actual enforcement.
+let lastLoadedSuperAdmins = []; // cached so openAdminPermissionsModal can look up an admin's current grants by email without re-fetching or embedding JSON in onclick attributes
+
+const ADMIN_PERMISSION_SECTION_LABELS = {
+  invite_company: 'Invite a Company',
+  platform_branding: 'Platform Branding',
+  companies: 'All Companies',
+  applicants: 'Supplier Database'
+};
+
+function permissionSummaryText(permissions) {
+  const parts = ADMIN_PERMISSION_SECTIONS
+    .filter(section => permissions && permissions[section] && (permissions[section].view || permissions[section].edit))
+    .map(section => `${ADMIN_PERMISSION_SECTION_LABELS[section]} (${permissions[section].edit ? 'edit' : 'view'})`);
+  return parts.length ? parts.join(', ') : 'No sections granted yet';
+}
+
 async function loadSuperAdminsList() {
   try {
     const { data: admins, error } = await client
@@ -1557,6 +1577,7 @@ async function loadSuperAdminsList() {
       .order('created_at', { ascending: true });
 
     if (error) throw error;
+    lastLoadedSuperAdmins = admins || [];
 
     const list = document.getElementById('super-admins-list');
     if (!list) return;
@@ -1566,8 +1587,14 @@ async function loadSuperAdminsList() {
         <div>
           <p style="margin:0; font-weight:600;">${escapeHtmlClient(a.email)} ${a.can_manage_admins ? '<span class="submission-status approved">Owner</span>' : '<span class="submission-status" style="background:var(--bg-2); color:var(--ink); border:1px solid var(--border);">Super Admin</span>'}</p>
           <p style="margin:2px 0 0 0; font-size:12px; color:var(--border);">${a.invited_by ? 'Invited by ' + escapeHtmlClient(a.invited_by) + ' · ' : ''}${new Date(a.created_at).toLocaleDateString()}</p>
+          ${a.can_manage_admins ? '' : `<p style="margin:4px 0 0 0; font-size:12px; color:var(--border);">${escapeHtmlClient(permissionSummaryText(a.permissions))}</p>`}
         </div>
-        ${a.can_manage_admins ? '' : `<button type="button" class="btn secondary" style="padding:6px 12px; font-size:12px; color:#D32F2F; border-color:#D32F2F;" onclick="removeSuperAdminEntry('${a.email.replace(/'/g, "\\'")}')">Remove</button>`}
+        ${a.can_manage_admins ? '' : `
+          <div style="display:flex; gap:8px;">
+            <button type="button" class="btn secondary" style="padding:6px 12px; font-size:12px;" onclick="openAdminPermissionsModal('${a.email.replace(/'/g, "\\'")}')">⚙️ Permissions</button>
+            <button type="button" class="btn secondary" style="padding:6px 12px; font-size:12px; color:#D32F2F; border-color:#D32F2F;" onclick="removeSuperAdminEntry('${a.email.replace(/'/g, "\\'")}')">Remove</button>
+          </div>
+        `}
       </div>
     `).join('') || '<p style="color:var(--border); text-align:center; padding:20px;">No admins yet.</p>';
   } catch (err) {
@@ -1585,17 +1612,20 @@ async function handleInviteSuperAdminSubmit(e) {
     return;
   }
 
+  const permissions = collectPermissionsFromGrid('invite-perm');
+
   try {
     showToast('Sending invite...', 'info');
-    const result = await callEdgeFunction('invite-super-admin', { email });
+    const result = await callEdgeFunction('invite-super-admin', { email, permissions });
     if (result.alreadyAdmin) {
-      showToast(`ℹ️ ${email} is already a Super Admin.`, 'info');
+      showToast(`ℹ️ ${email} is already a Super Admin. Use the ⚙️ Permissions button below to change what they can access.`, 'info');
     } else if (result.existingAccount) {
       showToast(`✅ ${email} now has Super Admin access — they already had an account, so we emailed them instead of an invite link.`, 'success');
     } else {
       showToast(`✅ Invited ${email} — they'll get an email to set their own password.`, 'success');
     }
     document.getElementById('invite-super-admin-form').reset();
+    setPermissionsGrid('invite-perm', {});
     loadSuperAdminsList();
   } catch (err) {
     console.error('Invite super admin error:', err);
@@ -1698,11 +1728,12 @@ async function loadCurrentCompanyAndRoute(wantsAdmin) {
     // and reach Platform Admin even if they don't belong to any company.
     const { data: adminCheck } = await client
       .from('super_admins')
-      .select('email, can_manage_admins')
+      .select('email, can_manage_admins, permissions')
       .eq('email', currentUser.email)
       .maybeSingle();
     isSuperAdmin = !!adminCheck;
     isAdminManager = !!(adminCheck && adminCheck.can_manage_admins);
+    currentAdminPermissions = (adminCheck && adminCheck.permissions) || {};
 
     const { data: membership, error } = await client
       .from('company_members')
@@ -1751,6 +1782,7 @@ async function logoutAdmin() {
   currentCompany = null;
   isSuperAdmin = false;
   isAdminManager = false;
+  currentAdminPermissions = {};
   window.location.href = window.location.pathname;
 }
 
@@ -3343,12 +3375,156 @@ function filterSubmissions() {
 }
 
 // ===== SUPER ADMIN =====
+// Permission helpers: the admin-manager (owner, super_admins.can_manage_admins)
+// always has full access regardless of the permissions column — same bypass
+// the DB-layer has_admin_permission() function applies. This client-side
+// check is UX only; the real enforcement is the RLS policies/Edge Functions
+// that call has_admin_permission() directly (see the Edit Supplier /
+// Manage Admins-era RLS gotchas documented in the project notes).
+function canViewSection(section) {
+  if (isAdminManager) return true;
+  const perm = currentAdminPermissions && currentAdminPermissions[section];
+  return !!(perm && (perm.view || perm.edit));
+}
+function canEditSection(section) {
+  if (isAdminManager) return true;
+  const perm = currentAdminPermissions && currentAdminPermissions[section];
+  return !!(perm && perm.edit);
+}
+
+// Shows/hides each of the 4 gate-able Super Admin sidebar tabs + disables
+// their write controls based on currentAdminPermissions, then makes sure
+// the currently-open tab is one this admin can actually see (falling back
+// to the first visible tab, or a "no access" message if there are none).
+function applySuperAdminPermissionsToUI() {
+  const SECTION_TABS = {
+    invite_company: 'super-invite',
+    platform_branding: 'super-branding',
+    companies: 'super-companies',
+    applicants: 'super-applicants'
+  };
+
+  Object.entries(SECTION_TABS).forEach(([section, tabId]) => {
+    const btn = document.getElementById(tabId + '-tab-btn');
+    if (btn) btn.style.display = canViewSection(section) ? '' : 'none';
+  });
+
+  // Invite a Company: disable the form itself when view-only.
+  const inviteEditable = canEditSection('invite_company');
+  ['invite-company-name', 'invite-company-email', 'invite-company-submit-btn'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.disabled = !inviteEditable;
+  });
+  const inviteNote = document.getElementById('invite-company-readonly-note');
+  if (inviteNote) inviteNote.style.display = (canViewSection('invite_company') && !inviteEditable) ? 'block' : 'none';
+
+  // Platform Branding: disable the upload input + size slider when view-only.
+  const brandingEditable = canEditSection('platform_branding');
+  ['platform-logo-file', 'platform-logo-scale'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.disabled = !brandingEditable;
+  });
+  const brandingNote = document.getElementById('platform-branding-readonly-note');
+  if (brandingNote) brandingNote.style.display = (canViewSection('platform_branding') && !brandingEditable) ? 'block' : 'none';
+
+  // Supplier Database: the Import Suppliers button is a write action.
+  const importBtn = document.getElementById('import-suppliers-btn');
+  if (importBtn) importBtn.style.display = canEditSection('applicants') ? '' : 'none';
+
+  // If the tab that's about to be shown (first tab, per showSuperAdminView's
+  // reset-to-first-tab behavior) isn't one this admin can view, jump to the
+  // first section they *can* see instead — Manage Admins (owner-only,
+  // handled separately) and Change Password are never section-gated.
+  const firstVisibleSection = Object.entries(SECTION_TABS).find(([section]) => canViewSection(section));
+  document.querySelectorAll('.super-tab').forEach(tab => tab.style.display = 'none');
+  document.querySelectorAll('.super-tab-btn').forEach(btn => btn.classList.remove('active'));
+  if (firstVisibleSection) {
+    const [, tabId] = firstVisibleSection;
+    document.getElementById(tabId + '-tab').style.display = 'block';
+    const btn = document.getElementById(tabId + '-tab-btn');
+    if (btn) btn.classList.add('active');
+  } else {
+    // No section access at all yet — land on Change Password rather than a blank page.
+    document.getElementById('super-password-tab').style.display = 'block';
+    const pwBtn = document.querySelector('.super-tab-btn[onclick*="super-password"]');
+    if (pwBtn) pwBtn.classList.add('active');
+  }
+}
+
 function openSuperAdminView() {
   if (!isSuperAdmin) {
     showToast('Not authorized', 'error');
     return;
   }
   showSuperAdminView();
+}
+
+// ----- Admin permission grid helpers (shared by the Invite Admin form's
+// grid and the Edit Permissions modal's grid, distinguished by idPrefix
+// "invite-perm" / "edit-perm") -----
+
+// "Edit" implies "View": checking Edit auto-checks View, and unchecking
+// View auto-unchecks Edit, so the two checkboxes can never end up in an
+// inconsistent state (matches how canViewSection() already treats edit:true
+// as also granting view).
+function wirePermissionCheckboxes(idPrefix) {
+  ADMIN_PERMISSION_SECTIONS.forEach(section => {
+    const viewBox = document.getElementById(`${idPrefix}-${section}-view`);
+    const editBox = document.getElementById(`${idPrefix}-${section}-edit`);
+    if (!viewBox || !editBox || viewBox.dataset.wired) return;
+    editBox.addEventListener('change', () => { if (editBox.checked) viewBox.checked = true; });
+    viewBox.addEventListener('change', () => { if (!viewBox.checked) editBox.checked = false; });
+    viewBox.dataset.wired = 'true';
+  });
+}
+
+function collectPermissionsFromGrid(idPrefix) {
+  const permissions = {};
+  ADMIN_PERMISSION_SECTIONS.forEach(section => {
+    const viewBox = document.getElementById(`${idPrefix}-${section}-view`);
+    const editBox = document.getElementById(`${idPrefix}-${section}-edit`);
+    const edit = !!(editBox && editBox.checked);
+    permissions[section] = { view: !!(viewBox && viewBox.checked) || edit, edit };
+  });
+  return permissions;
+}
+
+function setPermissionsGrid(idPrefix, permissions) {
+  ADMIN_PERMISSION_SECTIONS.forEach(section => {
+    const perm = (permissions && permissions[section]) || {};
+    const viewBox = document.getElementById(`${idPrefix}-${section}-view`);
+    const editBox = document.getElementById(`${idPrefix}-${section}-edit`);
+    if (viewBox) viewBox.checked = !!(perm.view || perm.edit);
+    if (editBox) editBox.checked = !!perm.edit;
+  });
+}
+
+let pendingAdminPermissionsEmail = null;
+function openAdminPermissionsModal(email) {
+  pendingAdminPermissionsEmail = email;
+  const admin = lastLoadedSuperAdmins.find(a => a.email === email);
+  const label = document.getElementById('edit-perm-target-label');
+  if (label) label.textContent = `Setting permissions for ${email}`;
+  setPermissionsGrid('edit-perm', (admin && admin.permissions) || {});
+  openModal('admin-permissions-modal');
+}
+
+async function handleSaveAdminPermissions() {
+  if (!pendingAdminPermissionsEmail) return;
+  const permissions = collectPermissionsFromGrid('edit-perm');
+  try {
+    const { error } = await client
+      .from('super_admins')
+      .update({ permissions })
+      .eq('email', pendingAdminPermissionsEmail);
+    if (error) throw error;
+    showToast(`✅ Updated permissions for ${pendingAdminPermissionsEmail}`, 'success');
+    closeModal('admin-permissions-modal');
+    loadSuperAdminsList();
+  } catch (err) {
+    console.error('Error saving admin permissions:', err);
+    showToast('❌ Error: ' + err.message, 'error');
+  }
 }
 
 function showSuperAdminView() {
@@ -3362,28 +3538,26 @@ function showSuperAdminView() {
   if (backLink) backLink.style.display = currentCompany ? 'inline-block' : 'none';
 
   renderPlatformLogoPreview();
+  // Companies data is public anyway (see companies_select_public RLS), so
+  // loading it is harmless even if this admin can't view the tab; the
+  // Supplier Database is genuinely permission-gated at the RLS layer, so
+  // only fetch it if this admin actually has view access — otherwise the
+  // query would just come back empty and print a confusing "no one has
+  // registered" message behind a tab that's hidden anyway.
   loadSuperAdminCompanies();
-  loadSuperAdminApplicants();
+  if (canViewSection('applicants')) loadSuperAdminApplicants();
 
   // "Manage Admins" is only usable by the admin-manager (see
-  // isAdminManager) — hidden entirely for any other super admin, since
-  // they have full platform access otherwise but can't invite/remove
-  // other admins.
+  // isAdminManager) — hidden entirely for any other super admin. Unlike
+  // the 4 permission-gated sections above, this one is never grantable —
+  // only the owner can invite/remove admins or change their permissions.
   const manageAdminsBtn = document.getElementById('super-manage-admins-tab-btn');
   if (manageAdminsBtn) manageAdminsBtn.style.display = isAdminManager ? '' : 'none';
   if (isAdminManager) loadSuperAdminsList();
 
-  // Always open on the first section for a predictable landing spot,
-  // matching the company admin dashboard's reset-to-first-tab behavior.
-  document.getElementById('super-invite-tab').style.display = 'block';
-  document.getElementById('super-branding-tab').style.display = 'none';
-  document.getElementById('super-companies-tab').style.display = 'none';
-  document.getElementById('super-applicants-tab').style.display = 'none';
-  document.getElementById('super-manage-admins-tab').style.display = 'none';
-  document.getElementById('super-password-tab').style.display = 'none';
-  document.querySelectorAll('.super-tab-btn').forEach((btn, idx) => {
-    btn.classList.toggle('active', idx === 0);
-  });
+  // Hide/show each gate-able tab per this admin's permissions and land on
+  // the first one they can actually see (see applySuperAdminPermissionsToUI).
+  applySuperAdminPermissionsToUI();
 }
 
 function closeSuperAdminView() {
@@ -3420,12 +3594,14 @@ async function loadSuperAdminCompanies() {
         </div>
         <div style="display:flex; align-items:center; gap:10px;">
           <span class="submission-status ${c.status === 'active' ? 'approved' : 'rejected'}">${c.status}</span>
-          <button onclick="toggleCompanyStatus('${c.id}', '${c.status}')" class="btn secondary" style="padding:6px 12px; font-size:12px;">
-            ${c.status === 'active' ? 'Suspend' : 'Reactivate'}
-          </button>
-          <button onclick="deleteCompany('${c.id}', '${(c.name || '').replace(/'/g, "\\'")}')" class="btn secondary" style="padding:6px 12px; font-size:12px; color:#D32F2F; border-color:#D32F2F;">
-            Delete
-          </button>
+          ${canEditSection('companies') ? `
+            <button onclick="toggleCompanyStatus('${c.id}', '${c.status}')" class="btn secondary" style="padding:6px 12px; font-size:12px;">
+              ${c.status === 'active' ? 'Suspend' : 'Reactivate'}
+            </button>
+            <button onclick="deleteCompany('${c.id}', '${(c.name || '').replace(/'/g, "\\'")}')" class="btn secondary" style="padding:6px 12px; font-size:12px; color:#D32F2F; border-color:#D32F2F;">
+              Delete
+            </button>
+          ` : ''}
         </div>
       </div>
     `).join('');
@@ -3517,14 +3693,16 @@ function renderSupplierList() {
 
   const managedDocButtons = (a) => MANAGED_DOC_FIELDS.map(([col, label]) => {
     const path = a[col];
+    const canEditApplicants = canEditSection('applicants');
     if (path) {
       return `
         <span style="display:inline-flex; gap:4px;">
           <button type="button" class="btn secondary" style="padding:6px 10px; font-size:12px;" onclick="downloadSupplierDocument('${path}', '${label.replace(/'/g, "\\'")}')">📄 ${label}</button>
-          <button type="button" class="btn secondary" style="padding:6px 10px; font-size:12px;" onclick="uploadOrReplaceSupplierDocument('${a.id}', '${col}', '${label.replace(/'/g, "\\'")}')">🔄 Replace</button>
+          ${canEditApplicants ? `<button type="button" class="btn secondary" style="padding:6px 10px; font-size:12px;" onclick="uploadOrReplaceSupplierDocument('${a.id}', '${col}', '${label.replace(/'/g, "\\'")}')">🔄 Replace</button>` : ''}
         </span>
       `;
     }
+    if (!canEditApplicants) return '';
     return `<button type="button" class="btn secondary" style="padding:6px 10px; font-size:12px; border-color:var(--warning); color:var(--warning);" onclick="uploadOrReplaceSupplierDocument('${a.id}', '${col}', '${label.replace(/'/g, "\\'")}')">⬆️ Upload ${label}</button>`;
   }).join('');
 
@@ -3611,8 +3789,10 @@ function renderSupplierList() {
             `).join('')}
           </div>
           <div style="margin-top:10px; display:flex; flex-wrap:wrap; gap:8px; border-top:1px solid var(--border); padding-top:10px;">
-            <button type="button" class="btn secondary" style="padding:6px 12px; font-size:12px;" onclick="openEditSupplierModal('${a.id}')">✏️ Edit</button>
-            ${statusActions(a)}
+            ${canEditSection('applicants') ? `
+              <button type="button" class="btn secondary" style="padding:6px 12px; font-size:12px;" onclick="openEditSupplierModal('${a.id}')">✏️ Edit</button>
+              ${statusActions(a)}
+            ` : ''}
           </div>
         </div>
       `).join('')}
