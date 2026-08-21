@@ -1386,6 +1386,92 @@
     </div>
   </div>
 
+  <div id="edit-supplier-modal" class="modal" style="display:none;">
+    <div class="modal-content" style="max-width:640px;">
+      <div class="modal-head">
+        <h3>Edit Supplier</h3>
+        <button class="drawer-close" onclick="closeModal('edit-supplier-modal')">✕</button>
+      </div>
+      <div class="modal-body">
+        <form id="edit-supplier-form">
+          <div class="form-grid-2">
+            <div>
+              <label style="font-weight:bold; display:block; margin-bottom:8px;">Company Name *</label>
+              <input type="text" id="edit-supplier-company-name" required style="width:100%; padding:10px; border:1px solid var(--border); border-radius:4px; box-sizing:border-box;">
+            </div>
+            <div>
+              <label style="font-weight:bold; display:block; margin-bottom:8px;">Contact Person *</label>
+              <input type="text" id="edit-supplier-full-name" required style="width:100%; padding:10px; border:1px solid var(--border); border-radius:4px; box-sizing:border-box;">
+            </div>
+          </div>
+          <div class="form-grid-2" style="margin-top:15px;">
+            <div>
+              <label style="font-weight:bold; display:block; margin-bottom:8px;">Title</label>
+              <select id="edit-supplier-title" style="width:100%; padding:10px; border:1px solid var(--border); border-radius:4px; box-sizing:border-box;">
+                <option value="">—</option>
+                <option value="Ms">Ms</option>
+                <option value="Mrs">Mrs</option>
+                <option value="Mr">Mr</option>
+                <option value="Dr">Dr</option>
+                <option value="Professor">Professor</option>
+              </select>
+            </div>
+            <div>
+              <label style="font-weight:bold; display:block; margin-bottom:8px;">Designation</label>
+              <input type="text" id="edit-supplier-designation" style="width:100%; padding:10px; border:1px solid var(--border); border-radius:4px; box-sizing:border-box;">
+            </div>
+          </div>
+          <div class="form-grid-2" style="margin-top:15px;">
+            <div>
+              <label style="font-weight:bold; display:block; margin-bottom:8px;">Email *</label>
+              <input type="email" id="edit-supplier-email" required style="width:100%; padding:10px; border:1px solid var(--border); border-radius:4px; box-sizing:border-box;">
+            </div>
+            <div>
+              <label style="font-weight:bold; display:block; margin-bottom:8px;">Notify Province</label>
+              <select id="edit-supplier-province" style="width:100%; padding:10px; border:1px solid var(--border); border-radius:4px; box-sizing:border-box;">
+                <option value="">Not set</option>
+                <option value="ALL">All Provinces</option>
+              </select>
+            </div>
+          </div>
+          <div class="form-grid-2" style="margin-top:15px;">
+            <div>
+              <label style="font-weight:bold; display:block; margin-bottom:8px;">Phone</label>
+              <input type="tel" id="edit-supplier-phone" style="width:100%; padding:10px; border:1px solid var(--border); border-radius:4px; box-sizing:border-box;">
+            </div>
+            <div>
+              <label style="font-weight:bold; display:block; margin-bottom:8px;">Additional Phone</label>
+              <input type="tel" id="edit-supplier-additional-phone" style="width:100%; padding:10px; border:1px solid var(--border); border-radius:4px; box-sizing:border-box;">
+            </div>
+          </div>
+          <div class="form-grid-2" style="margin-top:15px;">
+            <div>
+              <label style="font-weight:bold; display:block; margin-bottom:8px;">Years in Business</label>
+              <input type="number" min="0" id="edit-supplier-years" style="width:100%; padding:10px; border:1px solid var(--border); border-radius:4px; box-sizing:border-box;">
+            </div>
+            <div>
+              <label style="font-weight:bold; display:block; margin-bottom:8px;">Website / Social</label>
+              <input type="text" id="edit-supplier-website" style="width:100%; padding:10px; border:1px solid var(--border); border-radius:4px; box-sizing:border-box;">
+            </div>
+          </div>
+          <div style="margin-top:15px;">
+            <label style="font-weight:bold; display:block; margin-bottom:8px;">Address</label>
+            <textarea id="edit-supplier-address" style="width:100%; padding:10px; border:1px solid var(--border); border-radius:4px; box-sizing:border-box; min-height:60px; font-family:inherit;"></textarea>
+          </div>
+          <div style="margin-top:15px;">
+            <label style="font-weight:bold; display:block; margin-bottom:8px;">Services</label>
+            <textarea id="edit-supplier-services" style="width:100%; padding:10px; border:1px solid var(--border); border-radius:4px; box-sizing:border-box; min-height:60px; font-family:inherit;"></textarea>
+          </div>
+          <div style="margin-top:15px;">
+            <label style="font-weight:bold; display:block; margin-bottom:8px;">Service Areas</label>
+            <textarea id="edit-supplier-service-areas" style="width:100%; padding:10px; border:1px solid var(--border); border-radius:4px; box-sizing:border-box; min-height:60px; font-family:inherit;"></textarea>
+          </div>
+          <button type="submit" class="btn gold" id="edit-supplier-submit" style="width:100%; padding:12px; margin-top:20px;">Save Changes</button>
+        </form>
+      </div>
+    </div>
+  </div>
+
   <!-- TOAST NOTIFICATIONS -->
   <div id="toast-wrap" style="position:fixed; top:20px; right:20px; z-index:9999; max-width:400px;"></div>
 
