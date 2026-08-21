@@ -526,10 +526,10 @@
         <div class="admin-layout">
           <!-- Section Navigation -->
           <div class="admin-sidebar">
-            <button class="sidebar-tab-btn super-tab-btn active" onclick="switchSuperAdminTab('super-invite', this)">Invite a Company</button>
-            <button class="sidebar-tab-btn super-tab-btn" onclick="switchSuperAdminTab('super-branding', this)">Platform Branding</button>
-            <button class="sidebar-tab-btn super-tab-btn" onclick="switchSuperAdminTab('super-companies', this)">All Companies</button>
-            <button class="sidebar-tab-btn super-tab-btn" onclick="switchSuperAdminTab('super-applicants', this)">Supplier Database</button>
+            <button id="super-invite-tab-btn" class="sidebar-tab-btn super-tab-btn active" onclick="switchSuperAdminTab('super-invite', this)">Invite a Company</button>
+            <button id="super-branding-tab-btn" class="sidebar-tab-btn super-tab-btn" onclick="switchSuperAdminTab('super-branding', this)">Platform Branding</button>
+            <button id="super-companies-tab-btn" class="sidebar-tab-btn super-tab-btn" onclick="switchSuperAdminTab('super-companies', this)">All Companies</button>
+            <button id="super-applicants-tab-btn" class="sidebar-tab-btn super-tab-btn" onclick="switchSuperAdminTab('super-applicants', this)">Supplier Database</button>
             <button id="super-manage-admins-tab-btn" class="sidebar-tab-btn super-tab-btn" style="display:none;" onclick="switchSuperAdminTab('super-manage-admins', this)">Manage Admins</button>
             <button class="sidebar-tab-btn super-tab-btn" onclick="switchSuperAdminTab('super-password', this)">Change Password</button>
           </div>
@@ -548,8 +548,9 @@
                 <label style="font-weight:bold;">First Admin's Email *</label>
                 <input type="email" id="invite-company-email" required style="width:100%; padding:10px; border:1px solid var(--border); border-radius:4px; box-sizing:border-box;">
               </div>
-              <button type="submit" class="btn gold" style="padding:10px 20px;">Send Invite</button>
+              <button type="submit" id="invite-company-submit-btn" class="btn gold" style="padding:10px 20px;">Send Invite</button>
             </form>
+            <p id="invite-company-readonly-note" style="display:none; margin-top:10px; font-size:13px; color:var(--border);">You have view-only access to this section.</p>
           </div>
         </div>
 
@@ -557,6 +558,7 @@
           <div class="card">
             <h2 style="margin-top:0;">Platform Branding</h2>
             <p style="color:var(--border); font-size:14px; margin-bottom:20px;">This logo appears on the main public portal (the "RFQ Hub" landing page) whenever no specific company is in context.</p>
+            <p id="platform-branding-readonly-note" style="display:none; font-size:13px; color:var(--border); margin-top:-10px; margin-bottom:15px;">You have view-only access to this section.</p>
             <div style="display:flex; align-items:center; gap:15px; flex-wrap:wrap;">
               <div style="width:140px; height:140px; border:1px solid var(--border); border-radius:8px; background:var(--bg-2); display:flex; align-items:center; justify-content:center; overflow:hidden; flex-shrink:0;">
                 <img id="platform-logo-preview" src="" alt="Platform logo preview" style="max-width:260px; height:84px; width:auto; object-fit:contain; display:none;">
@@ -593,7 +595,7 @@
                 <h2 style="margin-top:0; margin-bottom:4px;">Supplier Database</h2>
                 <p style="color:var(--border); font-size:14px; margin-bottom:0;">Everyone who has registered on the IhubSA PRFQ Hub Supplier Database in order to view and apply to open RFQs, with their full registration details and uploaded documents.</p>
               </div>
-              <button type="button" class="btn secondary" style="padding:10px 16px; white-space:nowrap;" onclick="openImportSuppliersModal()">⬆️ Import Suppliers</button>
+              <button type="button" id="import-suppliers-btn" class="btn secondary" style="padding:10px 16px; white-space:nowrap;" onclick="openImportSuppliersModal()">⬆️ Import Suppliers</button>
             </div>
             <div style="display:flex; flex-wrap:wrap; gap:10px; margin:20px 0 16px 0;">
               <input type="text" id="supplier-search-input" placeholder="Search by name, company, email, or phone..." oninput="filterSupplierDatabase()" style="flex:1; min-width:220px; padding:10px; border:1px solid var(--border); border-radius:4px;">
@@ -629,15 +631,78 @@
         <div id="super-manage-admins-tab" class="super-tab" style="display:none;">
           <div class="card">
             <h2 style="margin-top:0;">Manage Admins</h2>
-            <p style="color:var(--border); font-size:14px; margin-bottom:20px;">Invite other people into the Super Admin section. They'll get an email to set their own password and will have the same full platform access you do, except they won't be able to invite or remove other admins.</p>
-            <form id="invite-super-admin-form" style="display:flex; gap:10px; flex-wrap:wrap; align-items:flex-end; margin-bottom:25px;">
-              <div style="flex:1; min-width:220px;">
-                <label style="font-weight:bold;">Email *</label>
-                <input type="email" id="invite-super-admin-email" required style="width:100%; padding:10px; border:1px solid var(--border); border-radius:4px; box-sizing:border-box;">
+            <p style="color:var(--border); font-size:14px; margin-bottom:20px;">Invite other people into the Super Admin section, and control exactly which sections each of them can see and change. They'll get an email to set their own password. Only you can invite/remove other admins or change their permissions.</p>
+            <form id="invite-super-admin-form" style="margin-bottom:25px;">
+              <div style="display:flex; gap:10px; flex-wrap:wrap; align-items:flex-end; margin-bottom:12px;">
+                <div style="flex:1; min-width:220px;">
+                  <label style="font-weight:bold;">Email *</label>
+                  <input type="email" id="invite-super-admin-email" required style="width:100%; padding:10px; border:1px solid var(--border); border-radius:4px; box-sizing:border-box;">
+                </div>
+              </div>
+              <div style="margin-bottom:15px; padding:12px; border:1px solid var(--border); border-radius:4px; background:var(--bg-2);">
+                <p style="margin:0 0 8px 0; font-size:12px; font-weight:bold; color:var(--ink);">Permissions — unchecked sections stay completely hidden from this admin</p>
+                <div style="display:grid; grid-template-columns:1fr auto auto; gap:6px 16px; align-items:center; font-size:13px;">
+                  <div></div>
+                  <div style="font-weight:600; text-align:center;">View</div>
+                  <div style="font-weight:600; text-align:center;">Edit</div>
+
+                  <div>Invite a Company</div>
+                  <input type="checkbox" id="invite-perm-invite_company-view" class="perm-checkbox" data-prefix="invite-perm" data-section="invite_company" data-level="view" style="justify-self:center;">
+                  <input type="checkbox" id="invite-perm-invite_company-edit" class="perm-checkbox" data-prefix="invite-perm" data-section="invite_company" data-level="edit" style="justify-self:center;">
+
+                  <div>Platform Branding</div>
+                  <input type="checkbox" id="invite-perm-platform_branding-view" class="perm-checkbox" data-prefix="invite-perm" data-section="platform_branding" data-level="view" style="justify-self:center;">
+                  <input type="checkbox" id="invite-perm-platform_branding-edit" class="perm-checkbox" data-prefix="invite-perm" data-section="platform_branding" data-level="edit" style="justify-self:center;">
+
+                  <div>All Companies</div>
+                  <input type="checkbox" id="invite-perm-companies-view" class="perm-checkbox" data-prefix="invite-perm" data-section="companies" data-level="view" style="justify-self:center;">
+                  <input type="checkbox" id="invite-perm-companies-edit" class="perm-checkbox" data-prefix="invite-perm" data-section="companies" data-level="edit" style="justify-self:center;">
+
+                  <div>Supplier Database</div>
+                  <input type="checkbox" id="invite-perm-applicants-view" class="perm-checkbox" data-prefix="invite-perm" data-section="applicants" data-level="view" style="justify-self:center;">
+                  <input type="checkbox" id="invite-perm-applicants-edit" class="perm-checkbox" data-prefix="invite-perm" data-section="applicants" data-level="edit" style="justify-self:center;">
+                </div>
+                <p style="margin:8px 0 0 0; font-size:11px; color:var(--border);">"Edit" automatically includes "View". They can always change their own password regardless of these settings.</p>
               </div>
               <button type="submit" class="btn gold" style="padding:10px 20px;">Invite Admin</button>
             </form>
             <div id="super-admins-list"></div>
+
+            <div id="admin-permissions-modal" class="modal" style="display:none;">
+              <div class="modal-content" style="max-width:520px;">
+                <div class="modal-head">
+                  <h3>Edit Permissions</h3>
+                  <button class="drawer-close" onclick="closeModal('admin-permissions-modal')">✕</button>
+                </div>
+                <div class="modal-body">
+                  <input type="hidden" id="edit-perm-email">
+                  <p id="edit-perm-target-label" style="margin:0 0 12px 0; font-size:13px; color:var(--border);"></p>
+                  <div style="display:grid; grid-template-columns:1fr auto auto; gap:6px 16px; align-items:center; font-size:13px;">
+                    <div></div>
+                    <div style="font-weight:600; text-align:center;">View</div>
+                    <div style="font-weight:600; text-align:center;">Edit</div>
+
+                    <div>Invite a Company</div>
+                    <input type="checkbox" id="edit-perm-invite_company-view" class="perm-checkbox" data-prefix="edit-perm" data-section="invite_company" data-level="view" style="justify-self:center;">
+                    <input type="checkbox" id="edit-perm-invite_company-edit" class="perm-checkbox" data-prefix="edit-perm" data-section="invite_company" data-level="edit" style="justify-self:center;">
+
+                    <div>Platform Branding</div>
+                    <input type="checkbox" id="edit-perm-platform_branding-view" class="perm-checkbox" data-prefix="edit-perm" data-section="platform_branding" data-level="view" style="justify-self:center;">
+                    <input type="checkbox" id="edit-perm-platform_branding-edit" class="perm-checkbox" data-prefix="edit-perm" data-section="platform_branding" data-level="edit" style="justify-self:center;">
+
+                    <div>All Companies</div>
+                    <input type="checkbox" id="edit-perm-companies-view" class="perm-checkbox" data-prefix="edit-perm" data-section="companies" data-level="view" style="justify-self:center;">
+                    <input type="checkbox" id="edit-perm-companies-edit" class="perm-checkbox" data-prefix="edit-perm" data-section="companies" data-level="edit" style="justify-self:center;">
+
+                    <div>Supplier Database</div>
+                    <input type="checkbox" id="edit-perm-applicants-view" class="perm-checkbox" data-prefix="edit-perm" data-section="applicants" data-level="view" style="justify-self:center;">
+                    <input type="checkbox" id="edit-perm-applicants-edit" class="perm-checkbox" data-prefix="edit-perm" data-section="applicants" data-level="edit" style="justify-self:center;">
+                  </div>
+                  <p style="margin:8px 0 15px 0; font-size:11px; color:var(--border);">"Edit" automatically includes "View". They can always change their own password regardless of these settings.</p>
+                  <button type="button" class="btn gold" style="padding:10px 20px;" onclick="handleSaveAdminPermissions()">Save Permissions</button>
+                </div>
+              </div>
+            </div>
           </div>
         </div>
 
