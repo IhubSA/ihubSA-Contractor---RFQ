@@ -46,6 +46,7 @@ async function initApp() {
   // to load from its CDN, and it means a client-creation failure below
   // can't silently skip wiring the rest of the page.
   setupStaticForms();
+  setupWhatsappFabSync();
 
   client = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
   console.log('✅ Supabase connected');
@@ -364,6 +365,29 @@ function hideAllTopLevelViews() {
   const heroExtras = document.getElementById('hero-marketplace-extras');
   if (heroExtras) heroExtras.style.display = 'none';
   closeMobileNav();
+}
+
+// Keeps the floating WhatsApp help button (a sibling of public-view/admin-view/
+// super-admin-view — see index.html) in sync with whichever of those views is
+// currently showing, without needing a "show the fab" call added to every one
+// of the several functions that show public-view or admin-view. Shown for the
+// public applicant-facing pages and the contractor company dashboard; hidden
+// for the platform Super Admin view (and whenever nothing's shown yet, e.g.
+// during initial load).
+function setupWhatsappFabSync() {
+  const fab = document.getElementById('whatsapp-help-btn');
+  const publicView = document.getElementById('public-view');
+  const adminView = document.getElementById('admin-view');
+  if (!fab || !publicView || !adminView) return;
+
+  const sync = () => {
+    const visible = publicView.style.display !== 'none' || adminView.style.display !== 'none';
+    fab.style.display = visible ? 'flex' : 'none';
+  };
+
+  new MutationObserver(sync).observe(publicView, { attributes: true, attributeFilter: ['style'] });
+  new MutationObserver(sync).observe(adminView, { attributes: true, attributeFilter: ['style'] });
+  sync();
 }
 
 function hideAllPublicSections() {
