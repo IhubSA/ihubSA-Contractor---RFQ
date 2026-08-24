@@ -1,1642 +1,5081 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>RFQ Hub</title>
-  <link rel="stylesheet" href="styles.css">
-</head>
-<body>
-  <!-- DYNAMIC BRANDING HEADER -->
-  <header id="site-header" class="site-header">
-    <div id="brand-logo-group" class="brand-logo-group">
-      <img id="brand-logo-img" src="" alt="Company logo" style="display:none; height:84px; width:auto; max-width:260px; object-fit:contain; flex-shrink:0;">
-      <svg id="brand-logo-default" width="84" height="84" viewBox="0 0 100 100" style="flex-shrink: 0;">
-        <circle cx="50" cy="50" r="46" fill="#FFFFFF"/>
-        <path d="M 50 15 C 65 20, 75 35, 72 50 C 70 60, 60 65, 50 62 C 45 45, 45 30, 50 15 Z" fill="#0F3557"/>
-        <path d="M 50 20 C 58 25, 63 35, 60 45 C 58 50, 52 52, 48 48 C 46 38, 47 28, 50 20 Z" fill="#F57C00"/>
-        <path d="M 25 45 A 25 25 0 1 1 30 65" fill="none" stroke="#0F3557" stroke-width="4" stroke-linecap="round"/>
-      </svg>
-      <div>
-        <h1 id="brand-title" style="margin: 0; font-size: 24px; font-weight: bold; color: white; font-family: 'IBM Plex Sans', sans-serif;">RFQ Hub</h1>
-        <p id="brand-subtitle" style="margin: 0; font-size: 12px; color: #AFC4DB; font-family: 'IBM Plex Sans', sans-serif;">Request for Quotation Management System</p>
-      </div>
-    </div>
+// RFQ Hub - Multi-company Application Logic
 
-    <button id="mobile-nav-toggle" class="mobile-nav-toggle" type="button" onclick="toggleMobileNav()" aria-label="Toggle menu" aria-expanded="false" aria-controls="site-nav-wrap">
-      <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2" stroke-linecap="round"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
-    </button>
+const SUPABASE_URL = 'https://zilumoopwnrtrtnsmjhr.supabase.co';
+const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InppbHVtb29wd25ydHJ0bnNtamhyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODYwOTU2MzgsImV4cCI6MjEwMTY3MTYzOH0.t8aQkOU29pwG9fwW9BlTwd4oie2jxkZa43mb3yc55kg';
+// Must match SITE_URL in the invite-super-admin/invite-member Edge Functions
+// exactly (including trailing slash) — this is the one already allow-listed
+// in Supabase Auth's redirect URL settings and proven to work for invite
+// links. Used as a fixed constant (rather than deriving it from
+// window.location) so a password-reset request always redirects to the
+// same allow-listed URL regardless of which page/URL variant the person
+// happened to submit the "Forgot Password" form from.
+const SITE_URL = 'https://ihubsa.github.io/ihubSA-Contractor---RFQ/';
 
-    <div id="site-nav-wrap" class="site-nav-wrap">
-      <nav class="site-nav" aria-label="Primary">
-        <a href="#" onclick="navGoOpportunities(); return false;">Opportunities</a>
-        <a href="#" onclick="navGoHowItWorks(); return false;">How It Works</a>
-        <a href="#" onclick="navGoAbout(); return false;">About</a>
-        <a href="#" onclick="navGoHelp(); return false;">Help</a>
-      </nav>
-      <div id="header-actions" class="site-header-ctas"></div>
-    </div>
-  </header>
+let client = null;
+let currentUser = null;
+let currentCompany = null;
+let isSuperAdmin = false;
+let isAdminManager = false; // can this super admin invite/remove other super admins? (see super_admins.can_manage_admins)
+let currentAdminPermissions = {}; // this super admin's per-section {view,edit} grants (see super_admins.permissions) — ignored entirely for the admin-manager, who always has full access
+const ADMIN_PERMISSION_SECTIONS = ['invite_company', 'platform_branding', 'companies', 'applicants'];
+let currentRFQId = null;
+let currentRFQData = null; // full RFQ row for the RFQ currently loaded in the contractor form, so submitContractorForm can read required_documents (name/mandatory/requires_expiry) without a second fetch
+let isSubmittingRFQ = false;
+let platformSettings = { logo_url: null };
+window.lastInvitations = [];
+let pendingAskQuestionRfqId = null; // which RFQ the open "Ask a Question" modal is for
+let pendingAnswerQuestionId = null; // which rfq_questions row the open "Reply" modal is answering
+let pendingExpandSearchRfqId = null; // which RFQ the open "Expand Supplier Search" modal is for
+let rfqQuestionsById = {}; // populated by loadRFQConsole so the answer modal can look up question text without embedding free-form text in onclick attributes
+let currentAuthType = null; // 'invite' or 'recovery' when landing from an invite/reset-password link — lets showSetPasswordView() tailor its copy (same form/flow handles both)
+let passwordResetEmail = null; // email address a forgot-password code was just sent to, kept so the code-entry step can call verifyOtp() without asking again
+let currentDraftId = null; // id of the draft RFQ currently loaded into the Create RFQ form, if any — set when "Continue Editing" is clicked or right after the first Save Draft, so subsequent Save Draft/Publish calls UPDATE that row instead of inserting a new one
 
-  <!-- DYNAMIC HERO SECTION -->
-  <div id="hero-section" style="position:relative; background: linear-gradient(135deg, var(--primary) 0%, var(--primary-dark) 100%); padding: 60px 40px 50px 40px; text-align: left; overflow:hidden;">
-    <svg aria-hidden="true" style="position:absolute; inset:0; width:100%; height:100%; opacity:0.12; pointer-events:none;" preserveAspectRatio="xMidYMax slice" viewBox="0 0 1200 300">
-      <path d="M0,300 L0,180 L60,180 L60,140 L110,140 L110,100 L150,100 L150,160 L200,160 L200,120 L200,120 L240,120 L240,190 L300,190 L300,90 L340,90 L340,60 L380,60 L380,150 L440,150 L440,110 L480,110 L480,170 L540,170 L540,130 L590,130 L590,80 L630,80 L630,200 L690,200 L690,140 L740,140 L740,100 L790,100 L790,180 L850,180 L850,120 L900,120 L900,70 L940,70 L940,160 L1000,160 L1000,110 L1050,110 L1050,190 L1100,190 L1100,150 L1150,150 L1150,100 L1200,100 L1200,300 Z" fill="white"/>
-    </svg>
-    <h1 id="hero-title" style="position:relative; margin: 0 0 15px 0; font-size: 44px; font-weight: 800; color: white; font-family: 'IBM Plex Sans', sans-serif; letter-spacing:-0.01em;">RFQ Hub</h1>
-    <p id="hero-subtitle" style="position:relative; margin: 0 0 30px 0; font-size: 17px; color: #C7D8EA; font-family: 'IBM Plex Sans', sans-serif; line-height: 1.6; max-width: 600px;">Open requests for quotation. Apply directly online — you'll get a reference number and a confirmation the moment your application is received.</p>
+const DEFAULT_HERO_SUBTITLE = "Open requests for quotation. Apply directly online — you'll get a reference number and a confirmation the moment your application is received.";
 
-    <!-- Marketplace-specific hero content (CTA buttons + live stats). Only
-         shown on the public landing page — showLandingView() reveals this,
-         hideAllTopLevelViews() hides it again for every other view (login,
-         admin dashboard, contractor pages, etc.) so it never bleeds into
-         screens where it doesn't belong. -->
-    <div id="hero-marketplace-extras" style="display:none; position:relative;">
-      <div class="hero-cta-row">
-        <button type="button" class="btn gold hero-btn-primary" onclick="document.getElementById('public-rfq-list').scrollIntoView({behavior:'smooth'})">Browse Opportunities →</button>
-        <button type="button" class="hero-btn-secondary" onclick="openApplicantGate(null)">Register as a Supplier</button>
-      </div>
-      <div id="hero-stats-row" class="hero-stats-row" style="display:none;"></div>
-    </div>
-  </div>
+// ===== INITIALIZATION =====
+async function initApp() {
+  console.log('Initializing RFQ Hub...');
 
-  <div id="app-container" style="min-height: 100vh;">
-    <!-- Floating WhatsApp help button — a sibling of public-view/admin-view/
-         super-admin-view (not nested inside any of them) so its visibility
-         can be kept in sync with whichever of those is showing, regardless
-         of which of the several functions switched views. Starts hidden;
-         setupWhatsappFabSync() in app.js keeps it in sync via a
-         MutationObserver on public-view/admin-view's style attribute. Shown
-         on the contractor company dashboard and the public applicant-facing
-         pages; hidden on the platform Super Admin view. -->
-    <a id="whatsapp-help-btn" class="whatsapp-fab" href="https://wa.me/27662263462?text=Hi%2C%20I%20need%20help%20with%20the%20RFQ%20Hub" target="_blank" rel="noopener" aria-label="Chat with us on WhatsApp" style="display:none;">
-      <svg width="30" height="30" viewBox="0 0 24 24" aria-hidden="true">
-        <path fill="#FFFFFF" d="M12 2C6.48 2 2 6.26 2 11.5c0 2.02.66 3.9 1.8 5.44L2.5 21.5l4.86-1.24A10.4 10.4 0 0 0 12 21c5.52 0 10-4.26 10-9.5S17.52 2 12 2z"/>
-        <path fill="#25D366" d="M9.05 7.6c-.24-.53-.5-.54-.73-.55-.19-.01-.4-.01-.62-.01-.21 0-.56.08-.85.4-.29.32-1.12 1.1-1.12 2.68 0 1.57 1.15 3.09 1.3 3.3.16.21 2.2 3.53 5.44 4.81 2.69 1.06 3.24.85 3.82.8.58-.06 1.88-.77 2.14-1.51.27-.74.27-1.38.19-1.51-.08-.13-.29-.21-.61-.37-.32-.16-1.88-.93-2.17-1.03-.29-.11-.5-.16-.71.16-.21.32-.82 1.03-1 1.24-.19.21-.37.24-.69.08-.32-.16-1.34-.49-2.55-1.57-.94-.84-1.58-1.87-1.76-2.19-.19-.32-.02-.49.14-.65.14-.14.32-.37.48-.55.16-.19.21-.32.32-.53.11-.21.05-.4-.03-.56-.08-.16-.7-1.77-.99-2.44z"/>
-      </svg>
-      <span class="whatsapp-fab-label">Need help? Chat on WhatsApp</span>
-    </a>
+  // Capture the URL's search params and auth hash FIRST, before any
+  // await below. Supabase's own client processes and clears the
+  // #access_token=...&type=invite hash asynchronously as soon as the
+  // client is created — if we read it after an await, it's often already
+  // gone by the time we check it, which silently skips the "set your
+  // password" screen for invite/recovery links.
+  const params = new URLSearchParams(window.location.search);
+  const rfqToken = params.get('rfq');
+  const openRfqId = params.get('open');
+  const infoToken = params.get('info');
+  const prefsToken = params.get('prefs');
+  const wantsAdmin = params.has('admin');
+  const authType = getUrlHashParams().get('type'); // 'invite' or 'recovery' when landing from an invite/reset link
+  currentAuthType = authType;
 
-    <!-- PUBLIC VIEW (Contractor Portal + Landing + Auth) -->
-    <div id="public-view" style="display:none; padding: 40px;">
-      <div id="rfq-portal" style="display:none;"></div>
-      <div id="no-rfq-message" style="display:none;"></div>
+  // Wire up static form/UI listeners before touching the Supabase client —
+  // this work has no network dependency, so the page stays interactive
+  // (login form, settings sliders, etc.) even if the Supabase SDK is slow
+  // to load from its CDN, and it means a client-creation failure below
+  // can't silently skip wiring the rest of the page.
+  setupStaticForms();
+  setupWhatsappFabSync();
 
-      <div id="landing-section" style="display:none;">
-        <div style="max-width: 1200px; margin: 0 auto 30px auto;">
-          <div class="card" style="text-align:center; padding:16px 24px;">
-            <p style="margin:0; font-size:13px; color:var(--border);">Company staff: use the <strong>Sign In</strong> button above to access your dashboard. Access is by invitation only — if you're expecting access, check your email for an invite link.</p>
-          </div>
-        </div>
+  // PKCE flow: invite/recovery links now require both the emailed link AND
+  // a secret held only by the browser that originally requested it, so an
+  // email security scanner pre-fetching the link (which is what was
+  // silently burning invite/reset links before a real person ever clicked
+  // them — confirmed via Supabase logs, and traced to angelsinc.co.za
+  // running Microsoft 365, whose Safe Links feature does exactly this)
+  // can no longer consume the one-time login on its own. supabase-js
+  // handles the code exchange automatically (same detectSessionInUrl
+  // mechanism already relied on for the old hash-based tokens below).
+  client = supabase.createClient(SUPABASE_URL, SUPABASE_KEY, { auth: { flowType: 'pkce' } });
+  console.log('✅ Supabase connected');
 
-        <div class="landing-two-col" style="max-width: 1200px; margin: 0 auto; display:grid; grid-template-columns: 2fr 1fr; gap:30px; align-items:start;">
-          <div>
-            <h2 class="section-eyebrow" style="margin-bottom:5px;">OPEN OPPORTUNITIES</h2>
-            <p style="color:var(--border); margin:10px 0 20px 0;">Find current Requests for Quotation from organisations looking for suppliers and service providers.</p>
+  // Belt-and-suspenders alongside the hash-based authType check above:
+  // supabase-js fires a dedicated PASSWORD_RECOVERY auth event once it
+  // finishes processing a recovery link, independent of our own hash
+  // parsing. This is the library's own recommended way to detect a
+  // recovery flow, and it's the authoritative signal — if it fires, force
+  // the set-password screen even if something upstream already routed
+  // elsewhere (e.g. into the dashboard) based on the hash check alone.
+  client.auth.onAuthStateChange((event, session) => {
+    if (event === 'PASSWORD_RECOVERY') {
+      console.log('PASSWORD_RECOVERY event received');
+      currentAuthType = 'recovery';
+      if (session && session.user) currentUser = session.user;
+      applyDefaultBranding();
+      showSetPasswordView();
+    }
+  });
 
-            <div class="opp-search-wrap">
-              <form id="hero-search-form" class="opp-search-bar">
-                <input type="text" id="hero-search-input" placeholder="Search opportunities...">
-                <button type="submit">Search</button>
-              </form>
-              <div class="opp-filter-row">
-                <select id="public-rfq-province-filter" class="opp-filter-pill">
-                  <option value="">All Provinces</option>
-                  <option value="Eastern Cape">Eastern Cape</option>
-                  <option value="Free State">Free State</option>
-                  <option value="Gauteng">Gauteng</option>
-                  <option value="KwaZulu-Natal">KwaZulu-Natal</option>
-                  <option value="Limpopo">Limpopo</option>
-                  <option value="Mpumalanga">Mpumalanga</option>
-                  <option value="Northern Cape">Northern Cape</option>
-                  <option value="North West">North West</option>
-                  <option value="Western Cape">Western Cape</option>
-                </select>
-                <select id="public-rfq-category-filter" class="opp-filter-pill" disabled title="Category data isn't tracked yet — coming soon">
-                  <option value="">All Categories</option>
-                </select>
-                <select id="public-rfq-sort" class="opp-filter-pill">
-                  <option value="deadline_asc">Sort: Closing Soonest</option>
-                  <option value="deadline_desc">Sort: Closing Latest</option>
-                  <option value="budget_desc">Sort: Highest Budget</option>
-                </select>
-              </div>
+  await loadPlatformSettings();
+
+  if (rfqToken) {
+    console.log('Loading RFQ with token:', rfqToken);
+    applyDefaultBranding();
+    setHeaderActions('contractor');
+    await loadContractorView(rfqToken);
+    return;
+  }
+
+  if (infoToken) {
+    console.log('Loading information request with token:', infoToken);
+    applyDefaultBranding();
+    setHeaderActions('contractor');
+    await loadInfoRequestView(infoToken);
+    return;
+  }
+
+  if (prefsToken) {
+    console.log('Loading supplier notification preferences with token:', prefsToken);
+    applyDefaultBranding();
+    setHeaderActions('contractor');
+    await loadSupplierPreferencesView(prefsToken);
+    return;
+  }
+
+  if (openRfqId) {
+    // Direct links (e.g. bookmarked/shared) must go through the same
+    // registration gate as clicking "View & Apply" — show the normal
+    // landing page underneath and open the gate on top of it.
+    console.log('Loading public RFQ (gated):', openRfqId);
+    applyDefaultBranding();
+    showLandingView();
+    openApplicantGate(openRfqId);
+    return;
+  }
+
+  try {
+    const { data: { session } } = await client.auth.getSession();
+    if (session && session.user) {
+      currentUser = session.user;
+
+      // Under PKCE, invite/recovery links redirect back with a ?code=
+      // query param instead of the old #access_token=...&type=... hash, so
+      // authType (read from the hash, above) is normally null now — kept
+      // only as a fallback for any already-sent email still using the old
+      // format. The real, PKCE-proof signal for "just invited, hasn't set
+      // a password yet" is needs_password_setup in the user's own
+      // metadata, which we set ourselves when the invite was sent (see
+      // invite-super-admin/invite-member) and clear once they've set a
+      // password (see handleSetPasswordSubmit) — this doesn't depend on
+      // guessing exactly how Supabase's redirect happens to be shaped.
+      const stillNeedsPasswordSetup = !!(session.user.user_metadata && session.user.user_metadata.needs_password_setup);
+
+      if (authType === 'invite' || authType === 'recovery' || stillNeedsPasswordSetup) {
+        // They have a valid session from the invite link but haven't set a
+        // password yet — make them do that before routing into the dashboard.
+        applyDefaultBranding();
+        showSetPasswordView();
+        return;
+      }
+
+      await loadCurrentCompanyAndRoute(wantsAdmin);
+      return;
+    }
+  } catch (err) {
+    console.error('Error checking session:', err);
+  }
+
+  applyDefaultBranding();
+  if (wantsAdmin) {
+    showLoginForm();
+  } else {
+    showLandingView();
+  }
+}
+
+function setupStaticForms() {
+  const loginForm = document.getElementById('login-form');
+  if (loginForm && !loginForm.dataset.wired) {
+    loginForm.addEventListener('submit', handleLoginSubmit);
+    loginForm.dataset.wired = 'true';
+  }
+
+  const setPasswordForm = document.getElementById('set-password-form');
+  if (setPasswordForm && !setPasswordForm.dataset.wired) {
+    setPasswordForm.addEventListener('submit', handleSetPasswordSubmit);
+    setPasswordForm.dataset.wired = 'true';
+  }
+
+  const forgotPasswordForm = document.getElementById('forgot-password-form');
+  if (forgotPasswordForm && !forgotPasswordForm.dataset.wired) {
+    forgotPasswordForm.addEventListener('submit', handleForgotPasswordSubmit);
+    forgotPasswordForm.dataset.wired = 'true';
+  }
+
+  const resetCodeForm = document.getElementById('reset-code-form');
+  if (resetCodeForm && !resetCodeForm.dataset.wired) {
+    resetCodeForm.addEventListener('submit', handleResetCodeSubmit);
+    resetCodeForm.dataset.wired = 'true';
+  }
+
+  const settingsForm = document.getElementById('settings-form');
+  if (settingsForm && !settingsForm.dataset.wired) {
+    settingsForm.addEventListener('submit', handleSettingsSubmit);
+    settingsForm.dataset.wired = 'true';
+  }
+
+  const logoFile = document.getElementById('settings-logo-file');
+  if (logoFile && !logoFile.dataset.wired) {
+    logoFile.addEventListener('change', handleLogoFileChange);
+    logoFile.dataset.wired = 'true';
+  }
+
+  const logoScale = document.getElementById('settings-logo-scale');
+  if (logoScale && !logoScale.dataset.wired) {
+    logoScale.addEventListener('input', handleSettingsLogoScaleInput);
+    logoScale.addEventListener('change', handleSettingsLogoScaleChange);
+    logoScale.dataset.wired = 'true';
+  }
+
+  const changePasswordForm = document.getElementById('change-password-form');
+  if (changePasswordForm && !changePasswordForm.dataset.wired) {
+    changePasswordForm.addEventListener('submit', handleChangePasswordSubmit);
+    changePasswordForm.dataset.wired = 'true';
+  }
+
+  const superChangePasswordForm = document.getElementById('super-change-password-form');
+  if (superChangePasswordForm && !superChangePasswordForm.dataset.wired) {
+    superChangePasswordForm.addEventListener('submit', handleSuperChangePasswordSubmit);
+    superChangePasswordForm.dataset.wired = 'true';
+  }
+
+  const inviteTeammateForm = document.getElementById('invite-teammate-form');
+  if (inviteTeammateForm && !inviteTeammateForm.dataset.wired) {
+    inviteTeammateForm.addEventListener('submit', handleInviteTeammateSubmit);
+    inviteTeammateForm.dataset.wired = 'true';
+  }
+
+  const inviteCompanyForm = document.getElementById('invite-company-form');
+  if (inviteCompanyForm && !inviteCompanyForm.dataset.wired) {
+    inviteCompanyForm.addEventListener('submit', handleInviteCompanySubmit);
+    inviteCompanyForm.dataset.wired = 'true';
+  }
+
+  const inviteSuperAdminForm = document.getElementById('invite-super-admin-form');
+  if (inviteSuperAdminForm && !inviteSuperAdminForm.dataset.wired) {
+    inviteSuperAdminForm.addEventListener('submit', handleInviteSuperAdminSubmit);
+    inviteSuperAdminForm.dataset.wired = 'true';
+  }
+  wirePermissionCheckboxes('invite-perm');
+  wirePermissionCheckboxes('edit-perm');
+
+  const platformLogoFile = document.getElementById('platform-logo-file');
+  if (platformLogoFile && !platformLogoFile.dataset.wired) {
+    platformLogoFile.addEventListener('change', handlePlatformLogoFileChange);
+    platformLogoFile.dataset.wired = 'true';
+  }
+
+  const platformLogoScale = document.getElementById('platform-logo-scale');
+  if (platformLogoScale && !platformLogoScale.dataset.wired) {
+    platformLogoScale.addEventListener('input', handlePlatformLogoScaleInput);
+    platformLogoScale.addEventListener('change', handlePlatformLogoScaleChange);
+    platformLogoScale.dataset.wired = 'true';
+  }
+
+  const gateEmailForm = document.getElementById('gate-email-form');
+  if (gateEmailForm && !gateEmailForm.dataset.wired) {
+    gateEmailForm.addEventListener('submit', handleGateEmailSubmit);
+    gateEmailForm.dataset.wired = 'true';
+  }
+
+  const gateRegisterForm = document.getElementById('gate-register-form');
+  if (gateRegisterForm && !gateRegisterForm.dataset.wired) {
+    gateRegisterForm.addEventListener('submit', handleGateRegisterSubmit);
+    gateRegisterForm.dataset.wired = 'true';
+  }
+
+  const askQuestionForm = document.getElementById('ask-question-form');
+  if (askQuestionForm && !askQuestionForm.dataset.wired) {
+    askQuestionForm.addEventListener('submit', handleAskQuestionSubmit);
+    askQuestionForm.dataset.wired = 'true';
+  }
+
+  const answerQuestionForm = document.getElementById('answer-question-form');
+  if (answerQuestionForm && !answerQuestionForm.dataset.wired) {
+    answerQuestionForm.addEventListener('submit', handleAnswerQuestionSubmit);
+    answerQuestionForm.dataset.wired = 'true';
+  }
+
+  const expandSearchForm = document.getElementById('expand-search-form');
+  if (expandSearchForm && !expandSearchForm.dataset.wired) {
+    expandSearchForm.addEventListener('submit', handleExpandSearchSubmit);
+    expandSearchForm.dataset.wired = 'true';
+  }
+
+  const editSupplierForm = document.getElementById('edit-supplier-form');
+  if (editSupplierForm && !editSupplierForm.dataset.wired) {
+    editSupplierForm.addEventListener('submit', handleEditSupplierSubmit);
+    editSupplierForm.dataset.wired = 'true';
+  }
+
+  renderRFQProvinceCheckboxes();
+}
+
+// Populates the "Province(s)" checkbox group on the Create RFQ form from
+// PROVINCE_OPTIONS (single source of truth, shared with the Expand Search
+// modal and the supplier preferences page) and wires the "Select All"
+// convenience toggle. Guarded by dataset.populated so it only runs once,
+// same pattern used for the Supplier Database province filter select.
+function renderRFQProvinceCheckboxes() {
+  const container = document.getElementById('rfq-province-checkboxes');
+  if (!container || container.dataset.populated) return;
+
+  container.innerHTML = PROVINCE_OPTIONS.map(p => `
+    <label style="display:flex; align-items:center; gap:6px; font-weight:normal; cursor:pointer;">
+      <input type="checkbox" class="rfq-province-checkbox" value="${p}"> ${p}
+    </label>
+  `).join('');
+  container.dataset.populated = 'true';
+
+  const selectAll = document.getElementById('rfq-province-select-all');
+  if (selectAll) {
+    selectAll.addEventListener('change', () => {
+      container.querySelectorAll('.rfq-province-checkbox').forEach(cb => { cb.checked = selectAll.checked; });
+    });
+  }
+  container.addEventListener('change', (e) => {
+    if (!e.target.classList.contains('rfq-province-checkbox')) return;
+    const all = container.querySelectorAll('.rfq-province-checkbox');
+    const checkedCount = container.querySelectorAll('.rfq-province-checkbox:checked').length;
+    if (selectAll) selectAll.checked = checkedCount === all.length;
+  });
+}
+
+function renderPlatformLogoPreview() {
+  const preview = document.getElementById('platform-logo-preview');
+  const placeholder = document.getElementById('platform-logo-placeholder');
+  const scaleInput = document.getElementById('platform-logo-scale');
+  const scaleLabel = document.getElementById('platform-logo-scale-label');
+  if (!preview || !placeholder) return;
+
+  const scale = (platformSettings && platformSettings.logo_scale) || 1;
+  if (scaleInput) scaleInput.value = Math.round(scale * 100);
+  if (scaleLabel) scaleLabel.textContent = `${Math.round(scale * 100)}%`;
+
+  if (platformSettings && platformSettings.logo_url) {
+    applyLogoScale(preview, scale);
+    preview.src = platformSettings.logo_url;
+    preview.style.display = 'block';
+    placeholder.style.display = 'none';
+  } else {
+    preview.style.display = 'none';
+    placeholder.style.display = 'flex';
+  }
+}
+
+function handlePlatformLogoScaleInput(e) {
+  const pct = Number(e.target.value);
+  const label = document.getElementById('platform-logo-scale-label');
+  if (label) label.textContent = `${pct}%`;
+  const preview = document.getElementById('platform-logo-preview');
+  if (preview && preview.style.display !== 'none') {
+    applyLogoScale(preview, pct / 100);
+  }
+}
+
+async function handlePlatformLogoScaleChange(e) {
+  if (!isSuperAdmin) return;
+  const pct = Number(e.target.value);
+  const scale = Math.min(1.5, Math.max(0.5, pct / 100));
+  try {
+    const { error } = await client
+      .from('platform_settings')
+      .update({ logo_scale: scale, updated_at: new Date().toISOString() })
+      .eq('id', 1);
+    if (error) throw error;
+
+    platformSettings = { ...platformSettings, logo_scale: scale };
+
+    const brandImg = document.getElementById('brand-logo-img');
+    if (brandImg && brandImg.style.display !== 'none') {
+      applyLogoScale(brandImg, scale);
+    }
+
+    showToast('✅ Logo size saved', 'success');
+  } catch (err) {
+    console.error('Error saving logo size:', err);
+    showToast('❌ Error saving logo size: ' + err.message, 'error');
+  }
+}
+
+async function handlePlatformLogoFileChange(e) {
+  const file = e.target.files[0];
+  if (!file || !isSuperAdmin) return;
+
+  try {
+    showToast('Uploading logo...', 'info');
+    const ext = (file.name.split('.').pop() || 'png').toLowerCase();
+    const path = `platform/logo-${Date.now()}.${ext}`;
+
+    const { error: uploadError } = await client.storage
+      .from('company-logos')
+      .upload(path, file, { upsert: true });
+    if (uploadError) throw uploadError;
+
+    const { data: urlData } = client.storage.from('company-logos').getPublicUrl(path);
+    const logoUrl = urlData.publicUrl;
+
+    const { error: updateError } = await client
+      .from('platform_settings')
+      .update({ logo_url: logoUrl, updated_at: new Date().toISOString() })
+      .eq('id', 1);
+    if (updateError) throw updateError;
+
+    platformSettings = { ...platformSettings, logo_url: logoUrl };
+    renderPlatformLogoPreview();
+    showToast('✅ Platform logo updated', 'success');
+  } catch (err) {
+    console.error('Platform logo upload error:', err);
+    showToast('❌ Error uploading logo: ' + err.message, 'error');
+  }
+}
+
+function getUrlHashParams() {
+  const hash = window.location.hash && window.location.hash.startsWith('#')
+    ? window.location.hash.slice(1)
+    : (window.location.hash || '');
+  return new URLSearchParams(hash);
+}
+
+// ===== VIEW SWITCHING =====
+function hideAllTopLevelViews() {
+  document.getElementById('public-view').style.display = 'none';
+  document.getElementById('admin-view').style.display = 'none';
+  document.getElementById('super-admin-view').style.display = 'none';
+  const heroExtras = document.getElementById('hero-marketplace-extras');
+  if (heroExtras) heroExtras.style.display = 'none';
+  closeMobileNav();
+}
+
+// Keeps the floating WhatsApp help button (a sibling of public-view/admin-view/
+// super-admin-view — see index.html) in sync with whichever of those views is
+// currently showing, without needing a "show the fab" call added to every one
+// of the several functions that show public-view or admin-view. Shown for the
+// public applicant-facing pages and the contractor company dashboard; hidden
+// for the platform Super Admin view (and whenever nothing's shown yet, e.g.
+// during initial load).
+function setupWhatsappFabSync() {
+  const fab = document.getElementById('whatsapp-help-btn');
+  const publicView = document.getElementById('public-view');
+  const adminView = document.getElementById('admin-view');
+  if (!fab || !publicView || !adminView) return;
+
+  const sync = () => {
+    const visible = publicView.style.display !== 'none' || adminView.style.display !== 'none';
+    fab.style.display = visible ? 'flex' : 'none';
+  };
+
+  new MutationObserver(sync).observe(publicView, { attributes: true, attributeFilter: ['style'] });
+  new MutationObserver(sync).observe(adminView, { attributes: true, attributeFilter: ['style'] });
+  sync();
+}
+
+function hideAllPublicSections() {
+  ['rfq-portal', 'no-rfq-message', 'landing-section', 'login-section', 'forgot-password-section', 'set-password-section'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.style.display = 'none';
+  });
+}
+
+// mode: 'loggedOut' (landing — full Sign In + Register Free), 'contractor'
+// (viewing/applying to a specific RFQ — Sign In only, Register Free would
+// be redundant mid-flow), 'form' (already on the login/set-password page —
+// no action buttons needed). Admin/super-admin views never call this, so
+// whatever the last mode was (always 'form', reached via login) persists,
+// which correctly shows no public CTAs while logged in.
+function setHeaderActions(mode) {
+  const el = document.getElementById('header-actions');
+  if (!el) return;
+  if (mode === 'loggedOut') {
+    el.innerHTML = `
+      <button onclick="showLoginForm()" class="btn header-signin" type="button">Sign In</button>
+      <button onclick="openApplicantGate(null)" class="btn header-register" type="button">Register Free</button>
+    `;
+  } else if (mode === 'contractor') {
+    el.innerHTML = `
+      <button onclick="showLoginForm()" class="btn header-signin" type="button">Sign In</button>
+    `;
+  } else {
+    el.innerHTML = '';
+  }
+}
+
+function toggleMobileNav() {
+  const wrap = document.getElementById('site-nav-wrap');
+  const toggle = document.getElementById('mobile-nav-toggle');
+  if (!wrap) return;
+  const isOpen = wrap.classList.toggle('open');
+  if (toggle) toggle.setAttribute('aria-expanded', isOpen ? 'true' : 'false');
+}
+
+function closeMobileNav() {
+  const wrap = document.getElementById('site-nav-wrap');
+  const toggle = document.getElementById('mobile-nav-toggle');
+  if (wrap) wrap.classList.remove('open');
+  if (toggle) toggle.setAttribute('aria-expanded', 'false');
+}
+
+// ===== PUBLIC NAV LINKS =====
+// "Opportunities" / "How It Works" always route back to the landing page
+// first (they need to work from any public page — an RFQ detail page, the
+// login form, etc.) then scroll to the relevant section once it's rendered.
+function navGoOpportunities() {
+  showLandingView();
+  setTimeout(() => {
+    const el = document.getElementById('public-rfq-list');
+    if (el) el.scrollIntoView({ behavior: 'smooth' });
+  }, 50);
+}
+
+function navGoHowItWorks() {
+  showLandingView();
+  setTimeout(() => {
+    const el = document.getElementById('how-it-works-section');
+    if (el) el.scrollIntoView({ behavior: 'smooth' });
+  }, 50);
+}
+
+// About/Help/Terms don't have real content yet — a placeholder modal is
+// shown rather than inventing company copy or legal text. Easy to swap for
+// a real page later without touching any of the calling code.
+function showInfoPlaceholder(title, body) {
+  document.getElementById('info-page-modal-title').textContent = title;
+  document.getElementById('info-page-modal-body').textContent = body;
+  openModal('info-page-modal');
+}
+
+function navGoAbout() {
+  closeMobileNav();
+  showInfoPlaceholder('About', 'This page is coming soon. In the meantime, reach out using the Help link if you have questions about the platform.');
+}
+
+function navGoHelp() {
+  closeMobileNav();
+  showInfoPlaceholder('Need Help?', "If you run into any issues, or anything doesn't match what you're seeing on screen, email ihubsa@gmail.com and we'll help you sort it out.");
+}
+
+function navGoTerms() {
+  closeMobileNav();
+  openModal('terms-modal');
+}
+
+function showLandingView() {
+  hideAllTopLevelViews();
+  document.getElementById('public-view').style.display = 'block';
+  hideAllPublicSections();
+  document.getElementById('landing-section').style.display = 'block';
+  setHeaderActions('loggedOut');
+
+  document.getElementById('hero-title').textContent = 'Find Your Next Business Opportunity';
+  document.getElementById('hero-subtitle').textContent = 'Discover open Requests for Quotation from organisations looking for qualified suppliers and service providers.';
+  const heroExtras = document.getElementById('hero-marketplace-extras');
+  if (heroExtras) heroExtras.style.display = 'block';
+
+  loadPublicRFQList();
+  loadPublicPortalStats();
+}
+
+// ===== PUBLIC RFQ PORTAL =====
+const ICON_CALENDAR = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></svg>';
+const ICON_PIN = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0z"/><circle cx="12" cy="10" r="3"/></svg>';
+const ICON_TAG = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20.59 13.41L11 3.83A2 2 0 0 0 9.59 3.24L4 3v5.59a2 2 0 0 0 .59 1.41l9.58 9.58a2 2 0 0 0 2.83 0l3.59-3.59a2 2 0 0 0 0-2.83z"/><circle cx="8" cy="8" r="1.5"/></svg>';
+
+// Computes {days, hrs, mins} remaining until an ISO deadline, clamped to
+// zero once it has passed (the public list only ever fetches future
+// deadlines, but a card can outlive its deadline while a visitor is
+// still on the page).
+function computeCountdownParts(deadlineIso) {
+  const diffMs = new Date(deadlineIso).getTime() - Date.now();
+  if (diffMs <= 0) return { days: 0, hrs: 0, mins: 0 };
+  const totalMins = Math.floor(diffMs / 60000);
+  return {
+    days: Math.floor(totalMins / 1440),
+    hrs: Math.floor((totalMins % 1440) / 60),
+    mins: totalMins % 60
+  };
+}
+
+// Buckets remaining time into an urgency status so cards can visually
+// communicate how soon an RFQ closes, not just show raw numbers.
+function computeUrgency(deadlineIso) {
+  const diffMs = new Date(deadlineIso).getTime() - Date.now();
+  const hrsRemaining = diffMs / 3600000;
+  if (diffMs <= 0) return { status: 'closed', label: 'Closed', badgeClass: 'badge-closed' };
+  if (hrsRemaining < 24) return { status: 'closing-today', label: 'Closing Today', badgeClass: 'badge-closing-today' };
+  if (hrsRemaining < 48) return { status: 'closing-soon', label: 'Closing Soon', badgeClass: 'badge-closing-soon' };
+  return { status: 'open', label: 'Open', badgeClass: 'badge-open' };
+}
+
+let countdownIntervalStarted = false;
+function updateAllCountdowns() {
+  document.querySelectorAll('.countdown-units[data-deadline]').forEach(el => {
+    const parts = computeCountdownParts(el.dataset.deadline);
+    const daysEl = el.querySelector('.cd-days');
+    const hrsEl = el.querySelector('.cd-hrs');
+    const minsEl = el.querySelector('.cd-mins');
+    if (daysEl) daysEl.textContent = parts.days;
+    if (hrsEl) hrsEl.textContent = parts.hrs;
+    if (minsEl) minsEl.textContent = parts.mins;
+
+    const urgency = computeUrgency(el.dataset.deadline);
+    const box = el.closest('.countdown-box');
+    if (box) {
+      box.classList.remove('urgency-closing-soon', 'urgency-closing-today', 'urgency-closed');
+      if (urgency.status !== 'open') box.classList.add(`urgency-${urgency.status}`);
+      const labelEl = box.querySelector('.countdown-urgency-label');
+      if (labelEl) {
+        labelEl.textContent = urgency.status === 'closed' ? 'Closed' : (urgency.status === 'open' ? 'Closing In' : urgency.label);
+        labelEl.className = `countdown-urgency-label ${urgency.status}`;
+      }
+    }
+
+    // Keep the card's top status badge (and its colour-coded left border)
+    // in sync too, in case a visitor lingers long enough for an RFQ to
+    // cross an urgency threshold.
+    const card = el.closest('.opportunity-card');
+    if (card) {
+      card.classList.remove('status-open', 'status-closing-soon', 'status-closing-today', 'status-closed');
+      card.classList.add(`status-${urgency.status}`);
+    }
+    const badgeEl = card ? card.querySelector('.opportunity-status-badge') : null;
+    if (badgeEl) {
+      badgeEl.className = `opportunity-status-badge ${urgency.badgeClass}`;
+      badgeEl.textContent = urgency.label;
+    }
+  });
+}
+function ensureCountdownTicking() {
+  if (countdownIntervalStarted) return;
+  countdownIntervalStarted = true;
+  setInterval(updateAllCountdowns, 30000);
+}
+
+function clearOpportunityFilters() {
+  const provinceEl = document.getElementById('public-rfq-province-filter');
+  const searchEl = document.getElementById('hero-search-input');
+  const sortEl = document.getElementById('public-rfq-sort');
+  if (provinceEl) provinceEl.value = '';
+  if (searchEl) searchEl.value = '';
+  if (sortEl) sortEl.value = 'deadline_asc';
+  loadPublicRFQList();
+}
+
+async function loadPublicRFQList() {
+  const listEl = document.getElementById('public-rfq-list');
+  if (!listEl) return;
+
+  const provinceEl = document.getElementById('public-rfq-province-filter');
+  const searchEl = document.getElementById('hero-search-input');
+  const sortEl = document.getElementById('public-rfq-sort');
+  const province = provinceEl ? provinceEl.value : '';
+  const searchText = (searchEl ? searchEl.value : '').trim().toLowerCase();
+  const sortMode = sortEl ? sortEl.value : 'deadline_asc';
+  const hasActiveFilters = !!(province || searchText);
+
+  listEl.innerHTML = '<p style="color:var(--border);">Loading...</p>';
+
+  try {
+    let query = client
+      .from('rfqs')
+      .select('id, rfq_name, project_name, description, deadline, budget, company_id, provinces, location_area')
+      .eq('is_public', true)
+      .eq('is_withdrawn', false)
+      .gt('deadline', new Date().toISOString());
+
+    if (province) {
+      // rfqs.provinces is a jsonb array — .contains() maps to Postgres' @>
+      // containment operator, so this matches any RFQ whose province list
+      // includes the one the visitor picked, regardless of how many others
+      // it also covers.
+      query = query.contains('provinces', [province]);
+    }
+
+    const { data: fetchedRfqs, error } = await query;
+    if (error) throw error;
+
+    let rfqs = fetchedRfqs || [];
+
+    // Fetch companies before filtering/rendering so search can match on
+    // company name too, and so the "Organisations Using the Platform"
+    // strip can be built from the same real, already-public data — no
+    // separate query and nothing invented.
+    const companyIds = [...new Set(rfqs.map(r => r.company_id).filter(Boolean))];
+    let companiesById = {};
+    if (companyIds.length > 0) {
+      const { data: companies } = await client
+        .from('companies')
+        .select('id, name, logo_url, logo_scale')
+        .in('id', companyIds);
+      companiesById = Object.fromEntries((companies || []).map(c => [c.id, c]));
+    }
+    renderOrgLogos(companiesById);
+
+    if (searchText) {
+      rfqs = rfqs.filter(r => {
+        const company = companiesById[r.company_id];
+        return (r.rfq_name || '').toLowerCase().includes(searchText) ||
+          (r.project_name || '').toLowerCase().includes(searchText) ||
+          (r.description || '').toLowerCase().includes(searchText) ||
+          (r.location_area || '').toLowerCase().includes(searchText) ||
+          (r.provinces || []).some(p => p.toLowerCase().includes(searchText)) ||
+          (company && company.name || '').toLowerCase().includes(searchText);
+      });
+    }
+
+    if (sortMode === 'deadline_desc') {
+      rfqs.sort((a, b) => new Date(b.deadline) - new Date(a.deadline));
+    } else if (sortMode === 'budget_desc') {
+      rfqs.sort((a, b) => (b.budget || 0) - (a.budget || 0));
+    } else {
+      rfqs.sort((a, b) => new Date(a.deadline) - new Date(b.deadline));
+    }
+
+    if (rfqs.length === 0) {
+      listEl.innerHTML = hasActiveFilters
+        ? `<div class="opp-empty-state">
+             <h4>No Open Opportunities</h4>
+             <p>There are currently no open RFQs matching your search.</p>
+             <button type="button" class="btn secondary" onclick="clearOpportunityFilters()">Clear Filters</button>
+           </div>`
+        : `<div class="opp-empty-state">
+             <h4>No Open Opportunities</h4>
+             <p>There are currently no open RFQs. Check back soon for new opportunities.</p>
+           </div>`;
+      return;
+    }
+
+    listEl.innerHTML = rfqs.map(rfq => {
+      const company = companiesById[rfq.company_id];
+      const deadlineDate = new Date(rfq.deadline);
+      const locationParts = [rfq.location_area, ...(rfq.provinces || [])].filter(Boolean);
+      const locationText = locationParts.join(', ');
+      const cardLogoScale = Math.min(1.5, Math.max(0.5, (company && company.logo_scale) || 1));
+      const cardLogoHeight = Math.round(40 * cardLogoScale);
+      const cardLogoMaxWidth = Math.round(130 * cardLogoScale);
+      const urgency = computeUrgency(rfq.deadline);
+      const refCode = `RFQ-${rfq.id.replace(/-/g, '').slice(0, 8).toUpperCase()}`;
+      return `
+        <div class="opportunity-card status-${urgency.status}" onclick="openApplicantGate('${rfq.id}')">
+          <div class="opportunity-card-grid">
+            <div class="opportunity-col-info">
+              <span class="opportunity-status-badge ${urgency.badgeClass}">${urgency.label}</span>
+              <p class="opportunity-ref">${refCode}</p>
+              <h3 style="margin:0 0 6px 0; color:var(--primary);">${rfq.rfq_name}</h3>
+              <p style="margin:0 0 8px 0; font-size:12px; text-transform:uppercase; color:var(--border); font-weight:bold; display:flex; align-items:center; gap:8px;">
+                ${company && company.logo_url ? `<img src="${company.logo_url}" alt="${company.name}" style="height:${Math.min(cardLogoHeight, 22)}px; width:auto; max-width:${cardLogoMaxWidth}px; object-fit:contain;">` : ''}
+                ${company ? company.name : 'RFQ Hub'}
+              </p>
+              <p style="margin:0; color:var(--ink); font-size:14px;">${rfq.description}</p>
             </div>
-
-            <div id="public-rfq-list"></div>
-          </div>
-
-          <div class="card" id="why-register-card">
-            <h3 class="section-eyebrow" style="font-size:18px;">WHY BECOME A REGISTERED SUPPLIER?</h3>
-            <div style="margin-top:16px;">
-              <div class="why-register-item">
-                <div class="why-register-icon why-register-check">✓</div>
-                <div>
-                  <h4>Access More Opportunities</h4>
-                  <p>See RFQs published by participating organisations.</p>
+            <div class="opportunity-col-meta">
+              <div class="opportunity-meta-row">${ICON_CALENDAR}<div><span class="opportunity-meta-label">Closing Date</span>${deadlineDate.toLocaleDateString()} at ${deadlineDate.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</div></div>
+              ${locationText ? `<div class="opportunity-meta-row">${ICON_PIN}<div><span class="opportunity-meta-label">Location</span>${locationText}</div></div>` : ''}
+              <div class="opportunity-meta-row">${ICON_TAG}<div><span class="opportunity-meta-label">Project</span>${rfq.project_name}</div></div>
+            </div>
+            <div class="opportunity-col-countdown">
+              <div class="countdown-box">
+                <p class="countdown-urgency-label ${urgency.status}">${urgency.status === 'closed' ? 'Closed' : 'Closing In'}</p>
+                <div class="countdown-units" data-deadline="${rfq.deadline}">
+                  <div><div class="countdown-unit-num cd-days">--</div><div class="countdown-unit-label">Days</div></div>
+                  <div><div class="countdown-unit-num cd-hrs">--</div><div class="countdown-unit-label">Hrs</div></div>
+                  <div><div class="countdown-unit-num cd-mins">--</div><div class="countdown-unit-label">Mins</div></div>
                 </div>
-              </div>
-              <div class="why-register-item">
-                <div class="why-register-icon why-register-check">✓</div>
-                <div>
-                  <h4>Submit Online</h4>
-                  <p>Complete your quotation and upload supporting documents digitally.</p>
-                </div>
-              </div>
-              <div class="why-register-item">
-                <div class="why-register-icon why-register-check">✓</div>
-                <div>
-                  <h4>Build Your Supplier Profile</h4>
-                  <p>Enter your company information once and reuse it.</p>
-                </div>
-              </div>
-              <div class="why-register-item">
-                <div class="why-register-icon why-register-check">✓</div>
-                <div>
-                  <h4>Track Your Applications</h4>
-                  <p>Keep a record of the RFQs you've responded to and their status.</p>
-                </div>
-              </div>
-              <div class="why-register-item" style="margin-bottom:0;">
-                <div class="why-register-icon why-register-check">✓</div>
-                <div>
-                  <h4>Secure &amp; Confidential</h4>
-                  <p>Your submission is only ever shared with the organisation running the RFQ.</p>
-                </div>
-              </div>
-            </div>
-            <button type="button" class="btn gold" style="width:100%; padding:12px; margin-top:6px;" onclick="openApplicantGate(null)">Register Free →</button>
-            <p style="text-align:center; margin:12px 0 0 0; font-size:13px; color:var(--border);">Already registered? <a href="#" onclick="document.getElementById('public-rfq-list').scrollIntoView({behavior:'smooth'}); return false;" style="color:var(--primary); font-weight:600;">Browse Opportunities</a></p>
-          </div>
-        </div>
-
-        <div id="how-it-works-section" style="max-width: 1200px; margin: 60px auto 0 auto; padding:40px 0; border-top:1px solid #E4E7EB;">
-          <h2 class="section-eyebrow" style="text-align:center; display:block; width:fit-content; margin:0 auto 40px auto;">HOW IT WORKS</h2>
-          <div class="how-it-works-grid">
-            <div class="how-it-works-step">
-              <div class="how-it-works-step-icon">
-                <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg>
-              </div>
-              <p class="how-it-works-step-num">01</p>
-              <h4>Discover</h4>
-              <p>Find an RFQ that matches your business.</p>
-            </div>
-            <div class="how-it-works-step">
-              <div class="how-it-works-step-icon">
-                <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
-              </div>
-              <p class="how-it-works-step-num">02</p>
-              <h4>Register</h4>
-              <p>Create your free supplier account.</p>
-            </div>
-            <div class="how-it-works-step">
-              <div class="how-it-works-step-icon">
-                <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/></svg>
-              </div>
-              <p class="how-it-works-step-num">03</p>
-              <h4>Submit</h4>
-              <p>Complete the response and upload supporting documents.</p>
-            </div>
-            <div class="how-it-works-step">
-              <div class="how-it-works-step-icon">
-                <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><path d="M22 4L12 14.01l-3-3"/></svg>
-              </div>
-              <p class="how-it-works-step-num">04</p>
-              <h4>Get Reviewed</h4>
-              <p>The organisation evaluates submissions and contacts successful suppliers.</p>
-            </div>
-          </div>
-        </div>
-
-        <div id="trust-section" class="trust-section-band" style="max-width: 1200px; margin: 40px auto 0 auto;">
-          <h2 class="section-eyebrow" style="text-align:center; display:block; width:fit-content; margin:0 auto 40px auto;">A BETTER WAY TO CONNECT BUYERS &amp; SUPPLIERS</h2>
-          <div class="trust-grid">
-            <div class="trust-item">
-              <div class="trust-icon"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M2 12h20M12 2c2.5 3 4 7 4 10s-1.5 7-4 10c-2.5-3-4-7-4-10s1.5-7 4-10z"/></svg></div>
-              <h4>Transparent</h4>
-              <p>Clear RFQ requirements and closing dates.</p>
-            </div>
-            <div class="trust-item">
-              <div class="trust-icon"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="11" width="18" height="10" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg></div>
-              <h4>Secure</h4>
-              <p>Your submission is securely handled.</p>
-            </div>
-            <div class="trust-item">
-              <div class="trust-icon"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2l7 4v6c0 5-3.5 8-7 10-3.5-2-7-5-7-10V6l7-4z"/></svg></div>
-              <h4>Accessible</h4>
-              <p>Opportunities are available to registered suppliers.</p>
-            </div>
-            <div class="trust-item">
-              <div class="trust-icon"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg></div>
-              <h4>Professional</h4>
-              <p>A structured process for quotations and supplier responses.</p>
-            </div>
-          </div>
-        </div>
-
-        <div id="org-logos-section" style="display:none; max-width: 1200px; margin: 0 auto; padding:40px 0; border-top:1px solid #E4E7EB;">
-          <h2 class="section-eyebrow" style="text-align:center; display:block; width:fit-content; margin:0 auto 30px auto;">ORGANISATIONS USING THE PLATFORM</h2>
-          <div id="org-logos-grid" class="org-logos-grid"></div>
-        </div>
-
-        <div class="final-cta-section">
-          <div class="final-cta-inner">
-            <h2>Ready to Find Your Next Business Opportunity?</h2>
-            <p>Register as a supplier and start responding to RFQs online.</p>
-            <button type="button" class="btn gold" style="padding:14px 32px; font-size:15px;" onclick="openApplicantGate(null)">Create Free Supplier Account</button>
-            <p style="margin-top:14px; font-size:13px;"><a href="#" onclick="document.getElementById('public-rfq-list').scrollIntoView({behavior:'smooth'}); return false;" style="color:#C7D8EA;">Already registered? Browse Opportunities</a></p>
-          </div>
-        </div>
-      </div>
-
-      <div id="login-section" style="display:none; max-width: 420px; margin: 0 auto;">
-        <div class="card">
-          <h2 style="margin-top:0;">Staff Login</h2>
-          <form id="login-form" style="display:flex; flex-direction:column; gap:15px;">
-            <div>
-              <label>Email</label>
-              <input type="email" id="login-email" required style="width:100%;">
-            </div>
-            <div>
-              <label>Password</label>
-              <input type="password" id="login-password" required style="width:100%;">
-            </div>
-            <button type="submit" class="btn gold" style="padding:12px; margin-top:5px;">Log In</button>
-          </form>
-          <p style="text-align:center; margin-top:12px; font-size:13px;">
-            <a href="#" onclick="showForgotPasswordView(); return false;" style="color:var(--primary); font-weight:600;">Forgot your password?</a>
-          </p>
-          <p style="text-align:center; margin-top:15px; font-size:13px; color:var(--border);">
-            No account yet? Access is by invitation — ask your company admin or the platform admin to invite you.
-          </p>
-        </div>
-      </div>
-
-      <div id="forgot-password-section" style="display:none; max-width: 420px; margin: 0 auto;">
-        <div class="card">
-          <h2 style="margin-top:0;">Reset Your Password</h2>
-          <p style="color:var(--border); font-size:14px; margin-bottom:15px;">Enter the email address on your account and we'll send you a 6-digit code to set a new password.</p>
-          <form id="forgot-password-form" style="display:flex; flex-direction:column; gap:15px;">
-            <div>
-              <label>Email</label>
-              <input type="email" id="forgot-password-email" required style="width:100%;">
-            </div>
-            <button type="submit" class="btn gold" style="padding:12px; margin-top:5px;">Send Code</button>
-          </form>
-          <p id="forgot-password-sent-note" style="display:none; margin-top:5px; margin-bottom:15px; padding:12px; background:#E1F0FF; border-radius:4px; font-size:14px;">
-            If an account exists for that email, a 6-digit code is on its way. Check your inbox (and spam folder) — the code is valid for a limited time and can only be used once.
-          </p>
-          <form id="reset-code-form" style="display:none; flex-direction:column; gap:15px;">
-            <div>
-              <label>6-Digit Code</label>
-              <input type="text" id="reset-code-token" required inputmode="numeric" pattern="[0-9]*" maxlength="6" autocomplete="one-time-code" style="width:100%; letter-spacing:4px; font-size:18px; text-align:center;">
-            </div>
-            <div>
-              <label>New Password *</label>
-              <input type="password" id="reset-code-new-password" required minlength="6" style="width:100%;">
-            </div>
-            <div>
-              <label>Confirm New Password *</label>
-              <input type="password" id="reset-code-confirm-password" required minlength="6" style="width:100%;">
-            </div>
-            <button type="submit" class="btn gold" style="padding:12px; margin-top:5px;">Reset Password</button>
-          </form>
-          <p style="text-align:center; margin-top:15px; font-size:13px;">
-            <a href="#" onclick="showLoginForm(); return false;" style="color:var(--primary); font-weight:600;">Back to Sign In</a>
-          </p>
-        </div>
-      </div>
-
-      <div id="set-password-section" style="display:none; max-width: 420px; margin: 0 auto;">
-        <div class="card">
-          <h2 id="set-password-heading" style="margin-top:0;">Choose a Password</h2>
-          <p id="set-password-subtext" style="color:var(--border); font-size:14px; margin-bottom:15px;">You've been invited to RFQ Hub. Set a password to finish setting up your account.</p>
-          <form id="set-password-form" style="display:flex; flex-direction:column; gap:15px;">
-            <div>
-              <label>New Password *</label>
-              <input type="password" id="set-password-new" required minlength="6" style="width:100%;">
-            </div>
-            <div>
-              <label>Confirm Password *</label>
-              <input type="password" id="set-password-confirm" required minlength="6" style="width:100%;">
-            </div>
-            <button type="submit" class="btn gold" style="padding:12px; margin-top:5px;">Set Password &amp; Continue</button>
-          </form>
-        </div>
-      </div>
-    </div>
-
-    <!-- ADMIN VIEW (Company Dashboard) -->
-    <div id="admin-view" style="display:none;">
-      <div style="background: var(--primary); border-bottom: 3px solid var(--accent); padding: 20px 40px;">
-        <div style="display: flex; justify-content: space-between; align-items: center; max-width: 1200px; margin: 0 auto; flex-wrap:wrap; gap:10px;">
-          <div style="display:flex; align-items:center; gap:12px; min-width:0;">
-            <img id="admin-header-logo" src="" alt="" style="display:none; height:40px; max-width:140px; width:auto; object-fit:contain; border-radius:3px; background:white; padding:3px;">
-            <h2 id="admin-company-name" style="margin: 0; color: white; font-family: 'IBM Plex Sans', sans-serif;">RFQ Management</h2>
-          </div>
-          <div style="display:flex; align-items:center; gap:16px;">
-            <a id="super-admin-link" href="#" onclick="openSuperAdminView(); return false;" style="display:none; font-size:13px; color:white; font-weight:600;">Platform Admin</a>
-            <button onclick="logoutAdmin()" class="btn secondary" style="padding: 8px 16px;">Logout</button>
-          </div>
-        </div>
-      </div>
-
-      <div class="page-pad" style="padding: 40px; max-width: 1200px; margin: 0 auto;">
-        <div class="admin-layout">
-          <!-- Section Navigation -->
-          <div class="admin-sidebar">
-            <button class="sidebar-tab-btn company-tab-btn active" onclick="switchAdminTab('create', this)">Create RFQ</button>
-            <button class="sidebar-tab-btn company-tab-btn" onclick="switchAdminTab('console', this)">RFQ Console</button>
-            <button class="sidebar-tab-btn company-tab-btn" onclick="switchAdminTab('submissions', this)">Review Submissions</button>
-            <button class="sidebar-tab-btn company-tab-btn" onclick="switchAdminTab('team', this)">Team</button>
-            <button class="sidebar-tab-btn company-tab-btn" onclick="switchAdminTab('settings', this)">Settings</button>
-          </div>
-
-          <div class="admin-content">
-        <!-- CREATE RFQ TAB -->
-        <div id="create-tab" class="admin-tab" style="display:block;">
-          <div id="rfq-drafts-card" class="card" style="display:none;">
-            <h2 style="margin-top:0;">Saved Drafts</h2>
-            <p style="color: var(--border); font-size: 14px; margin-bottom: 16px;">Not visible to contractors and no notifications are sent until you publish.</p>
-            <div id="rfq-drafts-list"></div>
-          </div>
-          <div class="card">
-            <h2 style="margin-top:0;">Create New RFQ</h2>
-            <div id="draft-editing-banner" style="display:none; margin-bottom:16px; padding:10px 14px; background:#FFF8E1; border:1px solid #F5D67A; border-radius:4px; font-size:13px; color:var(--ink);">
-              📝 <strong>Editing a saved draft</strong> — Save Draft will update it, and Publish will make it live.
-            </div>
-            <form id="create-rfq-form" onsubmit="return false;" style="display:flex; flex-direction:column; gap:20px;">
-              <div class="form-grid-2">
-                <div>
-                  <label style="font-weight:bold; display:block; margin-bottom:8px;">RFQ Name/Title *</label>
-                  <input type="text" name="rfq_name" placeholder="e.g., Safety Equipment Quotes" style="width:100%; padding:10px; border:1px solid var(--border); border-radius:4px; box-sizing:border-box;">
-                </div>
-                <div>
-                  <label style="font-weight:bold; display:block; margin-bottom:8px;">Project Name *</label>
-                  <input type="text" name="rfq_project" placeholder="e.g., Table Bay Construction Site" style="width:100%; padding:10px; border:1px solid var(--border); border-radius:4px; box-sizing:border-box;">
-                </div>
-              </div>
-
-              <div>
-                <label style="font-weight:bold; display:block; margin-bottom:8px;">Description *</label>
-                <textarea name="rfq_description" placeholder="Describe what you're looking for..." style="width:100%; padding:10px; border:1px solid var(--border); border-radius:4px; min-height:100px; box-sizing:border-box; font-family:inherit;"></textarea>
-              </div>
-
-              <div class="form-grid-2">
-                <div>
-                  <label style="font-weight:bold; display:block; margin-bottom:8px;">Province(s) *</label>
-                  <p style="font-size:12px; color:var(--border); margin:0 0 8px 0;">Select every province you want this RFQ to be visible in and to notify registered suppliers in.</p>
-                  <div style="border:1px solid var(--border); border-radius:4px; padding:12px; box-sizing:border-box;">
-                    <label style="display:flex; align-items:center; gap:8px; font-weight:600; margin-bottom:8px; padding-bottom:8px; border-bottom:1px solid var(--border); cursor:pointer;">
-                      <input type="checkbox" id="rfq-province-select-all"> Select All Provinces
-                    </label>
-                    <div id="rfq-province-checkboxes" style="display:grid; grid-template-columns:1fr 1fr; gap:8px;"></div>
-                  </div>
-                </div>
-                <div>
-                  <label style="font-weight:bold; display:block; margin-bottom:8px;">Town / Area (optional)</label>
-                  <input type="text" name="rfq_location_area" placeholder="e.g., Table Bay, Cape Town" style="width:100%; padding:10px; border:1px solid var(--border); border-radius:4px; box-sizing:border-box;">
-                </div>
-              </div>
-
-              <div class="form-grid-2">
-                <div>
-                  <label style="font-weight:bold; display:block; margin-bottom:8px;">Submission Deadline *</label>
-                  <input type="datetime-local" name="rfq_deadline" style="width:100%; padding:10px; border:1px solid var(--border); border-radius:4px; box-sizing:border-box;">
-                </div>
-                <div>
-                  <label style="font-weight:bold; display:block; margin-bottom:8px;">Budget (optional)</label>
-                  <input type="number" name="rfq_budget" placeholder="e.g., 50000" style="width:100%; padding:10px; border:1px solid var(--border); border-radius:4px; box-sizing:border-box;">
-                </div>
-              </div>
-
-              <div>
-                <label style="font-weight:bold; display:block; margin-bottom:8px;">Visibility *</label>
-                <p style="font-size:14px; color:var(--border); margin:0 0 10px 0;">Open RFQs are listed on the public portal for anyone to find and apply. Closed RFQs are only reachable via the invite links you send below.</p>
-                <div style="display:flex; gap:24px; flex-wrap:wrap;">
-                  <label style="font-weight:normal; display:flex; align-items:center; gap:6px; cursor:pointer;">
-                    <input type="radio" name="rfq_visibility" value="closed" checked> Closed &mdash; Invite Only
-                  </label>
-                  <label style="font-weight:normal; display:flex; align-items:center; gap:6px; cursor:pointer;">
-                    <input type="radio" name="rfq_visibility" value="open"> Open &mdash; Public Portal
-                  </label>
-                </div>
-              </div>
-
-              <div>
-                <label style="font-weight:bold; display:block; margin-bottom:8px;">Required Documents *</label>
-                <p style="font-size:14px; color:var(--border); margin:0 0 10px 0;">Click the button below to add document types contractors must submit</p>
-                <div id="required-docs-builder" style="margin-bottom:10px;"></div>
-                <button type="button" onclick="addDocumentField()" class="btn secondary" style="padding:8px 16px;">+ Add Document Type</button>
-              </div>
-
-              <div>
-                <label style="font-weight:bold; display:block; margin-bottom:8px;">Attach RFQ Document(s) (optional)</label>
-                <p style="font-size:14px; color:var(--border); margin:0 0 10px 0;">Upload the RFQ spec, drawings, or any files contractors should review before applying. They'll appear as downloads on the contractor's page.</p>
-                <input type="file" id="rfq-attachments-input" multiple style="width:100%; padding:8px; border:1px solid var(--border); border-radius:4px; box-sizing:border-box;">
-              </div>
-
-              <div>
-                <label id="contractor-emails-label" style="font-weight:bold; display:block; margin-bottom:8px;">Contractor Email Addresses *</label>
-                <p id="contractor-emails-hint" style="font-size:14px; color:var(--border); margin:0 0 10px 0;">Enter email addresses (one per line). Each gets a direct invite link and email. Required for Closed RFQs.</p>
-                <textarea name="contractor_emails" placeholder="contractor1@example.com&#10;contractor2@example.com" style="width:100%; padding:10px; border:1px solid var(--border); border-radius:4px; min-height:80px; box-sizing:border-box; font-family:inherit;"></textarea>
-              </div>
-
-              <div style="display:flex; gap:10px; justify-content:flex-end; flex-wrap:wrap;">
-                <button type="button" onclick="resetCreateForm()" class="btn secondary" style="padding:10px 20px;">Clear</button>
-                <button type="button" onclick="previewRFQ()" class="btn secondary" style="padding:10px 20px;">👁️ Preview</button>
-                <button type="button" onclick="saveRFQDraft()" class="btn secondary" style="padding:10px 20px;">💾 Save Draft</button>
-                <button type="submit" id="create-rfq-submit-btn" class="btn gold" style="padding:10px 20px;">Create RFQ & Generate Links</button>
-              </div>
-            </form>
-          </div>
-        </div>
-
-        <!-- RFQ CONSOLE TAB -->
-        <div id="console-tab" class="admin-tab" style="display:none;">
-          <div class="card">
-            <h2 style="margin-top:0;">Active RFQs</h2>
-            <p style="color: var(--border); font-size: 14px; margin-bottom: 20px;">View all active RFQs and manage contractor invitation links</p>
-            <div id="rfq-console-list" style="display: flex; flex-direction: column; gap: 20px;">
-              <div style="text-align: center; padding: 40px; color: var(--border);">
-                <p>Loading RFQs...</p>
+                <button type="button" class="btn navy" style="width:100%; padding:10px; margin-top:14px;" onclick="event.stopPropagation(); openApplicantGate('${rfq.id}')">View Opportunity →</button>
+                <button type="button" class="btn secondary" style="width:100%; padding:10px; margin-top:8px;" onclick="event.stopPropagation(); openAskQuestionModal('${rfq.id}', '${escapeHtmlClient(rfq.rfq_name).replace(/'/g, "\\'")}')">❓ Ask a Question</button>
               </div>
             </div>
           </div>
         </div>
+      `;
+    }).join('');
 
-        <!-- SUBMISSIONS TAB -->
-        <div id="submissions-tab" class="admin-tab" style="display:none;">
-          <div class="card">
-            <h2 style="margin-top:0;">RFQ Submissions</h2>
-            <div class="filter-bar">
-              <select id="rfq-filter" onchange="filterSubmissions()" style="padding:10px; border:1px solid var(--border); border-radius:4px;">
-                <option value="">All RFQs</option>
-              </select>
-              <select id="status-filter" onchange="filterSubmissions()" style="padding:10px; border:1px solid var(--border); border-radius:4px;">
-                <option value="">All Statuses</option>
-                <option value="submitted">Submitted</option>
-                <option value="under_review">Under Review</option>
-                <option value="approved">Approved</option>
-                <option value="rejected">Rejected</option>
-              </select>
-            </div>
-            <div id="submissions-list" style="display:flex; flex-direction:column; gap:15px;"></div>
-          </div>
-        </div>
+    updateAllCountdowns();
+    ensureCountdownTicking();
+  } catch (err) {
+    console.error('Error loading public RFQ list:', err);
+    listEl.innerHTML = '<p style="color:var(--warning);">Error loading open RFQs.</p>';
+  }
+}
 
-        <!-- TEAM TAB -->
-        <div id="team-tab" class="admin-tab" style="display:none;">
-          <div class="card">
-            <h2 style="margin-top:0;">Team</h2>
-            <p style="color:var(--border); font-size:14px; margin-bottom:20px;">People with access to this company's RFQ Hub admin section.</p>
-            <div id="team-members-list" style="margin-bottom:25px;"></div>
+// Real, already-public data only: companies that currently have at least
+// one open RFQ listed and a logo on file. No invented organisations.
+function renderOrgLogos(companiesById) {
+  const section = document.getElementById('org-logos-section');
+  const grid = document.getElementById('org-logos-grid');
+  if (!section || !grid) return;
 
-            <h3 style="font-size:16px;">Invite a Teammate</h3>
-            <form id="invite-teammate-form" style="display:flex; gap:10px; flex-wrap:wrap; align-items:flex-end; margin-top:10px;">
-              <div style="flex:1; min-width:220px;">
-                <label style="font-weight:bold;">Email *</label>
-                <input type="email" id="invite-teammate-email" required style="width:100%; padding:10px; border:1px solid var(--border); border-radius:4px; box-sizing:border-box;">
-              </div>
-              <button type="submit" class="btn gold" style="padding:10px 20px;">Send Invite</button>
-            </form>
-          </div>
-        </div>
+  const withLogos = Object.values(companiesById).filter(c => c && c.logo_url);
+  if (withLogos.length === 0) {
+    section.style.display = 'none';
+    grid.innerHTML = '';
+    return;
+  }
 
-        <!-- SETTINGS TAB -->
-        <div id="settings-tab" class="admin-tab" style="display:none;">
-          <div class="card">
-            <h2 style="margin-top:0;">Company Settings</h2>
-            <p style="color:var(--border); font-size:14px; margin-bottom:20px;">This information is shown to contractors on your RFQ links.</p>
-            <form id="settings-form" style="display:flex; flex-direction:column; gap:20px; max-width:600px;">
-              <div>
-                <label style="font-weight:bold;">Logo</label>
-                <div style="display:flex; align-items:center; gap:15px; margin-top:8px; flex-wrap:wrap;">
-                  <div style="width:140px; height:140px; border:1px solid var(--border); border-radius:8px; background:var(--bg-2); display:flex; align-items:center; justify-content:center; overflow:hidden; flex-shrink:0;">
-                    <img id="settings-logo-preview" src="" alt="Logo preview" style="max-width:260px; height:84px; width:auto; object-fit:contain; display:none;">
-                    <span id="settings-logo-placeholder" style="color:var(--border); font-size:11px; text-align:center; padding:0 10px;">No logo</span>
-                  </div>
-                  <div>
-                    <input type="file" id="settings-logo-file" accept="image/png,image/jpeg,image/svg+xml,image/webp">
-                    <p style="font-size:12px; color:var(--border); margin-top:5px;">PNG, JPG, SVG or WebP. Uploads immediately.</p>
-                  </div>
-                </div>
-                <div style="margin-top:14px; max-width:320px;">
-                  <label style="font-weight:bold; font-size:13px; display:flex; justify-content:space-between;">
-                    <span>Logo Size</span>
-                    <span id="settings-logo-scale-label" style="font-weight:normal; color:var(--border);">100%</span>
-                  </label>
-                  <input type="range" id="settings-logo-scale" min="50" max="150" step="5" value="100" style="width:100%;">
-                  <p style="font-size:12px; color:var(--border); margin-top:5px;">Scales your logo in the site header and on the public RFQ portal. The preview above matches the header size.</p>
-                </div>
-              </div>
-              <div>
-                <label style="font-weight:bold;">Company Name *</label>
-                <input type="text" id="settings-company-name" required style="width:100%; padding:10px; border:1px solid var(--border); border-radius:4px; box-sizing:border-box;">
-              </div>
-              <div>
-                <label style="font-weight:bold;">Contact Email</label>
-                <input type="email" id="settings-contact-email" style="width:100%; padding:10px; border:1px solid var(--border); border-radius:4px; box-sizing:border-box;">
-              </div>
-              <div>
-                <label style="font-weight:bold;">Contact Phone</label>
-                <input type="tel" id="settings-contact-phone" style="width:100%; padding:10px; border:1px solid var(--border); border-radius:4px; box-sizing:border-box;">
-              </div>
-              <div>
-                <label style="font-weight:bold;">Address</label>
-                <textarea id="settings-address" style="width:100%; padding:10px; border:1px solid var(--border); border-radius:4px; box-sizing:border-box; min-height:70px; font-family:inherit;"></textarea>
-              </div>
-              <div style="display:flex; justify-content:flex-end;">
-                <button type="submit" class="btn gold" style="padding:10px 24px;">Save Settings</button>
-              </div>
-            </form>
-          </div>
+  grid.innerHTML = withLogos.map(c => `<img src="${c.logo_url}" alt="${c.name}" title="${c.name}">`).join('');
+  section.style.display = 'block';
+}
 
-          <div class="card">
-            <h2 style="margin-top:0;">Change Password</h2>
-            <p style="color:var(--border); font-size:14px; margin-bottom:20px;">Update the password for your own login.</p>
-            <form id="change-password-form" style="display:flex; flex-direction:column; gap:15px; max-width:400px;">
-              <div>
-                <label style="font-weight:bold;">New Password *</label>
-                <input type="password" id="change-password-new" required minlength="6" style="width:100%; padding:10px; border:1px solid var(--border); border-radius:4px; box-sizing:border-box;">
-              </div>
-              <div>
-                <label style="font-weight:bold;">Confirm New Password *</label>
-                <input type="password" id="change-password-confirm" required minlength="6" style="width:100%; padding:10px; border:1px solid var(--border); border-radius:4px; box-sizing:border-box;">
-              </div>
-              <div style="display:flex; justify-content:flex-end;">
-                <button type="submit" class="btn gold" style="padding:10px 24px;">Update Password</button>
-              </div>
-            </form>
-          </div>
-        </div>
-          </div>
-        </div>
+// Narrow aggregate-only stats (see get_public_portal_stats RPC) — real
+// counts, never invented. Any stat that's currently zero is omitted
+// rather than shown as "0 X", and the whole row stays hidden if the call
+// fails or every count is zero.
+async function loadPublicPortalStats() {
+  const row = document.getElementById('hero-stats-row');
+  if (!row) return;
+  row.style.display = 'none';
+  row.innerHTML = '';
+
+  try {
+    const { data, error } = await client.rpc('get_public_portal_stats');
+    if (error) throw error;
+    const stats = Array.isArray(data) ? data[0] : data;
+    if (!stats) return;
+
+    const items = [
+      { num: stats.open_opportunities, label: 'Open Opportunities' },
+      { num: stats.registered_suppliers, label: 'Registered Suppliers' },
+      { num: stats.organisations, label: 'Organisations' }
+    ].filter(item => Number(item.num) > 0);
+
+    if (items.length === 0) return;
+
+    row.innerHTML = items.map(item => `
+      <div class="hero-stat">
+        <div class="hero-stat-num">${item.num}</div>
+        <div class="hero-stat-label">${item.label}</div>
       </div>
-    </div>
+    `).join('');
+    row.style.display = 'flex';
+  } catch (err) {
+    console.warn('Could not load public portal stats:', err);
+  }
+}
 
-    <!-- SUPER ADMIN VIEW (Platform-wide) -->
-    <div id="super-admin-view" style="display:none;">
-      <div style="background: var(--primary); border-bottom: 3px solid var(--accent); padding: 20px 40px;">
-        <div style="display: flex; justify-content: space-between; align-items: center; max-width: 1200px; margin: 0 auto; flex-wrap:wrap; gap:10px;">
-          <h2 style="margin: 0; color: white; font-family: 'IBM Plex Sans', sans-serif;">Platform Admin</h2>
-          <div style="display:flex; gap:10px;">
-            <a id="back-to-dashboard-link" href="#" onclick="closeSuperAdminView(); return false;" class="btn secondary" style="padding: 8px 16px; text-decoration:none; display:inline-block;">Back to Dashboard</a>
-            <button onclick="logoutAdmin()" class="btn secondary" style="padding: 8px 16px;">Logout</button>
-          </div>
-        </div>
-      </div>
-      <div class="page-pad" style="padding: 40px; max-width: 1200px; margin: 0 auto;">
-        <div class="admin-layout">
-          <!-- Section Navigation -->
-          <div class="admin-sidebar">
-            <button id="super-invite-tab-btn" class="sidebar-tab-btn super-tab-btn active" onclick="switchSuperAdminTab('super-invite', this)">Invite a Company</button>
-            <button id="super-branding-tab-btn" class="sidebar-tab-btn super-tab-btn" onclick="switchSuperAdminTab('super-branding', this)">Platform Branding</button>
-            <button id="super-companies-tab-btn" class="sidebar-tab-btn super-tab-btn" onclick="switchSuperAdminTab('super-companies', this)">All Companies</button>
-            <button id="super-applicants-tab-btn" class="sidebar-tab-btn super-tab-btn" onclick="switchSuperAdminTab('super-applicants', this)">Supplier Database</button>
-            <button id="super-manage-admins-tab-btn" class="sidebar-tab-btn super-tab-btn" style="display:none;" onclick="switchSuperAdminTab('super-manage-admins', this)">Manage Admins</button>
-            <button class="sidebar-tab-btn super-tab-btn" onclick="switchSuperAdminTab('super-password', this)">Change Password</button>
-          </div>
+// ===== APPLICANT REGISTRATION GATE =====
+// Anyone browsing the public "Open RFQs" list must be a registered
+// applicant before they can view an RFQ's details or apply. We check
+// their email against the applicant_registrations table via a narrow,
+// SECURITY DEFINER RPC that only ever returns true/false — it never
+// exposes any applicant's data to the public. If the email isn't on
+// file, we collect a quick registration first.
+let pendingGateRfqId = null;
+// Status of the applicant who most recently passed the gate — { status,
+// status_reason } or null if unknown/active. Suspended/removed suppliers
+// can still browse/view RFQs (per Brent's explicit instruction) but the
+// contractor submission form uses this to warn them upfront and disable
+// the Submit button, backed by a hard DB-level block either way (see the
+// rfq_submissions insert policy) so this is a UX convenience, not the
+// actual enforcement.
+let currentApplicantStatus = null;
 
-          <div class="admin-content">
-        <div id="super-invite-tab" class="super-tab" style="display:block;">
-          <div class="card">
-            <h2 style="margin-top:0;">Invite a Company</h2>
-            <p style="color:var(--border); font-size:14px; margin-bottom:20px;">Set up a new contractor and invite the first person who'll manage their RFQs. They'll get an email to set their own password.</p>
-            <form id="invite-company-form" style="display:flex; gap:10px; flex-wrap:wrap; align-items:flex-end;">
-              <div style="flex:1; min-width:200px;">
-                <label style="font-weight:bold;">Company Name *</label>
-                <input type="text" id="invite-company-name" required style="width:100%; padding:10px; border:1px solid var(--border); border-radius:4px; box-sizing:border-box;">
-              </div>
-              <div style="flex:1; min-width:220px;">
-                <label style="font-weight:bold;">First Admin's Email *</label>
-                <input type="email" id="invite-company-email" required style="width:100%; padding:10px; border:1px solid var(--border); border-radius:4px; box-sizing:border-box;">
-              </div>
-              <button type="submit" id="invite-company-submit-btn" class="btn gold" style="padding:10px 20px;">Send Invite</button>
-            </form>
-            <p id="invite-company-readonly-note" style="display:none; margin-top:10px; font-size:13px; color:var(--border);">You have view-only access to this section.</p>
-          </div>
-        </div>
+function openApplicantGate(rfqId) {
+  pendingGateRfqId = rfqId;
 
-        <div id="super-branding-tab" class="super-tab" style="display:none;">
-          <div class="card">
-            <h2 style="margin-top:0;">Platform Branding</h2>
-            <p style="color:var(--border); font-size:14px; margin-bottom:20px;">This logo appears on the main public portal (the "RFQ Hub" landing page) whenever no specific company is in context.</p>
-            <p id="platform-branding-readonly-note" style="display:none; font-size:13px; color:var(--border); margin-top:-10px; margin-bottom:15px;">You have view-only access to this section.</p>
-            <div style="display:flex; align-items:center; gap:15px; flex-wrap:wrap;">
-              <div style="width:140px; height:140px; border:1px solid var(--border); border-radius:8px; background:var(--bg-2); display:flex; align-items:center; justify-content:center; overflow:hidden; flex-shrink:0;">
-                <img id="platform-logo-preview" src="" alt="Platform logo preview" style="max-width:260px; height:84px; width:auto; object-fit:contain; display:none;">
-                <span id="platform-logo-placeholder" style="color:var(--border); font-size:11px; text-align:center; padding:0 10px;">No logo</span>
-              </div>
-              <div>
-                <input type="file" id="platform-logo-file" accept="image/png,image/jpeg,image/svg+xml,image/webp">
-                <p style="font-size:12px; color:var(--border); margin-top:5px;">PNG, JPG, SVG or WebP. Uploads immediately.</p>
-              </div>
-            </div>
-            <div style="margin-top:14px; max-width:320px;">
-              <label style="font-weight:bold; font-size:13px; display:flex; justify-content:space-between;">
-                <span>Logo Size</span>
-                <span id="platform-logo-scale-label" style="font-weight:normal; color:var(--border);">100%</span>
-              </label>
-              <input type="range" id="platform-logo-scale" min="50" max="150" step="5" value="100" style="width:100%;">
-              <p style="font-size:12px; color:var(--border); margin-top:5px;">Scales the platform logo in the site header. The preview above matches the header size.</p>
-            </div>
-          </div>
-        </div>
+  // Reset every field on the gate — both the quick email step and the full
+  // Supplier Database registration form (name/company/contact/address/
+  // services/documents/declaration) — so a previous attempt never bleeds
+  // into a fresh one.
+  const fieldIds = [
+    'gate-email', 'gate-company-name', 'gate-years-business', 'gate-full-name',
+    'gate-title', 'gate-designation', 'gate-phone', 'gate-additional-phone',
+    'gate-address', 'gate-province', 'gate-website', 'gate-services-description',
+    'gate-service-areas'
+  ];
+  fieldIds.forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.value = '';
+  });
+  const fileIds = [
+    'gate-doc-cipc', 'gate-doc-proof-address', 'gate-doc-sars', 'gate-doc-banking',
+    'gate-doc-bbbee', 'gate-doc-health-safety', 'gate-doc-permits', 'gate-doc-other'
+  ];
+  fileIds.forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.value = '';
+  });
+  const declarationEl = document.getElementById('gate-declaration-accept');
+  if (declarationEl) declarationEl.checked = false;
+  currentApplicantStatus = null;
 
-        <div id="super-companies-tab" class="super-tab" style="display:none;">
-          <div class="card">
-            <h2 style="margin-top:0;">All Companies</h2>
-            <p style="color:var(--border); font-size:14px; margin-bottom:20px;">Companies set up on the platform.</p>
-            <div id="super-admin-companies-list"></div>
-          </div>
-        </div>
+  // "Register Free" / "Register as a Supplier" open this same gate with no
+  // specific RFQ in mind (rfqId is null) — swap the copy so it reads as a
+  // general supplier registration rather than implying a specific RFQ.
+  const titleEl = document.getElementById('gate-modal-title');
+  const introEl = document.getElementById('gate-modal-intro');
+  if (titleEl) titleEl.textContent = rfqId ? 'Register to View & Apply' : 'Register as a Supplier';
+  if (introEl) introEl.textContent = rfqId
+    ? "To view this RFQ's details and apply, please confirm your email. It only takes a moment."
+    : "Register your email to start browsing and applying to open RFQs. It only takes a moment.";
 
-        <div id="super-applicants-tab" class="super-tab" style="display:none;">
-          <div class="card">
-            <div style="display:flex; justify-content:space-between; align-items:flex-start; flex-wrap:wrap; gap:10px;">
-              <div>
-                <h2 style="margin-top:0; margin-bottom:4px;">Supplier Database</h2>
-                <p style="color:var(--border); font-size:14px; margin-bottom:0;">Everyone who has registered on the IhubSA PRFQ Hub Supplier Database in order to view and apply to open RFQs, with their full registration details and uploaded documents.</p>
-              </div>
-              <button type="button" id="import-suppliers-btn" class="btn secondary" style="padding:10px 16px; white-space:nowrap;" onclick="openImportSuppliersModal()">⬆️ Import Suppliers</button>
-            </div>
-            <div style="display:flex; flex-wrap:wrap; gap:10px; margin:20px 0 16px 0;">
-              <input type="text" id="supplier-search-input" placeholder="Search by name, company, email, or phone..." oninput="filterSupplierDatabase()" style="flex:1; min-width:220px; padding:10px; border:1px solid var(--border); border-radius:4px;">
-              <select id="supplier-province-filter" onchange="filterSupplierDatabase()" style="padding:10px; border:1px solid var(--border); border-radius:4px;">
-                <option value="">All Provinces</option>
-              </select>
-              <select id="supplier-status-filter" onchange="filterSupplierDatabase()" style="padding:10px; border:1px solid var(--border); border-radius:4px;">
-                <option value="">All Statuses</option>
-                <option value="active">Active</option>
-                <option value="suspended">Suspended</option>
-                <option value="removed">Removed</option>
-              </select>
-            </div>
-            <div id="super-admin-applicants-list"></div>
-          </div>
-        </div>
+  document.getElementById('gate-email-section').style.display = 'block';
+  document.getElementById('gate-register-section').style.display = 'none';
+  closeMobileNav();
+  openModal('applicant-gate-modal');
+}
 
-        <input type="file" id="supplier-doc-upload-input" accept="application/pdf" style="display:none;" onchange="handleSupplierDocFileSelected(event)">
+function gateBackToEmail() {
+  document.getElementById('gate-email-section').style.display = 'block';
+  document.getElementById('gate-register-section').style.display = 'none';
+}
 
-        <div id="import-suppliers-modal" class="modal" style="display:none;">
-          <div class="modal-content" style="max-width:600px;">
-            <div class="modal-head">
-              <h3>Import Suppliers</h3>
-              <button class="drawer-close" onclick="closeModal('import-suppliers-modal')">✕</button>
-            </div>
-            <div class="modal-body">
-              <p style="margin:0 0 15px 0; font-size:13px; color:var(--border);">Upload a CSV file of your existing supplier list. Imported suppliers appear as normal active suppliers, flagged "Documents Pending" until you upload their CIPC/ID, Proof of Address, and SARS documents (via the Upload buttons on each entry) and they aren't required to have accepted the registration declaration.</p>
-              <div id="import-suppliers-body"></div>
-            </div>
-          </div>
-        </div>
+async function handleGateEmailSubmit(e) {
+  e.preventDefault();
+  const email = document.getElementById('gate-email').value.trim();
+  if (!email) return;
 
-        <div id="super-manage-admins-tab" class="super-tab" style="display:none;">
-          <div class="card">
-            <h2 style="margin-top:0;">Manage Admins</h2>
-            <p style="color:var(--border); font-size:14px; margin-bottom:20px;">Invite other people into the Super Admin section, and control exactly which sections each of them can see and change. They'll get an email to set their own password. Only you can invite/remove other admins or change their permissions.</p>
-            <form id="invite-super-admin-form" style="margin-bottom:25px;">
-              <div style="display:flex; gap:10px; flex-wrap:wrap; align-items:flex-end; margin-bottom:12px;">
-                <div style="flex:1; min-width:220px;">
-                  <label style="font-weight:bold;">Email *</label>
-                  <input type="email" id="invite-super-admin-email" required style="width:100%; padding:10px; border:1px solid var(--border); border-radius:4px; box-sizing:border-box;">
-                </div>
-              </div>
-              <div style="margin-bottom:15px; padding:12px; border:1px solid var(--border); border-radius:4px; background:var(--bg-2);">
-                <p style="margin:0 0 8px 0; font-size:12px; font-weight:bold; color:var(--ink);">Permissions — unchecked sections stay completely hidden from this admin</p>
-                <div style="display:grid; grid-template-columns:1fr auto auto; gap:6px 16px; align-items:center; font-size:13px;">
-                  <div></div>
-                  <div style="font-weight:600; text-align:center;">View</div>
-                  <div style="font-weight:600; text-align:center;">Edit</div>
+  const submitBtn = document.getElementById('gate-email-submit');
+  const originalLabel = submitBtn.textContent;
+  submitBtn.disabled = true;
+  submitBtn.textContent = 'Checking...';
 
-                  <div>Invite a Company</div>
-                  <input type="checkbox" id="invite-perm-invite_company-view" class="perm-checkbox" data-prefix="invite-perm" data-section="invite_company" data-level="view" style="justify-self:center;">
-                  <input type="checkbox" id="invite-perm-invite_company-edit" class="perm-checkbox" data-prefix="invite-perm" data-section="invite_company" data-level="edit" style="justify-self:center;">
+  try {
+    const { data: isRegistered, error } = await client.rpc('check_applicant_registered', { p_email: email });
+    if (error) throw error;
 
-                  <div>Platform Branding</div>
-                  <input type="checkbox" id="invite-perm-platform_branding-view" class="perm-checkbox" data-prefix="invite-perm" data-section="platform_branding" data-level="view" style="justify-self:center;">
-                  <input type="checkbox" id="invite-perm-platform_branding-edit" class="perm-checkbox" data-prefix="invite-perm" data-section="platform_branding" data-level="edit" style="justify-self:center;">
+    if (isRegistered) {
+      // Best-effort — used only to warn/disable-apply in the RFQ view
+      // below, never to block viewing itself. A failure here shouldn't
+      // stop an otherwise-fine registered visitor from proceeding.
+      currentApplicantStatus = null;
+      try {
+        const { data: statusRows } = await client.rpc('check_applicant_status', { p_email: email });
+        currentApplicantStatus = (statusRows && statusRows[0]) || null;
+      } catch (statusErr) {
+        console.warn('Could not check applicant status:', statusErr.message);
+      }
 
-                  <div>All Companies</div>
-                  <input type="checkbox" id="invite-perm-companies-view" class="perm-checkbox" data-prefix="invite-perm" data-section="companies" data-level="view" style="justify-self:center;">
-                  <input type="checkbox" id="invite-perm-companies-edit" class="perm-checkbox" data-prefix="invite-perm" data-section="companies" data-level="edit" style="justify-self:center;">
+      if (currentApplicantStatus && currentApplicantStatus.status === 'suspended') {
+        showToast('⚠️ Your supplier registration is suspended. You can view RFQs but can\'t apply — contact us for details.', 'error');
+      } else if (currentApplicantStatus && currentApplicantStatus.status === 'removed') {
+        showToast('⚠️ Your supplier registration has been removed. You can view RFQs but can\'t apply — contact us for details.', 'error');
+      } else {
+        showToast(pendingGateRfqId ? '👋 Welcome back! Loading RFQ...' : '👋 Welcome back! You\'re already registered.', 'success');
+      }
+      proceedPastGate();
+    } else {
+      document.getElementById('gate-email-section').style.display = 'none';
+      document.getElementById('gate-register-section').style.display = 'block';
+    }
+  } catch (err) {
+    console.error('Error checking registration:', err);
+    showToast('❌ Could not check registration. Please try again.', 'error');
+  } finally {
+    submitBtn.disabled = false;
+    submitBtn.textContent = originalLabel;
+  }
+}
 
-                  <div>Supplier Database</div>
-                  <input type="checkbox" id="invite-perm-applicants-view" class="perm-checkbox" data-prefix="invite-perm" data-section="applicants" data-level="view" style="justify-self:center;">
-                  <input type="checkbox" id="invite-perm-applicants-edit" class="perm-checkbox" data-prefix="invite-perm" data-section="applicants" data-level="edit" style="justify-self:center;">
-                </div>
-                <p style="margin:8px 0 0 0; font-size:11px; color:var(--border);">"Edit" automatically includes "View". They can always change their own password regardless of these settings.</p>
-              </div>
-              <button type="submit" class="btn gold" style="padding:10px 20px;">Invite Admin</button>
-            </form>
-            <div id="super-admins-list"></div>
+// Uploads one supplier registration document to the private
+// 'supplier-documents' bucket, folder-scoped by the client-generated
+// applicant id so files from different registrants never collide. Returns
+// the storage path (not a public URL — the bucket is private and only
+// readable by the super admin, same trust model as the table itself).
+async function uploadSupplierDocument(applicantId, keyPrefix, file) {
+  const filePath = `applicant-${applicantId}/${keyPrefix}-${Date.now()}-${file.name}`;
+  const { error } = await client.storage.from('supplier-documents').upload(filePath, file);
+  if (error) throw error;
+  return filePath;
+}
 
-            <div id="admin-permissions-modal" class="modal" style="display:none;">
-              <div class="modal-content" style="max-width:520px;">
-                <div class="modal-head">
-                  <h3>Edit Permissions</h3>
-                  <button class="drawer-close" onclick="closeModal('admin-permissions-modal')">✕</button>
-                </div>
-                <div class="modal-body">
-                  <input type="hidden" id="edit-perm-email">
-                  <p id="edit-perm-target-label" style="margin:0 0 12px 0; font-size:13px; color:var(--border);"></p>
-                  <div style="display:grid; grid-template-columns:1fr auto auto; gap:6px 16px; align-items:center; font-size:13px;">
-                    <div></div>
-                    <div style="font-weight:600; text-align:center;">View</div>
-                    <div style="font-weight:600; text-align:center;">Edit</div>
+async function handleGateRegisterSubmit(e) {
+  e.preventDefault();
+  const email = document.getElementById('gate-email').value.trim();
+  const companyName = document.getElementById('gate-company-name').value.trim();
+  const yearsInBusiness = document.getElementById('gate-years-business').value.trim();
+  const fullName = document.getElementById('gate-full-name').value.trim();
+  const title = document.getElementById('gate-title').value;
+  const designation = document.getElementById('gate-designation').value.trim();
+  const phone = document.getElementById('gate-phone').value.trim();
+  const additionalPhone = document.getElementById('gate-additional-phone').value.trim();
+  const address = document.getElementById('gate-address').value.trim();
+  const provinceEl = document.getElementById('gate-province');
+  const province = provinceEl ? provinceEl.value : '';
+  const website = document.getElementById('gate-website').value.trim();
+  const servicesDescription = document.getElementById('gate-services-description').value.trim();
+  const serviceAreas = document.getElementById('gate-service-areas').value.trim();
+  const declarationAccepted = document.getElementById('gate-declaration-accept').checked;
 
-                    <div>Invite a Company</div>
-                    <input type="checkbox" id="edit-perm-invite_company-view" class="perm-checkbox" data-prefix="edit-perm" data-section="invite_company" data-level="view" style="justify-self:center;">
-                    <input type="checkbox" id="edit-perm-invite_company-edit" class="perm-checkbox" data-prefix="edit-perm" data-section="invite_company" data-level="edit" style="justify-self:center;">
+  const cipcFile = document.getElementById('gate-doc-cipc').files[0];
+  const proofAddressFile = document.getElementById('gate-doc-proof-address').files[0];
+  const sarsFile = document.getElementById('gate-doc-sars').files[0];
+  const bankingFile = document.getElementById('gate-doc-banking').files[0];
+  const bbbeeFile = document.getElementById('gate-doc-bbbee').files[0];
+  const healthSafetyFile = document.getElementById('gate-doc-health-safety').files[0];
+  const permitsFile = document.getElementById('gate-doc-permits').files[0];
+  const otherFiles = Array.from(document.getElementById('gate-doc-other').files || []);
 
-                    <div>Platform Branding</div>
-                    <input type="checkbox" id="edit-perm-platform_branding-view" class="perm-checkbox" data-prefix="edit-perm" data-section="platform_branding" data-level="view" style="justify-self:center;">
-                    <input type="checkbox" id="edit-perm-platform_branding-edit" class="perm-checkbox" data-prefix="edit-perm" data-section="platform_branding" data-level="edit" style="justify-self:center;">
+  // The form's own `required` attributes already block submission for most
+  // of these (native HTML5 validation), but the email field belongs to the
+  // earlier step's form, not this one, so it's not covered by that — worth
+  // a defensive check. A couple of others are double-checked too since a
+  // clear error here beats a confusing DB constraint failure below.
+  if (!email || !companyName || !fullName) {
+    showToast('❌ Please fill in your email, company name and main contact person.', 'error');
+    return;
+  }
+  if (!province) {
+    showToast('❌ Please select a province (or "All Provinces") so we know what to notify you about.', 'error');
+    return;
+  }
+  if (!cipcFile || !proofAddressFile || !sarsFile) {
+    showToast('❌ Please upload CIPC Registration/ID, Proof of Address, and SARS Information — these are required.', 'error');
+    return;
+  }
+  if (!declarationAccepted) {
+    showToast('❌ Please accept the Declaration to continue.', 'error');
+    return;
+  }
 
-                    <div>All Companies</div>
-                    <input type="checkbox" id="edit-perm-companies-view" class="perm-checkbox" data-prefix="edit-perm" data-section="companies" data-level="view" style="justify-self:center;">
-                    <input type="checkbox" id="edit-perm-companies-edit" class="perm-checkbox" data-prefix="edit-perm" data-section="companies" data-level="edit" style="justify-self:center;">
+  const submitBtn = document.getElementById('gate-register-submit');
+  const originalLabel = submitBtn.textContent;
+  submitBtn.disabled = true;
+  submitBtn.textContent = 'Uploading documents...';
 
-                    <div>Supplier Database</div>
-                    <input type="checkbox" id="edit-perm-applicants-view" class="perm-checkbox" data-prefix="edit-perm" data-section="applicants" data-level="view" style="justify-self:center;">
-                    <input type="checkbox" id="edit-perm-applicants-edit" class="perm-checkbox" data-prefix="edit-perm" data-section="applicants" data-level="edit" style="justify-self:center;">
-                  </div>
-                  <p style="margin:8px 0 15px 0; font-size:11px; color:var(--border);">"Edit" automatically includes "View". They can always change their own password regardless of these settings.</p>
-                  <button type="button" class="btn gold" style="padding:10px 20px;" onclick="handleSaveAdminPermissions()">Save Permissions</button>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
+  // Generate the row's id client-side (same pattern used for rfq_submissions
+  // and rfq_questions) so uploaded files can be folder-scoped to it before
+  // the row exists, and so we never need to chain .select() onto the insert
+  // below — applicant_registrations' SELECT policy is super-admin-only, so
+  // an anonymous registrant reading the row back via RETURNING would 401.
+  const applicantId = generateUUID();
 
-        <div id="super-password-tab" class="super-tab" style="display:none;">
-          <div class="card">
-            <h2 style="margin-top:0;">Change Password</h2>
-            <p style="color:var(--border); font-size:14px; margin-bottom:20px;">Update the password for your own (platform admin) login.</p>
-            <form id="super-change-password-form" style="display:flex; flex-direction:column; gap:15px; max-width:400px;">
-              <div>
-                <label style="font-weight:bold;">New Password *</label>
-                <input type="password" id="super-change-password-new" required minlength="6" style="width:100%; padding:10px; border:1px solid var(--border); border-radius:4px; box-sizing:border-box;">
-              </div>
-              <div>
-                <label style="font-weight:bold;">Confirm New Password *</label>
-                <input type="password" id="super-change-password-confirm" required minlength="6" style="width:100%; padding:10px; border:1px solid var(--border); border-radius:4px; box-sizing:border-box;">
-              </div>
-              <div style="display:flex; justify-content:flex-end;">
-                <button type="submit" class="btn gold" style="padding:10px 24px;">Update Password</button>
-              </div>
-            </form>
-          </div>
-        </div>
-          </div>
-        </div>
-      </div>
-    </div>
+  try {
+    const [cipcPath, proofAddressPath, sarsPath] = await Promise.all([
+      uploadSupplierDocument(applicantId, 'cipc', cipcFile),
+      uploadSupplierDocument(applicantId, 'proof-of-address', proofAddressFile),
+      uploadSupplierDocument(applicantId, 'sars', sarsFile)
+    ]);
 
-    <!-- SITE FOOTER -->
-    <footer id="site-footer" class="site-footer">
-      <div class="footer-columns">
-        <div class="footer-col">
-          <h5>Platform</h5>
-          <a href="#" onclick="navGoOpportunities(); return false;">Opportunities</a>
-          <a href="#" onclick="navGoHowItWorks(); return false;">How It Works</a>
-          <a href="#" onclick="navGoAbout(); return false;">About</a>
-        </div>
-        <div class="footer-col">
-          <h5>Suppliers</h5>
-          <a href="#" onclick="openApplicantGate(null); return false;">Register</a>
-          <a href="#" onclick="showLoginForm(); return false;">Sign In</a>
-          <a href="#" onclick="navGoHelp(); return false;">Help</a>
-        </div>
-        <div class="footer-col">
-          <h5>Legal</h5>
-          <a href="#" onclick="openModal('popia-modal'); return false;">Privacy Policy</a>
-          <a href="#" onclick="navGoTerms(); return false;">Terms &amp; Conditions</a>
-        </div>
-        <div class="footer-col">
-          <h5>Contact</h5>
-          <a href="mailto:ihubsa@gmail.com">ihubsa@gmail.com</a>
-        </div>
-      </div>
-      <div class="footer-bottom">
-        <p style="margin:0 0 8px 0; font-size:12px; color:#8FA4BE; font-family:'IBM Plex Sans', sans-serif;">&copy; <span id="footer-year"></span> <span id="footer-company-name">RFQ Hub</span>. All rights reserved.</p>
-        <p style="margin:0; font-size:12px; color:#8FA4BE; font-family:'IBM Plex Sans', sans-serif; display:flex; align-items:center; justify-content:center; gap:6px;">
-          Powered by
-          <svg width="16" height="16" viewBox="0 0 100 100" aria-hidden="true" style="flex-shrink:0;">
-            <circle cx="50" cy="50" r="46" fill="#FFFFFF"/>
-            <text x="50" y="68" font-family="'IBM Plex Sans', sans-serif" font-size="52" font-weight="bold" fill="#F57C00" text-anchor="middle">i</text>
-          </svg>
-          <strong style="color:#C7D8EA;">ihubSA</strong>
-        </p>
-      </div>
-    </footer>
-  </div>
+    // Optional documents: upload what was provided, but don't let a single
+    // optional-upload failure block the whole registration — the required
+    // documents above already succeeded, so log and continue.
+    const uploadOptional = async (file, key) => {
+      if (!file) return null;
+      try {
+        return await uploadSupplierDocument(applicantId, key, file);
+      } catch (err) {
+        console.warn(`⚠️ Optional document "${key}" failed to upload:`, err.message);
+        return null;
+      }
+    };
+    const [bankingPath, bbbeePath, healthSafetyPath, permitsPath] = await Promise.all([
+      uploadOptional(bankingFile, 'banking'),
+      uploadOptional(bbbeeFile, 'bbbee'),
+      uploadOptional(healthSafetyFile, 'health-safety'),
+      uploadOptional(permitsFile, 'permits')
+    ]);
 
-  <!-- SUBMISSION DETAIL MODAL -->
-  <div id="submission-detail-modal" class="modal" style="display:none;">
-    <div class="modal-content">
-      <div class="modal-head">
-        <h3 id="submission-title">Submission Details</h3>
-        <button class="drawer-close" onclick="closeModal('submission-detail-modal')">✕</button>
-      </div>
-      <div class="modal-body">
-        <div id="submission-details-content"></div>
-        <div id="submission-info-request-box" style="display:none; margin-top:20px; padding:15px; background:#FFF8E1; border-radius:4px; border-left:3px solid #B8860B;">
-          <h4 style="margin:0 0 8px 0;">Information Requested</h4>
-          <p id="submission-info-request-text" style="margin:0 0 6px 0; white-space:pre-wrap;"></p>
-          <p id="submission-info-request-date" style="margin:0; font-size:12px; color:var(--border);"></p>
-        </div>
-        <div id="submission-info-response-box" style="display:none; margin-top:20px; padding:15px; background:#E1F0FF; border-radius:4px; border-left:3px solid #0F3557;">
-          <h4 style="margin:0 0 8px 0;">Contractor's Response</h4>
-          <p id="submission-info-response-text" style="margin:0 0 6px 0; white-space:pre-wrap;"></p>
-          <p id="submission-info-response-date" style="margin:0; font-size:12px; color:var(--border);"></p>
-        </div>
-        <div style="margin-top:30px; padding-top:20px; border-top:1px solid var(--border);">
-          <h4>Uploaded Documents</h4>
-          <div id="submission-documents-list"></div>
-        </div>
-      </div>
-      <div id="submission-info-request-form" style="display:none; padding:0 24px 20px 24px;">
-        <label style="font-weight:bold; font-size:12px; text-transform:uppercase; color:var(--ink);">What information do you need from the contractor?</label>
-        <textarea id="submission-info-request-message" rows="3" style="width:100%; margin-top:6px; padding:10px; border:1px solid var(--border); border-radius:4px; font-family:inherit;" placeholder="e.g. Please upload your latest B-BBEE certificate and confirm your VAT number."></textarea>
-      </div>
-      <div class="modal-foot">
-        <button type="button" class="btn secondary" onclick="closeModal('submission-detail-modal')">Close</button>
-        <select id="submission-status-update" onchange="onSubmissionStatusSelectChange()" style="padding:8px 12px; border:1px solid var(--border); border-radius:4px;">
-          <option value="submitted">Submitted</option>
-          <option value="under_review">Under Review</option>
-          <option value="info_requested">Request More Information</option>
-          <option value="response_received">Response Received</option>
-          <option value="approved">Approved</option>
-          <option value="rejected">Rejected</option>
-        </select>
-        <button type="button" id="submission-status-action-btn" class="btn gold" onclick="handleSubmissionStatusAction()">Update Status</button>
-      </div>
-    </div>
-  </div>
+    const otherDocuments = [];
+    for (const file of otherFiles) {
+      const path = await uploadOptional(file, 'other');
+      if (path) otherDocuments.push({ name: file.name, path });
+    }
 
-  <!-- GENERATED LINKS MODAL -->
-  <div id="generated-links-modal" class="modal" style="display:none;">
-    <div class="modal-content" style="max-width:600px;">
-      <div class="modal-head">
-        <h3>RFQ Links Created</h3>
-        <button class="drawer-close" onclick="closeModal('generated-links-modal')">✕</button>
-      </div>
-      <div class="modal-body">
-        <p style="color:var(--border); margin-bottom:15px;">Below are the unique submission links for each contractor. Copy and send these via email:</p>
-        <div id="generated-links-list"></div>
-        <p style="font-size:12px; color:var(--border); margin-top:15px; font-style:italic;">Each link is unique to a contractor and can only be used once to prevent duplicate submissions.</p>
-      </div>
-      <div class="modal-foot">
-        <button type="button" class="btn secondary" onclick="closeModal('generated-links-modal')">Done</button>
-        <button type="button" class="btn gold" onclick="copyAllLinks()">Copy All Links</button>
-      </div>
-    </div>
-  </div>
+    submitBtn.textContent = 'Registering...';
 
-  <!-- RFQ PREVIEW MODAL -->
-  <div id="rfq-preview-modal" class="modal" style="display:none;">
-    <div class="modal-content" style="max-width:700px;">
-      <div class="modal-head">
-        <h3>RFQ Preview</h3>
-        <button class="drawer-close" onclick="closeModal('rfq-preview-modal')">✕</button>
-      </div>
-      <div class="modal-body">
-        <div id="rfq-preview-body"></div>
-      </div>
-      <div class="modal-foot">
-        <button type="button" class="btn secondary" onclick="closeModal('rfq-preview-modal')">Close</button>
-      </div>
-    </div>
-  </div>
+    const { error } = await client
+      .from('applicant_registrations')
+      .insert({
+        id: applicantId,
+        full_name: fullName,
+        company_name: companyName,
+        email,
+        phone: phone || null,
+        province,
+        years_in_business: parseInt(yearsInBusiness, 10) || 0,
+        title,
+        designation,
+        additional_phone: additionalPhone || null,
+        address,
+        website_social: website || null,
+        services_description: servicesDescription,
+        service_areas: serviceAreas,
+        declaration_accepted: declarationAccepted,
+        cipc_document_path: cipcPath,
+        proof_of_address_document_path: proofAddressPath,
+        sars_document_path: sarsPath,
+        proof_of_banking_document_path: bankingPath,
+        bbbee_document_path: bbbeePath,
+        health_safety_document_path: healthSafetyPath,
+        special_permits_document_path: permitsPath,
+        other_documents: otherDocuments
+      });
+    // A duplicate email (e.g. a race with another tab, or someone
+    // double-submitting) isn't a real problem here — they're registered
+    // either way, so let them through rather than showing an error.
+    if (error && error.code !== '23505') throw error;
 
-  <!-- POPIA CONSENT MODAL -->
-  <div id="popia-modal" class="modal" style="display:none;">
-    <div class="modal-content">
-      <div class="modal-head">
-        <h3>Privacy Notice</h3>
-      </div>
-      <div class="modal-body">
-        <p>This RFQ system collects your company information to process your quotation submission. Your data will be handled in accordance with applicable privacy laws.</p>
-        <p>By proceeding, you consent to the processing of your personal and company information.</p>
-      </div>
-      <div class="modal-foot">
-        <button type="button" class="btn gold" onclick="acceptPOPIA()">Accept & Continue</button>
-      </div>
-    </div>
-  </div>
+    showToast(pendingGateRfqId ? '✅ Registered! Loading RFQ...' : '✅ You\'re registered! Browse open opportunities below.', 'success');
+    proceedPastGate();
+  } catch (err) {
+    console.error('Error registering applicant:', err);
+    showToast('❌ Registration failed: ' + err.message, 'error');
+  } finally {
+    submitBtn.disabled = false;
+    submitBtn.textContent = originalLabel;
+  }
+}
 
-  <!-- TERMS & CONDITIONS MODAL -->
-  <div id="terms-modal" class="modal" style="display:none;">
-    <div class="modal-content" style="max-width:760px;">
-      <div class="modal-head">
-        <h3>Terms &amp; Conditions</h3>
-        <button class="drawer-close" onclick="closeModal('terms-modal')">✕</button>
-      </div>
-      <div class="modal-body" style="font-size:14px; line-height:1.6;">
-              <p style="color:var(--border); font-size:13px;"><strong>Effective Date:</strong> 01 August 2026<br><strong>Last Updated:</strong> 19 August 2026</p>
-              <h4>1. Introduction</h4>
-              <p>These Terms and Conditions (&quot;Terms&quot;) govern access to and use of the iHubSA RFQ Platform (&quot;the Platform&quot;), operated by <strong>iHubSA</strong> (&quot;iHubSA&quot;, &quot;we&quot;, &quot;us&quot; or &quot;our&quot;).</p>
-              <p>The Platform provides an online facility through which contractors, businesses, organisations and other authorised users (&quot;RFQ Publishers&quot;) may publish Requests for Quotation (&quot;RFQs&quot;) and through which suppliers, contractors and members of the public (&quot;Respondents&quot;) may view and respond to those RFQs.</p>
-              <p>By accessing, registering for, submitting information to, publishing an RFQ on, or otherwise using the Platform, you acknowledge that you have read, understood and agreed to these Terms.</p>
-              <p>If you do not agree to these Terms, you must not use the Platform.</p>
-              <h4>2. Definitions</h4>
-              <p>For purposes of these Terms:</p>
-              <p><strong>&quot;iHubSA&quot;</strong> means the owner and/or operator of the iHubSA RFQ Platform.</p>
-              <p><strong>&quot;Platform&quot;</strong> means the website, software, applications, databases, systems and related services through which iHubSA provides its RFQ services.</p>
-              <p><strong>&quot;RFQ&quot;</strong> means a Request for Quotation published through the Platform seeking quotations, proposals, prices or expressions of interest for goods or services.</p>
-              <p><strong>&quot;RFQ Publisher&quot;</strong> means the person, contractor, business, organisation or other entity that creates and publishes an RFQ.</p>
-              <p><strong>&quot;Respondent&quot;</strong> means any person, supplier, contractor, business or organisation that submits information, a quotation, proposal or other response to an RFQ.</p>
-              <p><strong>&quot;User&quot;</strong> means any person who accesses or uses the Platform, including RFQ Publishers and Respondents.</p>
-              <p><strong>&quot;Personal Information&quot;</strong> has the meaning given to it under the Protection of Personal Information Act 4 of 2013 (&quot;POPIA&quot;).</p>
-              <h4>3. Nature of the Platform</h4>
-              <p>3.1 iHubSA operates the Platform as an electronic communication and RFQ facilitation platform.</p>
-              <p>3.2 iHubSA does not itself necessarily purchase the goods or services described in an RFQ.</p>
-              <p>3.3 iHubSA does not necessarily provide the goods or services described in an RFQ.</p>
-              <p>3.4 Unless expressly agreed otherwise in writing, iHubSA is <strong>not a party to any contract, quotation, purchase order, service agreement or other agreement entered into between an RFQ Publisher and a Respondent</strong>.</p>
-              <p>3.5 Any contract resulting from an RFQ is solely between the relevant RFQ Publisher and the successful Respondent.</p>
-              <p>3.6 iHubSA does not guarantee that:</p>
-              <ul>
-                <li>an RFQ will result in any quotations;</li>
-                <li>any Respondent will be appointed;</li>
-                <li>any quotation will be accepted;</li>
-                <li>an RFQ Publisher will proceed with the procurement;</li>
-                <li>a Respondent will be capable of performing the required work;</li>
-                <li>goods or services will be supplied;</li>
-                <li>payment will be made;</li>
-                <li>the quoted price will remain valid; or</li>
-                <li>a contract will ultimately be concluded between the parties.</li>
-              </ul>
-              <h4>4. RFQ Publisher Responsibilities</h4>
-              <p>4.1 An RFQ Publisher is solely responsible for the accuracy, completeness and legality of every RFQ published through the Platform.</p>
-              <p>4.2 An RFQ Publisher warrants that information submitted to the Platform is, to the best of its knowledge, accurate, complete and not misleading.</p>
-              <p>4.3 An RFQ Publisher must not publish an RFQ containing:</p>
-              <ul>
-                <li>knowingly false or misleading information;</li>
-                <li>fraudulent information;</li>
-                <li>unlawful requirements;</li>
-                <li>defamatory statements;</li>
-                <li>discriminatory or unlawful content;</li>
-                <li>information intended to deceive Respondents;</li>
-                <li>confidential information that the Publisher is not authorised to disclose;</li>
-                <li>another person&#x27;s Personal Information without an appropriate lawful basis; or</li>
-                <li>content that infringes another person&#x27;s intellectual property rights.</li>
-              </ul>
-              <p>4.4 The RFQ Publisher is responsible for ensuring that it has all necessary authority to publish the RFQ and to disclose the information contained within it.</p>
-              <p>4.5 iHubSA does not independently verify the accuracy, legality, legitimacy, financial standing, authority or identity of every RFQ Publisher.</p>
-              <h4>5. False, Misleading or Fraudulent Information</h4>
-              <p>5.1 Users are strictly prohibited from submitting false, fraudulent, deceptive or materially misleading information to the Platform.</p>
-              <p>5.2 This includes, but is not limited to:</p>
-              <ul>
-                <li>false company information;</li>
-                <li>false contact details;</li>
-                <li>false business registration information;</li>
-                <li>false qualifications;</li>
-                <li>false certifications;</li>
-                <li>false references;</li>
-                <li>false pricing;</li>
-                <li>fictitious RFQs;</li>
-                <li>misleading descriptions of goods or services;</li>
-                <li>impersonation of another person or organisation; and</li>
-                <li>deliberately misleading another User.</li>
-              </ul>
-              <p>5.3 The User who submits information remains solely responsible for that information.</p>
-              <p>5.4 <strong>iHubSA accepts no responsibility or liability for false, inaccurate, incomplete, misleading, fraudulent or unlawful information submitted by any User.</strong></p>
-              <p>5.5 iHubSA may, where reasonably necessary, suspend, remove or restrict access to content or accounts where it reasonably believes that information may be false, fraudulent, unlawful or otherwise in breach of these Terms.</p>
-              <p>5.6 iHubSA may cooperate with law enforcement authorities or other competent authorities where required or permitted by law.</p>
-              <h4>6. Respondent Responsibilities</h4>
-              <p>6.1 Respondents are solely responsible for the quotations, proposals, prices, information and documentation they submit.</p>
-              <p>6.2 A Respondent must ensure that all information submitted is accurate and current.</p>
-              <p>6.3 A Respondent must only submit a quotation where it has the capability, authority and intention to provide the goods or services described.</p>
-              <p>6.4 A Respondent must independently satisfy itself regarding:</p>
-              <ul>
-                <li>the identity of the RFQ Publisher;</li>
-                <li>the requirements of the RFQ;</li>
-                <li>the location of the work;</li>
-                <li>specifications;</li>
-                <li>quantities;</li>
-                <li>deadlines;</li>
-                <li>applicable laws and regulations;</li>
-                <li>payment arrangements;</li>
-                <li>contractual terms; and</li>
-                <li>any other matter relevant to the proposed transaction.</li>
-              </ul>
-              <p>6.5 Respondents are encouraged to perform their own due diligence before entering into any agreement or providing goods or services.</p>
-              <h4>7. No Verification or Endorsement</h4>
-              <p>7.1 Unless expressly stated otherwise, iHubSA does not represent or warrant that any User, RFQ Publisher or Respondent:</p>
-              <ul>
-                <li>is properly registered;</li>
-                <li>is financially sound;</li>
-                <li>is suitably qualified;</li>
-                <li>possesses the required licences;</li>
-                <li>possesses the required experience;</li>
-                <li>is insured;</li>
-                <li>is able to perform the required work;</li>
-                <li>will honour a quotation;</li>
-                <li>will make payment; or</li>
-                <li>will comply with any agreement entered into with another User.</li>
-              </ul>
-              <p>7.2 Publication of an RFQ or quotation on the Platform does not constitute an endorsement, recommendation, certification or guarantee by iHubSA.</p>
-              <p>7.3 Users must conduct their own due diligence before entering into any commercial relationship.</p>
-              <h4>8. Contracts Between Users</h4>
-              <p>8.1 Any agreement resulting from an RFQ is concluded directly between the RFQ Publisher and the successful Respondent.</p>
-              <p>8.2 iHubSA is not responsible for negotiating, drafting, enforcing or administering contracts between Users unless expressly engaged to provide such services under a separate written agreement.</p>
-              <p>8.3 iHubSA accepts no responsibility for:</p>
-              <ul>
-                <li>non-performance;</li>
-                <li>defective goods;</li>
-                <li>defective workmanship;</li>
-                <li>delays;</li>
-                <li>non-payment;</li>
-                <li>overcharging;</li>
-                <li>underquoting;</li>
-                <li>cancellation;</li>
-                <li>breach of contract;</li>
-                <li>disputes;</li>
-                <li>damages;</li>
-                <li>losses;</li>
-                <li>injuries;</li>
-                <li>theft;</li>
-                <li>fraud; or</li>
-                <li>any other dispute between an RFQ Publisher and Respondent.</li>
-              </ul>
-              <p>8.4 Users are responsible for resolving disputes arising from their own commercial relationships.</p>
-              <h4>9. Pricing and Quotations</h4>
-              <p>9.1 Prices displayed or submitted through the Platform are provided by the relevant User.</p>
-              <p>9.2 iHubSA does not guarantee the accuracy of any price.</p>
-              <p>9.3 iHubSA does not guarantee that a quotation represents the lowest, highest, best or most appropriate price.</p>
-              <p>9.4 Users remain responsible for checking whether quotations include applicable taxes, delivery charges, labour, materials, exclusions, VAT, fees or other costs.</p>
-              <p>9.5 Unless expressly stated otherwise, iHubSA does not participate in the selection of the successful quotation.</p>
-              <h4>10. Platform Availability</h4>
-              <p>10.1 iHubSA will make reasonable efforts to maintain the availability of the Platform.</p>
-              <p>10.2 However, iHubSA does not guarantee uninterrupted or error-free operation.</p>
-              <p>10.3 The Platform may occasionally be unavailable because of:</p>
-              <ul>
-                <li>maintenance;</li>
-                <li>upgrades;</li>
-                <li>technical failures;</li>
-                <li>hosting failures;</li>
-                <li>telecommunications failures;</li>
-                <li>internet outages;</li>
-                <li>cybersecurity incidents;</li>
-                <li>third-party service failures;</li>
-                <li>software errors; or</li>
-                <li>circumstances beyond iHubSA&#x27;s reasonable control.</li>
-              </ul>
-              <p>10.4 iHubSA will not be responsible for losses resulting from the temporary unavailability of the Platform, to the extent permitted by applicable law.</p>
-              <h4>11. Third-Party Services</h4>
-              <p>11.1 The Platform may rely on third-party services, including hosting providers, database providers, email providers, authentication services, payment providers and other technology providers.</p>
-              <p>11.2 iHubSA is not responsible for failures or interruptions caused by third-party service providers where such failure is outside iHubSA&#x27;s reasonable control.</p>
-              <p>11.3 Links to external websites or services may be provided for convenience.</p>
-              <p>11.4 iHubSA does not endorse or accept responsibility for the content, accuracy, security, availability or practices of third-party websites or services.</p>
-              <h4>12. POPIA and Protection of Personal Information</h4>
-              <p>12.1 iHubSA recognises the importance of protecting Personal Information and will take reasonable measures to process Personal Information in accordance with the <strong>Protection of Personal Information Act 4 of 2013 (POPIA)</strong> and other applicable South African legislation.</p>
-              <p>12.2 Personal Information may include information such as:</p>
-              <ul>
-                <li>names;</li>
-                <li>contact details;</li>
-                <li>email addresses;</li>
-                <li>telephone numbers;</li>
-                <li>business information;</li>
-                <li>identification or registration information;</li>
-                <li>information contained in submitted documents; and</li>
-                <li>other information capable of identifying an individual.</li>
-              </ul>
-              <p>12.3 Personal Information may be collected and processed for purposes including:</p>
-              <ul>
-                <li>creating and administering User accounts;</li>
-                <li>publishing and administering RFQs;</li>
-                <li>facilitating communication between Users;</li>
-                <li>receiving and processing quotations;</li>
-                <li>providing Platform functionality;</li>
-                <li>maintaining records;</li>
-                <li>preventing fraud and misuse;</li>
-                <li>maintaining Platform security;</li>
-                <li>complying with legal obligations; and</li>
-                <li>communicating with Users regarding the Platform.</li>
-              </ul>
-              <p>12.4 iHubSA will endeavour to process Personal Information lawfully, reasonably and transparently and only for purposes that are compatible with the purposes for which the information was collected.</p>
-              <p>12.5 Users must not submit another person&#x27;s Personal Information to the Platform unless they have a lawful basis or appropriate authority to do so.</p>
-              <p>12.6 Users remain responsible for ensuring that Personal Information they submit to the Platform has been lawfully obtained and may lawfully be disclosed.</p>
-              <p>12.7 iHubSA may use appropriate third-party technology and service providers to store, process or transmit information on its behalf. Where applicable, iHubSA will take reasonable steps to ensure that appropriate safeguards are implemented.</p>
-              <p>12.8 iHubSA will take reasonable technical and organisational measures designed to protect Personal Information against loss, damage, unauthorised access, unlawful processing and other reasonably foreseeable risks.</p>
-              <p>12.9 No internet-based system can be guaranteed to be completely secure. Users acknowledge that electronic transmission and storage of information carries inherent risks.</p>
-              <p>12.10 Users may have rights under POPIA regarding their Personal Information, including rights relating to access, correction, objection and other rights provided by applicable law.</p>
-              <p>12.11 A separate <strong>Privacy Policy</strong> should be read together with these Terms and provides further information regarding the collection and processing of Personal Information.</p>
-              <h4>13. Data Submitted by Users</h4>
-              <p>13.1 By submitting information to the Platform, the User grants iHubSA permission to process and use that information for the purposes necessary to operate, maintain and improve the Platform and provide the relevant RFQ services.</p>
-              <p>13.2 Users must ensure that documents and information uploaded to the Platform do not contain unnecessary Personal Information belonging to third parties.</p>
-              <p>13.3 iHubSA reserves the right to remove information where reasonably necessary to protect Users, comply with applicable law, protect the Platform or prevent misuse.</p>
-              <h4>14. Prohibited Use</h4>
-              <p>Users may not use the Platform to:</p>
-              <ul>
-                <li>commit or facilitate fraud;</li>
-                <li>impersonate another person or organisation;</li>
-                <li>submit false information;</li>
-                <li>distribute malicious software;</li>
-                <li>interfere with the operation of the Platform;</li>
-                <li>attempt to gain unauthorised access to systems or accounts;</li>
-                <li>collect information about other Users unlawfully;</li>
-                <li>distribute spam;</li>
-                <li>publish unlawful, defamatory or threatening content;</li>
-                <li>infringe intellectual property rights;</li>
-                <li>conduct unlawful activities;</li>
-                <li>manipulate RFQs or quotations dishonestly;</li>
-                <li>submit multiple fraudulent quotations;</li>
-                <li>interfere with another User&#x27;s procurement process; or</li>
-                <li>otherwise misuse the Platform.</li>
-              </ul>
-              <h4>15. Account Security</h4>
-              <p>15.1 Where User accounts are provided, Users are responsible for maintaining the confidentiality of their login credentials.</p>
-              <p>15.2 Users must immediately notify iHubSA if they suspect that their account has been compromised.</p>
-              <p>15.3 Users are responsible for activities undertaken through their account unless they can demonstrate that such activity occurred without their authorisation and despite reasonable security measures.</p>
-              <h4>16. Intellectual Property</h4>
-              <p>16.1 Unless otherwise stated, the Platform, including its software, design, branding, layout, graphics, databases, functionality and original content, remains the property of iHubSA or its licensors.</p>
-              <p>16.2 Users may not copy, reproduce, modify, distribute, sell, reverse engineer or commercially exploit the Platform or its underlying technology without prior written permission.</p>
-              <p>16.3 Users retain ownership of content and information they submit to the Platform, subject to the rights necessary for iHubSA to operate the Platform.</p>
-              <h4>17. Content Moderation and Removal</h4>
-              <p>17.1 iHubSA reserves the right, but does not assume an obligation, to review, restrict, suspend or remove content that it reasonably believes:</p>
-              <ul>
-                <li>breaches these Terms;</li>
-                <li>is unlawful;</li>
-                <li>is fraudulent;</li>
-                <li>is misleading;</li>
-                <li>infringes third-party rights;</li>
-                <li>creates a security risk;</li>
-                <li>contains inappropriate or harmful material; or</li>
-                <li>may expose iHubSA or another User to legal liability.</li>
-              </ul>
-              <p>17.2 iHubSA is not required to monitor every RFQ, quotation, message, document or other item submitted to the Platform.</p>
-              <h4>18. Disclaimer</h4>
-              <p>18.1 The Platform is provided on an <strong>&quot;as available&quot;</strong> and <strong>&quot;as is&quot;</strong> basis to the maximum extent permitted by applicable law.</p>
-              <p>18.2 iHubSA makes no guarantee that information submitted by Users is accurate, complete, reliable or current.</p>
-              <p>18.3 iHubSA does not guarantee that the Platform will always be available, secure, uninterrupted or free from errors.</p>
-              <p>18.4 Users use the Platform and rely on information obtained through it at their own risk.</p>
-              <p>18.5 Users are responsible for independently verifying information before relying upon it for commercial, financial, legal or other purposes.</p>
-              <h4>19. Limitation of Liability</h4>
-              <p>19.1 To the maximum extent permitted by South African law, iHubSA, its owners, directors, employees, contractors, service providers and agents shall not be liable for any loss, damage, cost, claim or expense arising directly or indirectly from:</p>
-              <ul>
-                <li>inaccurate information submitted by a User;</li>
-                <li>false or fraudulent information;</li>
-                <li>reliance on an RFQ;</li>
-                <li>reliance on a quotation;</li>
-                <li>a failure to receive a quotation;</li>
-                <li>acceptance or rejection of a quotation;</li>
-                <li>non-payment;</li>
-                <li>non-performance;</li>
-                <li>defective goods or services;</li>
-                <li>breach of contract between Users;</li>
-                <li>fraud committed by another User;</li>
-                <li>disputes between Users;</li>
-                <li>loss of business;</li>
-                <li>loss of profits;</li>
-                <li>loss of revenue;</li>
-                <li>loss of opportunity;</li>
-                <li>loss of data;</li>
-                <li>interruption of business;</li>
-                <li>cybersecurity incidents, except to the extent caused by iHubSA&#x27;s failure to comply with a legal obligation applicable to it;</li>
-                <li>Platform downtime;</li>
-                <li>third-party services; or</li>
-                <li>any other transaction or relationship between Users.</li>
-              </ul>
-              <p>19.2 Nothing in these Terms is intended to exclude or limit any liability that cannot lawfully be excluded or limited under applicable South African law.</p>
-              <p>19.3 Where any limitation or exclusion of liability in these Terms is found to be unenforceable, that provision shall be interpreted to the maximum extent permitted by law and the remaining provisions shall continue to apply.</p>
-              <h4>20. Indemnity</h4>
-              <p>20.1 To the maximum extent permitted by law, a User agrees to indemnify and hold harmless iHubSA, its owners, directors, employees, contractors, agents and service providers against claims, losses, damages, costs and expenses arising from:</p>
-              <ul>
-                <li>the User&#x27;s breach of these Terms;</li>
-                <li>false or misleading information submitted by the User;</li>
-                <li>fraudulent activity;</li>
-                <li>unlawful conduct;</li>
-                <li>infringement of third-party rights;</li>
-                <li>misuse of the Platform;</li>
-                <li>breach of confidentiality or privacy obligations;</li>
-                <li>breach of an agreement with another User; or</li>
-                <li>any claim arising from goods or services offered, supplied or procured by the User.</li>
-              </ul>
-              <p>20.2 This indemnity does not apply to the extent that applicable law prohibits such indemnification.</p>
-              <h4>21. Reporting Misuse</h4>
-              <p>Users are encouraged to notify iHubSA of suspected:</p>
-              <ul>
-                <li>fraud;</li>
-                <li>false RFQs;</li>
-                <li>fraudulent quotations;</li>
-                <li>impersonation;</li>
-                <li>unlawful content;</li>
-                <li>privacy violations;</li>
-                <li>security vulnerabilities; or</li>
-                <li>other misuse of the Platform.</li>
-              </ul>
-              <p>Reports should be submitted through the contact details provided on the Platform.</p>
-              <p>iHubSA may investigate reports at its discretion and may take appropriate action where reasonably necessary.</p>
-              <h4>22. Suspension and Termination</h4>
-              <p>22.1 iHubSA may suspend or terminate access to the Platform where it reasonably believes that a User:</p>
-              <ul>
-                <li>has breached these Terms;</li>
-                <li>has submitted fraudulent information;</li>
-                <li>has misused the Platform;</li>
-                <li>presents a security risk;</li>
-                <li>has engaged in unlawful conduct; or</li>
-                <li>has otherwise acted in a manner that may adversely affect iHubSA or other Users.</li>
-              </ul>
-              <p>22.2 iHubSA may also suspend access where necessary for security, maintenance or legal reasons.</p>
-              <p>22.3 Suspension or termination does not affect rights or obligations that arose before termination.</p>
-              <h4>23. Changes to These Terms</h4>
-              <p>23.1 iHubSA may update these Terms from time to time.</p>
-              <p>23.2 Updated Terms will be published on the Platform with an updated effective date.</p>
-              <p>23.3 Continued use of the Platform following publication of updated Terms constitutes acceptance of the revised Terms, to the extent permitted by law.</p>
-              <h4>24. Governing Law</h4>
-              <p>24.1 These Terms are governed by the laws of the <strong>Republic of South Africa</strong>.</p>
-              <p>24.2 Any dispute concerning these Terms shall, subject to applicable law, be subject to the jurisdiction of the appropriate courts of South Africa.</p>
-              <h4>25. Severability</h4>
-              <p>If any provision of these Terms is found to be unlawful, invalid or unenforceable, that provision shall be interpreted or modified to the minimum extent necessary to make it enforceable, where legally permissible.</p>
-              <p>The remaining provisions shall continue in full force and effect.</p>
-              <h4>26. Entire Agreement</h4>
-              <p>These Terms, together with the Platform&#x27;s Privacy Policy and any additional terms expressly incorporated into the Platform, constitute the agreement governing the User&#x27;s use of the Platform, unless a separate written agreement has been entered into between iHubSA and the User.</p>
-              <h4>27. Contact</h4>
-              <p>Questions, complaints, requests regarding Personal Information, or reports of suspected misuse should be directed to:</p>
-              <p><strong>iHubSA</strong><br><strong>Email:</strong> admin@ihub-sa.co.za<br><strong>Telephone: +27 66 2263462</strong></p>
-              <p>For POPIA-related matters, Users may contact iHubSA&#x27;s designated Information Officer using the contact details published on the Platform.</p>
-              <p><strong>IMPORTANT USER NOTICE</strong></p>
-              <p><strong>iHubSA is an RFQ facilitation platform. iHubSA does not guarantee the accuracy, legitimacy, financial standing, qualifications or performance of any RFQ Publisher or Respondent. Users are responsible for conducting their own due diligence before entering into any transaction or agreement.</strong></p>
-              <p><strong>iHubSA accepts no responsibility for false, misleading, fraudulent or inaccurate information submitted by Users, or for any contract, transaction, payment, goods, services, loss, damage or dispute arising between Users.</strong></p>
-              <p><strong>By using this Platform, you acknowledge and agree to these Terms and Conditions.</strong></p>
-      </div>
-      <div class="modal-foot">
-        <button type="button" class="btn gold" onclick="closeModal('terms-modal')">Close</button>
-      </div>
-    </div>
-  </div>
+function proceedPastGate() {
+  closeModal('applicant-gate-modal');
+  const rfqId = pendingGateRfqId;
+  pendingGateRfqId = null;
+  if (!rfqId) {
+    // Generic "Register Free" / "Register as a Supplier" — nothing to
+    // open, just take them to the listings they can now apply to.
+    const listEl = document.getElementById('public-rfq-list');
+    if (listEl) listEl.scrollIntoView({ behavior: 'smooth' });
+    return;
+  }
 
-  <!-- GENERIC "COMING SOON" INFO MODAL (About / Help / Terms placeholders) -->
-  <div id="info-page-modal" class="modal" style="display:none;">
-    <div class="modal-content" style="max-width:440px;">
-      <div class="modal-head">
-        <h3 id="info-page-modal-title">Coming Soon</h3>
-        <button class="drawer-close" onclick="closeModal('info-page-modal')">✕</button>
-      </div>
-      <div class="modal-body">
-        <p id="info-page-modal-body" style="color:var(--ink);"></p>
-      </div>
-      <div class="modal-foot">
-        <button type="button" class="btn gold" onclick="closeModal('info-page-modal')">Close</button>
-      </div>
-    </div>
-  </div>
+  const url = new URL(window.location.href);
+  url.searchParams.set('open', rfqId);
+  window.history.replaceState({}, '', url);
+  loadOpenRFQView(rfqId);
+}
 
-  <!-- APPLICANT REGISTRATION GATE MODAL -->
-  <div id="applicant-gate-modal" class="modal" style="display:none;">
-    <div class="modal-content" style="max-width:680px;">
-      <div class="modal-head">
-        <h3 id="gate-modal-title">Register to View &amp; Apply</h3>
-        <button class="drawer-close" onclick="closeModal('applicant-gate-modal')">✕</button>
-      </div>
-      <div class="modal-body">
-        <p id="gate-modal-intro" style="color:var(--border); margin-bottom:20px;">To view this RFQ's details and apply, please confirm your email. It only takes a moment.</p>
+// ===== RFQ QUESTIONS & ANSWERS =====
+// Deliberately its own self-contained modal (own email/name fields) rather
+// than reusing the applicant-gate flow — contractors should be able to ask
+// a quick question without registering, and this avoids any risk of
+// disturbing the already-working gate/registration logic above.
+function openAskQuestionModal(rfqId, rfqName) {
+  pendingAskQuestionRfqId = rfqId;
+  const nameEl = document.getElementById('ask-question-rfq-name');
+  if (nameEl) nameEl.textContent = rfqName || '';
+  const form = document.getElementById('ask-question-form');
+  if (form) form.reset();
+  closeMobileNav();
+  openModal('ask-question-modal');
+}
 
-        <div id="gate-email-section">
-          <form id="gate-email-form">
-            <div style="margin-bottom:15px;">
-              <label>Email Address *</label>
-              <input type="email" id="gate-email" required style="width:100%; box-sizing:border-box;" placeholder="you@company.com">
-            </div>
-            <button type="submit" class="btn gold" id="gate-email-submit" style="width:100%; padding:12px;">Continue</button>
-          </form>
-        </div>
+async function handleAskQuestionSubmit(e) {
+  e.preventDefault();
+  if (!pendingAskQuestionRfqId) return;
 
-        <div id="gate-register-section" style="display:none;">
-          <p style="background:var(--bg-2); padding:12px; border-radius:4px; font-size:13px; color:var(--ink); margin-bottom:20px;">We don't have this email on file yet. Please complete registration on the IhubSA PRFQ Hub Supplier Database to continue.</p>
-          <form id="gate-register-form">
+  const email = document.getElementById('ask-question-email').value.trim();
+  const name = document.getElementById('ask-question-name').value.trim();
+  const question = document.getElementById('ask-question-text').value.trim();
 
-            <h4 style="margin:0 0 12px 0; color:var(--primary);">Company Details</h4>
-            <div style="margin-bottom:15px;">
-              <label>Company Name *</label>
-              <input type="text" id="gate-company-name" required style="width:100%; box-sizing:border-box;">
-            </div>
-            <div style="margin-bottom:15px;">
-              <label>Number of Years in Business *</label>
-              <input type="number" id="gate-years-business" required min="0" step="1" style="width:100%; box-sizing:border-box;">
-            </div>
+  if (!email || !question) {
+    showToast('❌ Please enter your email and a question.', 'error');
+    return;
+  }
 
-            <h4 style="margin:20px 0 12px 0; color:var(--primary);">Main Contact Person</h4>
-            <div style="margin-bottom:15px;">
-              <label>Main Contact Person *</label>
-              <input type="text" id="gate-full-name" required style="width:100%; box-sizing:border-box;">
-            </div>
-            <div style="margin-bottom:15px;">
-              <label>Title *</label>
-              <select id="gate-title" required style="width:100%; box-sizing:border-box; padding:10px; border:1px solid var(--border); border-radius:4px; font-family:inherit;">
-                <option value="">Select...</option>
-                <option value="Ms">Ms</option>
-                <option value="Mrs">Mrs</option>
-                <option value="Mr">Mr</option>
-                <option value="Dr">Dr</option>
-                <option value="Professor">Professor</option>
-              </select>
-            </div>
-            <div style="margin-bottom:15px;">
-              <label>Designation *</label>
-              <input type="text" id="gate-designation" required style="width:100%; box-sizing:border-box;">
-            </div>
-            <div style="display:flex; gap:15px; flex-wrap:wrap;">
-              <div style="margin-bottom:15px; flex:1; min-width:200px;">
-                <label>Phone Number</label>
-                <input type="tel" id="gate-phone" style="width:100%; box-sizing:border-box;">
-              </div>
-              <div style="margin-bottom:15px; flex:1; min-width:200px;">
-                <label>Additional Contact Number</label>
-                <input type="tel" id="gate-additional-phone" style="width:100%; box-sizing:border-box;">
-              </div>
-            </div>
+  const submitBtn = document.getElementById('ask-question-submit');
+  const originalLabel = submitBtn.textContent;
+  submitBtn.disabled = true;
+  submitBtn.textContent = 'Sending...';
 
-            <h4 style="margin:20px 0 12px 0; color:var(--primary);">Location &amp; Reach</h4>
-            <div style="margin-bottom:15px;">
-              <label>Address *</label>
-              <textarea id="gate-address" required rows="2" style="width:100%; box-sizing:border-box; font-family:inherit; padding:10px; border:1px solid var(--border); border-radius:4px;"></textarea>
-              <p style="margin:6px 0 0 0; font-size:12px; color:var(--border);">Please note: preference will be given to businesses operating in the province/town listed on a given RFQ.</p>
-            </div>
-            <div style="margin-bottom:15px;">
-              <label>Notify Me About New Opportunities In *</label>
-              <select id="gate-province" required style="width:100%; box-sizing:border-box; padding:10px; border:1px solid var(--border); border-radius:4px; font-family:inherit;">
-                <option value="">Select a province...</option>
-                <option value="ALL">All Provinces</option>
-                <option value="Eastern Cape">Eastern Cape</option>
-                <option value="Free State">Free State</option>
-                <option value="Gauteng">Gauteng</option>
-                <option value="KwaZulu-Natal">KwaZulu-Natal</option>
-                <option value="Limpopo">Limpopo</option>
-                <option value="Mpumalanga">Mpumalanga</option>
-                <option value="Northern Cape">Northern Cape</option>
-                <option value="North West">North West</option>
-                <option value="Western Cape">Western Cape</option>
-              </select>
-              <p style="margin:6px 0 0 0; font-size:12px; color:var(--border);">We'll email you when a new open RFQ is posted in this province. You can change this anytime from the link in those emails.</p>
-            </div>
-            <div style="margin-bottom:15px;">
-              <label>Website / Social Media</label>
-              <input type="text" id="gate-website" placeholder="Paste a link and/or share social media handles" style="width:100%; box-sizing:border-box;">
-            </div>
+  try {
+    // Generate the id client-side (same pattern as submitContractorForm's
+    // submissionId) rather than using .select() to read the row back after
+    // insert. The asker is unauthenticated and rfq_questions' SELECT policy
+    // is scoped to the RFQ's own company/super-admin only, so a post-insert
+    // .select() has no RLS permission to read the row back and fails with a
+    // 401 — the row is still inserted, but the client never sees it.
+    const questionId = generateUUID();
 
-            <h4 style="margin:20px 0 12px 0; color:var(--primary);">Services</h4>
-            <div style="margin-bottom:15px;">
-              <label>Please describe the services or products offered by your company. *</label>
-              <textarea id="gate-services-description" required rows="3" style="width:100%; box-sizing:border-box; font-family:inherit; padding:10px; border:1px solid var(--border); border-radius:4px;"></textarea>
-            </div>
-            <div style="margin-bottom:15px;">
-              <label>Please list the geographical areas that your company can service. *</label>
-              <textarea id="gate-service-areas" required rows="2" style="width:100%; box-sizing:border-box; font-family:inherit; padding:10px; border:1px solid var(--border); border-radius:4px;"></textarea>
-            </div>
+    const { error } = await client
+      .from('rfq_questions')
+      .insert({
+        id: questionId,
+        rfq_id: pendingAskQuestionRfqId,
+        applicant_email: email,
+        applicant_name: name || null,
+        question
+      });
 
-            <h4 style="margin:20px 0 12px 0; color:var(--primary);">Document Submission</h4>
-            <p style="margin:0 0 12px 0; font-size:12px; color:var(--border);">Please upload all documents as a PDF file. Certain uploads allow for only 1 file (can be multiple pages).</p>
-            <div style="margin-bottom:15px;">
-              <label>CIPC Registration or ID for Sole Prop/NPO Certificate/Other *</label>
-              <input type="file" id="gate-doc-cipc" required accept="application/pdf" style="width:100%; box-sizing:border-box;">
-            </div>
-            <div style="margin-bottom:15px;">
-              <label>Proof of Address *</label>
-              <input type="file" id="gate-doc-proof-address" required accept="application/pdf" style="width:100%; box-sizing:border-box;">
-            </div>
-            <div style="margin-bottom:15px;">
-              <label>SARS Information (Tax Clearance Certificate/PIN and/or VAT/Tax Registration Proof) *</label>
-              <input type="file" id="gate-doc-sars" required accept="application/pdf" style="width:100%; box-sizing:border-box;">
-            </div>
-            <div style="margin-bottom:15px;">
-              <label>Proof of Banking</label>
-              <input type="file" id="gate-doc-banking" accept="application/pdf" style="width:100%; box-sizing:border-box;">
-            </div>
-            <div style="margin-bottom:15px;">
-              <label>B-BBEE Affidavit or Certificate <span style="font-weight:normal; color:var(--border);">(if applicable)</span></label>
-              <input type="file" id="gate-doc-bbbee" accept="application/pdf" style="width:100%; box-sizing:border-box;">
-            </div>
-            <div style="margin-bottom:15px;">
-              <label>Valid Health and Safety Certificate <span style="font-weight:normal; color:var(--border);">(if applicable)</span></label>
-              <input type="file" id="gate-doc-health-safety" accept="application/pdf" style="width:100%; box-sizing:border-box;">
-            </div>
-            <div style="margin-bottom:15px;">
-              <label>Any Special Permits or Registrations <span style="font-weight:normal; color:var(--border);">(as applicable)</span></label>
-              <input type="file" id="gate-doc-permits" accept="application/pdf" style="width:100%; box-sizing:border-box;">
-            </div>
-            <div style="margin-bottom:15px;">
-              <label>Any Other Documents</label>
-              <input type="file" id="gate-doc-other" accept="application/pdf" multiple style="width:100%; box-sizing:border-box;">
-            </div>
+    if (error) throw error;
 
-            <h4 style="margin:20px 0 12px 0; color:var(--primary);">Declarations</h4>
-            <div style="background:var(--bg-2); padding:12px; border-radius:4px; font-size:12px; color:var(--ink); max-height:160px; overflow-y:auto; margin-bottom:15px;">
-              <p>By submitting this Supplier Registration Form, I declare and confirm that:</p>
-              <p>All information and supporting documentation provided in this application is, to the best of my knowledge, true, accurate, complete and current. I understand that the information provided may be relied upon when evaluating quotations, bids, proposals and other procurement opportunities.</p>
-              <p>I undertake to notify IhubSA RFQ Hub of any material changes to the information provided in this application within ten (10) days of such change.</p>
-              <p>I confirm that I have read and understood the applicable Terms and Conditions, together with any disclaimers and notices relating to supplier registration, and agree to comply with these requirements.</p>
-              <p>I acknowledge that the information submitted will be treated confidentially and processed and stored in accordance with the Protection of Personal Information Act, 4 of 2013 (POPIA) and applicable data protection requirements.</p>
-              <p>By submitting this form and accepting this Declaration, I further acknowledge and agree that:</p>
-              <p>My business may be registered as a potential service provider on the IhubSA RFQ Hub Supplier Database.</p>
-              <p>IhubSA RFQ Hub may contact me from time to time regarding relevant procurement opportunities and may invite or encourage my business to submit quotations, bids or proposals for applicable goods or services.</p>
-              <p>Registration on the Supplier Database does not constitute appointment, accreditation, preferred supplier status, or a guarantee of any work, procurement opportunity or contract.</p>
-              <p>Participation in any procurement opportunity will remain subject to the applicable procurement process, requirements, evaluation criteria and approvals.</p>
-              <p style="margin-bottom:0;">IhubSA RFQ Hub reserves the right to verify information and supporting documentation submitted as part of this registration.</p>
-            </div>
-            <div style="margin-bottom:15px; display:flex; align-items:flex-start; gap:8px;">
-              <input type="checkbox" id="gate-declaration-accept" required style="margin-top:3px;">
-              <label for="gate-declaration-accept" style="font-weight:normal;">I have read, understood and accept the above Declaration and the applicable Supplier Registration Terms and Conditions. *</label>
-            </div>
+    showToast('✅ Your question has been sent.', 'success');
+    closeModal('ask-question-modal');
 
-            <button type="submit" class="btn gold" id="gate-register-submit" style="width:100%; padding:12px;">Register &amp; Continue</button>
-            <button type="button" class="btn secondary" style="width:100%; padding:12px; margin-top:10px;" onclick="gateBackToEmail()">← Use a different email</button>
-          </form>
-        </div>
-      </div>
-    </div>
-  </div>
+    // Best-effort staff notification — the question is already saved either
+    // way, so a failure here (e.g. no contact email on file, Resend hiccup)
+    // shouldn't be shown to the asker as an error.
+    callPublicEdgeFunction('notify-new-rfq-question', { questionId })
+      .catch(err => console.error('notify-new-rfq-question failed:', err));
+  } catch (err) {
+    console.error('Error submitting question:', err);
+    showToast('❌ Could not send your question: ' + err.message, 'error');
+  } finally {
+    submitBtn.disabled = false;
+    submitBtn.textContent = originalLabel;
+  }
+}
 
-  <!-- ASK A QUESTION MODAL -->
-  <div id="ask-question-modal" class="modal" style="display:none;">
-    <div class="modal-content" style="max-width:480px;">
-      <div class="modal-head">
-        <h3>Ask a Question</h3>
-        <button class="drawer-close" onclick="closeModal('ask-question-modal')">✕</button>
-      </div>
-      <div class="modal-body">
-        <p id="ask-question-rfq-name" style="color:var(--primary); margin-bottom:20px; font-weight:bold;"></p>
-        <form id="ask-question-form">
-          <div style="margin-bottom:15px;">
-            <label>Email Address *</label>
-            <input type="email" id="ask-question-email" required style="width:100%; box-sizing:border-box;" placeholder="you@company.com">
-          </div>
-          <div style="margin-bottom:15px;">
-            <label>Your Name</label>
-            <input type="text" id="ask-question-name" style="width:100%; box-sizing:border-box;">
-          </div>
-          <div style="margin-bottom:15px;">
-            <label>Your Question *</label>
-            <textarea id="ask-question-text" required rows="4" style="width:100%; box-sizing:border-box; padding:10px; border:1px solid var(--border); border-radius:4px; font-family:inherit;" placeholder="e.g. Does the delivery timeframe include installation?"></textarea>
-          </div>
-          <p style="font-size:12px; color:var(--border); margin-bottom:20px;">Your question goes to the company that posted this RFQ. If they publish an answer, it's shown publicly on the RFQ page without your name or email — otherwise they'll reply to you directly by email.</p>
-          <button type="submit" class="btn gold" id="ask-question-submit" style="width:100%; padding:12px;">Send Question</button>
-        </form>
-      </div>
-    </div>
-  </div>
+function openAnswerQuestionModal(questionId) {
+  pendingAnswerQuestionId = questionId;
+  const textEl = document.getElementById('answer-question-text');
+  // Looked up from the map built while rendering the RFQ Console rather
+  // than passed inline through onclick, since question text is free-form
+  // (can contain quotes/newlines) and unsafe to embed in an HTML attribute.
+  if (textEl) textEl.textContent = (rfqQuestionsById[questionId] && rfqQuestionsById[questionId].question) || '';
+  const form = document.getElementById('answer-question-form');
+  if (form) form.reset();
+  openModal('answer-question-modal');
+}
 
-  <!-- ANSWER QUESTION MODAL (staff) -->
-  <div id="answer-question-modal" class="modal" style="display:none;">
-    <div class="modal-content" style="max-width:520px;">
-      <div class="modal-head">
-        <h3>Reply to Question</h3>
-        <button class="drawer-close" onclick="closeModal('answer-question-modal')">✕</button>
-      </div>
-      <div class="modal-body">
-        <div style="background:var(--bg-2); padding:12px; border-radius:4px; margin-bottom:20px;">
-          <p style="margin:0 0 4px 0; font-size:12px; text-transform:uppercase; color:var(--border); font-weight:bold;">Question</p>
-          <p id="answer-question-text" style="margin:0; white-space:pre-wrap;"></p>
-        </div>
-        <form id="answer-question-form">
-          <div style="margin-bottom:15px;">
-            <label>Your Answer *</label>
-            <textarea id="answer-question-response" required rows="4" style="width:100%; box-sizing:border-box; padding:10px; border:1px solid var(--border); border-radius:4px; font-family:inherit;"></textarea>
-          </div>
-          <div style="margin-bottom:15px;">
-            <label>Visibility *</label>
-            <div style="display:flex; flex-direction:column; gap:10px; margin-top:8px;">
-              <label style="font-weight:normal; display:flex; align-items:flex-start; gap:8px;">
-                <input type="radio" name="answer-visibility" value="public" checked style="margin-top:3px;">
-                <span><strong>Post publicly on the RFQ page</strong><br><span style="font-size:12px; color:var(--border);">Visible to all contractors viewing this RFQ. Also emailed to the asker. Their identity is never shown to others.</span></span>
-              </label>
-              <label style="font-weight:normal; display:flex; align-items:flex-start; gap:8px;">
-                <input type="radio" name="answer-visibility" value="private" style="margin-top:3px;">
-                <span><strong>Send by email only</strong><br><span style="font-size:12px; color:var(--border);">Sent privately to the contractor who asked — not shown on the public RFQ page.</span></span>
-              </label>
-            </div>
-          </div>
-          <button type="submit" class="btn gold" id="answer-question-submit" style="width:100%; padding:12px;">Send Answer</button>
-        </form>
-      </div>
-    </div>
-  </div>
+async function handleAnswerQuestionSubmit(e) {
+  e.preventDefault();
+  if (!pendingAnswerQuestionId) return;
 
-  <div id="expand-search-modal" class="modal" style="display:none;">
-    <div class="modal-content" style="max-width:480px;">
-      <div class="modal-head">
-        <h3>Expand Supplier Search</h3>
-        <button class="drawer-close" onclick="closeModal('expand-search-modal')">✕</button>
-      </div>
-      <div class="modal-body">
-        <p style="margin:0 0 15px 0; font-size:13px; color:var(--border);">Not getting enough applications? Notify registered suppliers in other provinces about this RFQ too. Provinces already notified aren't shown &mdash; nobody gets a duplicate notification.</p>
-        <form id="expand-search-form">
-          <div id="expand-search-provinces" style="display:flex; flex-direction:column; gap:8px; margin-bottom:20px;"></div>
-          <button type="submit" class="btn gold" id="expand-search-submit" style="width:100%; padding:12px;">Notify Selected Provinces</button>
-        </form>
-      </div>
-    </div>
-  </div>
+  const answer = document.getElementById('answer-question-response').value.trim();
+  const visibilityInput = document.querySelector('input[name="answer-visibility"]:checked');
+  const visibility = visibilityInput ? visibilityInput.value : 'public';
 
-  <div id="edit-supplier-modal" class="modal" style="display:none;">
-    <div class="modal-content" style="max-width:640px;">
-      <div class="modal-head">
-        <h3>Edit Supplier</h3>
-        <button class="drawer-close" onclick="closeModal('edit-supplier-modal')">✕</button>
-      </div>
-      <div class="modal-body">
-        <form id="edit-supplier-form">
-          <div class="form-grid-2">
-            <div>
-              <label style="font-weight:bold; display:block; margin-bottom:8px;">Company Name *</label>
-              <input type="text" id="edit-supplier-company-name" required style="width:100%; padding:10px; border:1px solid var(--border); border-radius:4px; box-sizing:border-box;">
-            </div>
-            <div>
-              <label style="font-weight:bold; display:block; margin-bottom:8px;">Contact Person *</label>
-              <input type="text" id="edit-supplier-full-name" required style="width:100%; padding:10px; border:1px solid var(--border); border-radius:4px; box-sizing:border-box;">
-            </div>
-          </div>
-          <div class="form-grid-2" style="margin-top:15px;">
-            <div>
-              <label style="font-weight:bold; display:block; margin-bottom:8px;">Title</label>
-              <select id="edit-supplier-title" style="width:100%; padding:10px; border:1px solid var(--border); border-radius:4px; box-sizing:border-box;">
-                <option value="">—</option>
-                <option value="Ms">Ms</option>
-                <option value="Mrs">Mrs</option>
-                <option value="Mr">Mr</option>
-                <option value="Dr">Dr</option>
-                <option value="Professor">Professor</option>
-              </select>
-            </div>
-            <div>
-              <label style="font-weight:bold; display:block; margin-bottom:8px;">Designation</label>
-              <input type="text" id="edit-supplier-designation" style="width:100%; padding:10px; border:1px solid var(--border); border-radius:4px; box-sizing:border-box;">
-            </div>
-          </div>
-          <div class="form-grid-2" style="margin-top:15px;">
-            <div>
-              <label style="font-weight:bold; display:block; margin-bottom:8px;">Email *</label>
-              <input type="email" id="edit-supplier-email" required style="width:100%; padding:10px; border:1px solid var(--border); border-radius:4px; box-sizing:border-box;">
-            </div>
-            <div>
-              <label style="font-weight:bold; display:block; margin-bottom:8px;">Notify Province</label>
-              <select id="edit-supplier-province" style="width:100%; padding:10px; border:1px solid var(--border); border-radius:4px; box-sizing:border-box;">
-                <option value="">Not set</option>
-                <option value="ALL">All Provinces</option>
-              </select>
-            </div>
-          </div>
-          <div class="form-grid-2" style="margin-top:15px;">
-            <div>
-              <label style="font-weight:bold; display:block; margin-bottom:8px;">Phone</label>
-              <input type="tel" id="edit-supplier-phone" style="width:100%; padding:10px; border:1px solid var(--border); border-radius:4px; box-sizing:border-box;">
-            </div>
-            <div>
-              <label style="font-weight:bold; display:block; margin-bottom:8px;">Additional Phone</label>
-              <input type="tel" id="edit-supplier-additional-phone" style="width:100%; padding:10px; border:1px solid var(--border); border-radius:4px; box-sizing:border-box;">
-            </div>
-          </div>
-          <div class="form-grid-2" style="margin-top:15px;">
-            <div>
-              <label style="font-weight:bold; display:block; margin-bottom:8px;">Years in Business</label>
-              <input type="number" min="0" id="edit-supplier-years" style="width:100%; padding:10px; border:1px solid var(--border); border-radius:4px; box-sizing:border-box;">
-            </div>
-            <div>
-              <label style="font-weight:bold; display:block; margin-bottom:8px;">Website / Social</label>
-              <input type="text" id="edit-supplier-website" style="width:100%; padding:10px; border:1px solid var(--border); border-radius:4px; box-sizing:border-box;">
-            </div>
-          </div>
-          <div style="margin-top:15px;">
-            <label style="font-weight:bold; display:block; margin-bottom:8px;">Address</label>
-            <textarea id="edit-supplier-address" style="width:100%; padding:10px; border:1px solid var(--border); border-radius:4px; box-sizing:border-box; min-height:60px; font-family:inherit;"></textarea>
-          </div>
-          <div style="margin-top:15px;">
-            <label style="font-weight:bold; display:block; margin-bottom:8px;">Services</label>
-            <textarea id="edit-supplier-services" style="width:100%; padding:10px; border:1px solid var(--border); border-radius:4px; box-sizing:border-box; min-height:60px; font-family:inherit;"></textarea>
-          </div>
-          <div style="margin-top:15px;">
-            <label style="font-weight:bold; display:block; margin-bottom:8px;">Service Areas</label>
-            <textarea id="edit-supplier-service-areas" style="width:100%; padding:10px; border:1px solid var(--border); border-radius:4px; box-sizing:border-box; min-height:60px; font-family:inherit;"></textarea>
-          </div>
-          <button type="submit" class="btn gold" id="edit-supplier-submit" style="width:100%; padding:12px; margin-top:20px;">Save Changes</button>
-        </form>
-      </div>
-    </div>
-  </div>
+  if (!answer) {
+    showToast('❌ Please enter an answer.', 'error');
+    return;
+  }
 
-  <!-- TOAST NOTIFICATIONS -->
-  <div id="toast-wrap" style="position:fixed; top:20px; right:20px; z-index:9999; max-width:400px;"></div>
+  const submitBtn = document.getElementById('answer-question-submit');
+  const originalLabel = submitBtn.textContent;
+  submitBtn.disabled = true;
+  submitBtn.textContent = 'Sending...';
 
-  <!-- Supabase SDK -->
-  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-
-  <!-- SheetJS: reads .csv/.xlsx/.xls files client-side for the Supplier Database "Import Suppliers" feature -->
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
-
-  <!-- Application Scripts -->
-  <script src="app.js"></script>
-
-  <script>
-    // Initialize app on page load
-    window.addEventListener('load', () => {
-      initApp();
+  try {
+    await callEdgeFunction('answer-rfq-question', {
+      questionId: pendingAnswerQuestionId,
+      answer,
+      visibility
     });
 
-    // Setup form on DOM ready
-    document.addEventListener('DOMContentLoaded', setupCreateRFQForm);
-  </script>
-</body>
-</html>
+    showToast('✅ Answer sent.', 'success');
+    closeModal('answer-question-modal');
+    pendingAnswerQuestionId = null;
+    loadRFQConsole();
+  } catch (err) {
+    console.error('Error sending answer:', err);
+    showToast('❌ Could not send answer: ' + err.message, 'error');
+  } finally {
+    submitBtn.disabled = false;
+    submitBtn.textContent = originalLabel;
+  }
+}
+
+// Unpublishing removes an Open RFQ from the public portal (listing, direct
+// links, and the applicant gate) without deleting anything — submissions
+// already received stay intact and reviewable, and the RFQ can be
+// republished once whatever prompted the unpublish (e.g. an error in the
+// listing) is fixed. The real enforcement is the rfqs_select_scoped RLS
+// policy (is_public = true AND is_withdrawn = false); this update is what
+// flips that gate.
+async function unpublishRFQ(rfqId) {
+  if (!confirm('Unpublish this RFQ from the public portal? It will no longer be visible or reachable by contractors browsing or with a direct link. Submissions already received are kept, and you can republish it later.')) return;
+
+  try {
+    const { error } = await client
+      .from('rfqs')
+      .update({ is_withdrawn: true, withdrawn_at: new Date().toISOString() })
+      .eq('id', rfqId);
+    if (error) throw error;
+    showToast('✅ RFQ unpublished — no longer visible on the public portal.', 'success');
+    loadRFQConsole();
+  } catch (err) {
+    showToast('Error: ' + err.message, 'error');
+  }
+}
+
+async function republishRFQ(rfqId) {
+  if (!confirm('Republish this RFQ? It will become visible on the public portal again.')) return;
+
+  try {
+    const { error } = await client
+      .from('rfqs')
+      .update({ is_withdrawn: false, withdrawn_at: null })
+      .eq('id', rfqId);
+    if (error) throw error;
+    showToast('✅ RFQ republished — visible on the public portal again.', 'success');
+    loadRFQConsole();
+  } catch (err) {
+    showToast('Error: ' + err.message, 'error');
+  }
+}
+
+// "Expand Supplier Search" lets staff broaden which provinces' registered
+// suppliers get notified about an already-published RFQ, e.g. when the
+// original province didn't produce enough applications. Only provinces not
+// already in the RFQ's notified_provinces are offered, so nobody already
+// notified gets a duplicate email/SMS.
+function openExpandSearchModal(rfqId, notifiedProvincesJson) {
+  pendingExpandSearchRfqId = rfqId;
+  let notified = [];
+  try { notified = JSON.parse(notifiedProvincesJson) || []; } catch { notified = []; }
+
+  const container = document.getElementById('expand-search-provinces');
+  const remaining = PROVINCE_OPTIONS.filter(p => !notified.includes(p));
+
+  if (remaining.length === 0) {
+    container.innerHTML = '<p style="margin:0; color:var(--border); font-style:italic;">All provinces have already been notified for this RFQ.</p>';
+    document.getElementById('expand-search-submit').style.display = 'none';
+  } else {
+    document.getElementById('expand-search-submit').style.display = '';
+    container.innerHTML = remaining.map(p => `
+      <label style="font-weight:normal; display:flex; align-items:center; gap:8px;">
+        <input type="checkbox" name="expand-province" value="${p}">
+        <span>${p}</span>
+      </label>
+    `).join('');
+  }
+
+  openModal('expand-search-modal');
+}
+
+async function handleExpandSearchSubmit(e) {
+  e.preventDefault();
+  if (!pendingExpandSearchRfqId) return;
+
+  const additionalProvinces = Array.from(document.querySelectorAll('input[name="expand-province"]:checked')).map(el => el.value);
+  if (additionalProvinces.length === 0) {
+    showToast('❌ Select at least one province.', 'error');
+    return;
+  }
+
+  const submitBtn = document.getElementById('expand-search-submit');
+  const originalLabel = submitBtn.textContent;
+  submitBtn.disabled = true;
+  submitBtn.textContent = 'Notifying...';
+
+  try {
+    const result = await callEdgeFunction('notify-suppliers-new-rfq', {
+      rfqId: pendingExpandSearchRfqId,
+      additionalProvinces
+    });
+
+    const parts = [];
+    if (result.sent > 0) parts.push(`${result.sent} emailed`);
+    if (result.smsSent > 0) parts.push(`${result.smsSent} texted`);
+    if (parts.length > 0) {
+      showToast(`✅ Notified suppliers in ${additionalProvinces.join(', ')} (${parts.join(', ')})`, 'success');
+    } else if (result.alreadyNotified) {
+      showToast('Those provinces were already notified for this RFQ.', 'info');
+    } else {
+      showToast('No registered suppliers found in the selected province(s) yet.', 'info');
+    }
+    if (result.smsError) {
+      showToast('Note: SMS notifications for the new province(s) did not go out — ' + result.smsError, 'warning');
+    }
+
+    closeModal('expand-search-modal');
+    pendingExpandSearchRfqId = null;
+    loadRFQConsole();
+  } catch (err) {
+    console.error('Error expanding supplier search:', err);
+    showToast('❌ Could not notify additional provinces: ' + err.message, 'error');
+  } finally {
+    submitBtn.disabled = false;
+    submitBtn.textContent = originalLabel;
+  }
+}
+
+function showLoginForm() {
+  hideAllTopLevelViews();
+  document.getElementById('public-view').style.display = 'block';
+  hideAllPublicSections();
+  document.getElementById('login-section').style.display = 'block';
+  setHeaderActions('form');
+  // The marketplace hero copy ("Find Your Next Business Opportunity...")
+  // is only meant for the public landing page — reset it back to the
+  // neutral default so it doesn't linger behind the login card when
+  // someone clicks "Sign In" straight off the landing page.
+  applyDefaultBranding();
+}
+
+function showSetPasswordView() {
+  hideAllTopLevelViews();
+  document.getElementById('public-view').style.display = 'block';
+  hideAllPublicSections();
+  document.getElementById('set-password-section').style.display = 'block';
+
+  // Same form/flow (client.auth.updateUser({ password })) handles both a
+  // brand-new invited account and an existing account resetting a
+  // forgotten password — only the copy needs to differ.
+  const heading = document.getElementById('set-password-heading');
+  const subtext = document.getElementById('set-password-subtext');
+  if (currentAuthType === 'recovery') {
+    if (heading) heading.textContent = 'Reset Your Password';
+    if (subtext) subtext.textContent = 'Choose a new password for your account.';
+  } else {
+    if (heading) heading.textContent = 'Choose a Password';
+    if (subtext) subtext.textContent = "You've been invited to RFQ Hub. Set a password to finish setting up your account.";
+  }
+
+  setHeaderActions('form');
+  applyDefaultBranding();
+}
+
+function showForgotPasswordView() {
+  hideAllTopLevelViews();
+  document.getElementById('public-view').style.display = 'block';
+  hideAllPublicSections();
+  document.getElementById('forgot-password-section').style.display = 'block';
+  document.getElementById('forgot-password-sent-note').style.display = 'none';
+  const form = document.getElementById('forgot-password-form');
+  if (form) form.style.display = 'flex';
+  const codeForm = document.getElementById('reset-code-form');
+  if (codeForm) {
+    codeForm.style.display = 'none';
+    codeForm.reset();
+  }
+  setHeaderActions('form');
+  applyDefaultBranding();
+}
+
+// ===== BRANDING =====
+async function loadPlatformSettings() {
+  try {
+    const { data, error } = await client
+      .from('platform_settings')
+      .select('logo_url, logo_scale')
+      .eq('id', 1)
+      .maybeSingle();
+    if (!error && data) {
+      platformSettings = data;
+    }
+  } catch (err) {
+    console.warn('Could not load platform settings:', err);
+  }
+}
+
+function updateFooterCompanyName(name) {
+  const el = document.getElementById('footer-company-name');
+  if (el) el.textContent = name || 'RFQ Hub';
+}
+
+// Base header logo size at 100% scale. A company/platform's logo_scale
+// (0.5–1.5, enforced server-side too) multiplies both dimensions so a
+// wide wordmark still keeps its aspect ratio via object-fit:contain.
+const BASE_LOGO_HEIGHT = 84;
+const BASE_LOGO_MAX_WIDTH = 260;
+
+function applyLogoScale(imgEl, scale) {
+  const s = Math.min(1.5, Math.max(0.5, Number(scale) || 1));
+  imgEl.style.height = `${Math.round(BASE_LOGO_HEIGHT * s)}px`;
+  imgEl.style.maxWidth = `${Math.round(BASE_LOGO_MAX_WIDTH * s)}px`;
+}
+
+// The very top masthead (logo + title + subtitle) is platform-level
+// branding — it always shows the platform's own logo (set on the Platform
+// Branding tab) and "Public RFQ Hub", regardless of which company's
+// dashboard or public RFQ page is currently showing. Company-specific
+// branding only appears further down the page (hero section, dashboard
+// header bar, footer).
+function applyPlatformMasthead() {
+  document.getElementById('brand-title').textContent = 'Public RFQ Hub';
+  document.getElementById('brand-subtitle').textContent = 'Request for Quotation Management System';
+
+  const img = document.getElementById('brand-logo-img');
+  const def = document.getElementById('brand-logo-default');
+  if (platformSettings && platformSettings.logo_url) {
+    applyLogoScale(img, platformSettings.logo_scale);
+    img.src = platformSettings.logo_url;
+    img.style.display = 'block';
+    def.style.display = 'none';
+  } else {
+    img.style.display = 'none';
+    def.style.display = 'block';
+  }
+}
+
+function applyDefaultBranding() {
+  applyPlatformMasthead();
+  document.getElementById('hero-title').textContent = 'RFQ Hub';
+  document.getElementById('hero-subtitle').textContent = DEFAULT_HERO_SUBTITLE;
+  updateFooterCompanyName('RFQ Hub');
+}
+
+function applyCompanyBranding(company, opts = {}) {
+  if (!company) { applyDefaultBranding(); return; }
+
+  applyPlatformMasthead();
+  document.getElementById('hero-title').textContent = opts.heroTitle || company.name || 'RFQ Hub';
+  document.getElementById('hero-subtitle').textContent = opts.heroSubtitle || DEFAULT_HERO_SUBTITLE;
+  updateFooterCompanyName(company.name);
+}
+
+// ===== AUTH =====
+async function handleLoginSubmit(e) {
+  e.preventDefault();
+  const email = document.getElementById('login-email').value.trim();
+  const password = document.getElementById('login-password').value;
+  if (!email || !password) return;
+
+  try {
+    const { data, error } = await client.auth.signInWithPassword({ email, password });
+    if (error) throw error;
+    currentUser = data.user;
+    showToast('Welcome back!', 'success');
+    await loadCurrentCompanyAndRoute(false);
+  } catch (err) {
+    console.error('Login error:', err);
+    showToast('Login failed: ' + err.message, 'error');
+  }
+}
+
+// Deliberately shows the same "check your inbox" message whether or not the
+// email actually has an account — same reasoning Supabase's own API follows
+// by default: telling an unauthenticated visitor "no account exists for that
+// email" lets them enumerate who's registered. Only a genuine send failure
+// (bad request, rate limit, etc.) surfaces as an error.
+async function handleForgotPasswordSubmit(e) {
+  e.preventDefault();
+  const email = document.getElementById('forgot-password-email').value.trim();
+  if (!email) return;
+
+  const submitBtn = e.target.querySelector('button[type="submit"]');
+  if (submitBtn) submitBtn.disabled = true;
+
+  try {
+    // redirectTo is kept for completeness (some Supabase email templates
+    // include the link alongside the code), but the flow below relies on
+    // the 6-digit {{ .Token }} code, not this link, to sidestep email
+    // security scanners pre-fetching and burning single-use links.
+    const { error } = await client.auth.resetPasswordForEmail(email, { redirectTo: SITE_URL });
+    if (error) throw error;
+  } catch (err) {
+    console.error('Reset password error:', err);
+    showToast('Error: ' + err.message, 'error');
+    if (submitBtn) submitBtn.disabled = false;
+    return;
+  }
+
+  passwordResetEmail = email;
+  document.getElementById('forgot-password-form').style.display = 'none';
+  document.getElementById('forgot-password-sent-note').style.display = 'block';
+  const codeForm = document.getElementById('reset-code-form');
+  if (codeForm) codeForm.style.display = 'flex';
+  if (submitBtn) submitBtn.disabled = false;
+}
+
+async function handleResetCodeSubmit(e) {
+  e.preventDefault();
+
+  if (!passwordResetEmail) {
+    showToast('Please request a new code first.', 'error');
+    showForgotPasswordView();
+    return;
+  }
+
+  const code = document.getElementById('reset-code-token').value.trim();
+  const password = document.getElementById('reset-code-new-password').value;
+  const confirmPassword = document.getElementById('reset-code-confirm-password').value;
+
+  if (!/^\d{6}$/.test(code)) {
+    showToast('Enter the 6-digit code from your email', 'error');
+    return;
+  }
+  if (password.length < 6) {
+    showToast('Password must be at least 6 characters', 'error');
+    return;
+  }
+  if (password !== confirmPassword) {
+    showToast('Passwords do not match', 'error');
+    return;
+  }
+
+  const submitBtn = e.target.querySelector('button[type="submit"]');
+  if (submitBtn) submitBtn.disabled = true;
+
+  try {
+    // Redeeming the code (rather than clicking a link) authenticates the
+    // recipient directly — there's no intermediate link for an email
+    // scanner to pre-fetch and burn before the real person acts.
+    const { error: verifyError } = await client.auth.verifyOtp({
+      email: passwordResetEmail,
+      token: code,
+      type: 'recovery',
+    });
+    if (verifyError) throw verifyError;
+
+    const { error: updateError } = await client.auth.updateUser({ password });
+    if (updateError) throw updateError;
+
+    passwordResetEmail = null;
+    showToast('✅ Password reset! You can now log in.', 'success');
+    showLoginForm();
+  } catch (err) {
+    console.error('Reset code error:', err);
+    showToast('Error: ' + err.message, 'error');
+  } finally {
+    if (submitBtn) submitBtn.disabled = false;
+  }
+}
+
+async function handleSetPasswordSubmit(e) {
+  e.preventDefault();
+  const password = document.getElementById('set-password-new').value;
+  const confirmPassword = document.getElementById('set-password-confirm').value;
+
+  if (password.length < 6) {
+    showToast('Password must be at least 6 characters', 'error');
+    return;
+  }
+  if (password !== confirmPassword) {
+    showToast('Passwords do not match', 'error');
+    return;
+  }
+
+  try {
+    // Clear needs_password_setup (set when the invite was sent — see
+    // invite-super-admin/invite-member) now that they've actually set one.
+    // updateUser's `data` merges into existing user_metadata rather than
+    // replacing it, so this doesn't touch invited_company_id/invited_role.
+    const { error } = await client.auth.updateUser({ password, data: { needs_password_setup: false } });
+    if (error) throw error;
+
+    // Drop the invite/recovery hash AND query (PKCE's ?code=... lives in
+    // the query string, not the hash) so a page refresh doesn't try to
+    // re-process an already-used link.
+    history.replaceState(null, '', window.location.pathname);
+
+    showToast('✅ Password set!', 'success');
+    await loadCurrentCompanyAndRoute(false);
+  } catch (err) {
+    console.error('Set password error:', err);
+    showToast('Error: ' + err.message, 'error');
+  }
+}
+
+async function handleChangePasswordSubmit(e) {
+  return submitPasswordChange(e, 'change-password-new', 'change-password-confirm', 'change-password-form');
+}
+
+async function handleSuperChangePasswordSubmit(e) {
+  return submitPasswordChange(e, 'super-change-password-new', 'super-change-password-confirm', 'super-change-password-form');
+}
+
+async function submitPasswordChange(e, newFieldId, confirmFieldId, formId) {
+  e.preventDefault();
+  const password = document.getElementById(newFieldId).value;
+  const confirmPassword = document.getElementById(confirmFieldId).value;
+
+  if (password.length < 6) {
+    showToast('Password must be at least 6 characters', 'error');
+    return;
+  }
+  if (password !== confirmPassword) {
+    showToast('Passwords do not match', 'error');
+    return;
+  }
+
+  try {
+    const { error } = await client.auth.updateUser({ password });
+    if (error) throw error;
+    document.getElementById(formId).reset();
+    showToast('✅ Password updated', 'success');
+  } catch (err) {
+    console.error('Change password error:', err);
+    showToast('Error: ' + err.message, 'error');
+  }
+}
+
+// ===== INVITES =====
+async function callEdgeFunction(functionName, payload) {
+  const { data: { session } } = await client.auth.getSession();
+  if (!session) throw new Error('You must be logged in to do that');
+
+  const response = await fetch(`${SUPABASE_URL}/functions/v1/${functionName}`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${session.access_token}`
+    },
+    body: JSON.stringify(payload)
+  });
+
+  const result = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    throw new Error(result.error || `Request failed (${response.status})`);
+  }
+  return result;
+}
+
+async function callInviteFunction(payload) {
+  return callEdgeFunction('invite-member', payload);
+}
+
+// Like callEdgeFunction, but for Edge Functions meant to be called by an
+// unauthenticated caller (e.g. a contractor who just asked a question with
+// no login) — no session/Authorization header is required or sent.
+async function callPublicEdgeFunction(functionName, payload) {
+  const response = await fetch(`${SUPABASE_URL}/functions/v1/${functionName}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload)
+  });
+
+  const result = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    throw new Error(result.error || `Request failed (${response.status})`);
+  }
+  return result;
+}
+
+// Emails each contractor their unique RFQ link via the send-rfq-invites
+// Edge Function (Resend). Best-effort: a failure here doesn't undo the RFQ
+// or its invitation rows — the links are still shown/copyable as a fallback.
+async function sendRFQInviteEmails(rfqId, invitations) {
+  const payload = {
+    rfqId,
+    invitations: invitations.map(inv => ({ email: inv.contractor_email, token: inv.invitation_token }))
+  };
+
+  try {
+    const result = await callEdgeFunction('send-rfq-invites', payload);
+    showToast(`✅ Emailed ${result.sent || invitations.length} contractor(s)`, 'success');
+  } catch (err) {
+    console.error('Error sending contractor emails:', err);
+    showToast('RFQ created, but emailing contractors failed: ' + err.message, 'warning');
+  }
+}
+
+// Fires automatically right after a new Open (public) RFQ is created —
+// emails every registered supplier whose notification province matches
+// this RFQ's province (or who chose "All Provinces"). Best-effort, same
+// as sendRFQInviteEmails: a failure here doesn't undo the RFQ itself, it
+// just means suppliers won't have been proactively emailed — the RFQ is
+// still live and browsable on the public portal either way.
+async function notifySuppliersNewRFQ(rfqId) {
+  try {
+    const result = await callEdgeFunction('notify-suppliers-new-rfq', { rfqId });
+    const parts = [];
+    if (result.sent > 0) parts.push(`${result.sent} emailed`);
+    if (result.smsSent > 0) parts.push(`${result.smsSent} texted`);
+    if (parts.length > 0) {
+      showToast(`✅ Notified registered suppliers in this province (${parts.join(', ')})`, 'success');
+    }
+    if (result.smsError) {
+      // Best-effort second channel — email above may still have gone out fine,
+      // so this is a soft warning rather than blocking anything.
+      console.error('SMS notification issue:', result.smsError);
+      showToast('Note: supplier SMS notifications did not go out — ' + result.smsError, 'warning');
+    }
+  } catch (err) {
+    console.error('Error notifying suppliers:', err);
+    showToast('RFQ created, but notifying suppliers failed: ' + err.message, 'warning');
+  }
+}
+
+async function handleInviteCompanySubmit(e) {
+  e.preventDefault();
+  const companyName = document.getElementById('invite-company-name').value.trim();
+  const email = document.getElementById('invite-company-email').value.trim();
+
+  if (!companyName || !email) {
+    showToast('Please fill in both fields', 'error');
+    return;
+  }
+
+  try {
+    showToast('Sending invite...', 'info');
+    await callInviteFunction({ companyName, email });
+    showToast(`✅ Invited ${email} to set up "${companyName}"`, 'success');
+    document.getElementById('invite-company-form').reset();
+    loadSuperAdminCompanies();
+  } catch (err) {
+    console.error('Invite company error:', err);
+    showToast('Error: ' + err.message, 'error');
+  }
+}
+
+// Manage Admins: only ever reachable by the admin-manager (see
+// isAdminManager / showSuperAdminView) — the Edge Function itself also
+// re-checks this server-side, so the tab being hidden for everyone else
+// is a UX convenience, not the actual enforcement.
+let lastLoadedSuperAdmins = []; // cached so openAdminPermissionsModal can look up an admin's current grants by email without re-fetching or embedding JSON in onclick attributes
+
+const ADMIN_PERMISSION_SECTION_LABELS = {
+  invite_company: 'Invite a Company',
+  platform_branding: 'Platform Branding',
+  companies: 'All Companies',
+  applicants: 'Supplier Database'
+};
+
+function permissionSummaryText(permissions) {
+  const parts = ADMIN_PERMISSION_SECTIONS
+    .filter(section => permissions && permissions[section] && (permissions[section].view || permissions[section].edit))
+    .map(section => `${ADMIN_PERMISSION_SECTION_LABELS[section]} (${permissions[section].edit ? 'edit' : 'view'})`);
+  return parts.length ? parts.join(', ') : 'No sections granted yet';
+}
+
+async function loadSuperAdminsList() {
+  try {
+    const { data: admins, error } = await client
+      .from('super_admins')
+      .select('*')
+      .order('created_at', { ascending: true });
+
+    if (error) throw error;
+    lastLoadedSuperAdmins = admins || [];
+
+    const list = document.getElementById('super-admins-list');
+    if (!list) return;
+
+    list.innerHTML = (admins || []).map(a => `
+      <div style="display:flex; justify-content:space-between; align-items:center; padding:15px; border:1px solid var(--border); border-radius:4px; margin-bottom:10px; flex-wrap:wrap; gap:10px;">
+        <div>
+          <p style="margin:0; font-weight:600;">${escapeHtmlClient(a.email)} ${a.can_manage_admins ? '<span class="submission-status approved">Owner</span>' : '<span class="submission-status" style="background:var(--bg-2); color:var(--ink); border:1px solid var(--border);">Super Admin</span>'}</p>
+          <p style="margin:2px 0 0 0; font-size:12px; color:var(--border);">${a.invited_by ? 'Invited by ' + escapeHtmlClient(a.invited_by) + ' · ' : ''}${new Date(a.created_at).toLocaleDateString()}</p>
+          ${a.can_manage_admins ? '' : `<p style="margin:4px 0 0 0; font-size:12px; color:var(--border);">${escapeHtmlClient(permissionSummaryText(a.permissions))}</p>`}
+        </div>
+        ${a.can_manage_admins ? '' : `
+          <div style="display:flex; gap:8px;">
+            <button type="button" class="btn secondary" style="padding:6px 12px; font-size:12px;" onclick="openAdminPermissionsModal('${a.email.replace(/'/g, "\\'")}')">⚙️ Permissions</button>
+            <button type="button" class="btn secondary" style="padding:6px 12px; font-size:12px; color:#D32F2F; border-color:#D32F2F;" onclick="removeSuperAdminEntry('${a.email.replace(/'/g, "\\'")}')">Remove</button>
+          </div>
+        `}
+      </div>
+    `).join('') || '<p style="color:var(--border); text-align:center; padding:20px;">No admins yet.</p>';
+  } catch (err) {
+    console.error('Error loading admins:', err);
+    const list = document.getElementById('super-admins-list');
+    if (list) list.innerHTML = '<p style="color:var(--warning);">Error loading admins.</p>';
+  }
+}
+
+async function handleInviteSuperAdminSubmit(e) {
+  e.preventDefault();
+  const email = document.getElementById('invite-super-admin-email').value.trim();
+  if (!email) {
+    showToast('Please enter an email address', 'error');
+    return;
+  }
+
+  const permissions = collectPermissionsFromGrid('invite-perm');
+
+  try {
+    showToast('Sending invite...', 'info');
+    const result = await callEdgeFunction('invite-super-admin', { email, permissions });
+    if (result.alreadyAdmin) {
+      showToast(`ℹ️ ${email} is already a Super Admin. Use the ⚙️ Permissions button below to change what they can access.`, 'info');
+    } else if (result.existingAccount) {
+      showToast(`✅ ${email} now has Super Admin access — they already had an account, so we emailed them instead of an invite link.`, 'success');
+    } else {
+      showToast(`✅ Invited ${email} — they'll get an email to set their own password.`, 'success');
+    }
+    document.getElementById('invite-super-admin-form').reset();
+    setPermissionsGrid('invite-perm', {});
+    loadSuperAdminsList();
+  } catch (err) {
+    console.error('Invite super admin error:', err);
+    showToast('Error: ' + err.message, 'error');
+  }
+}
+
+async function removeSuperAdminEntry(email) {
+  if (email === (currentUser ? currentUser.email : null)) {
+    showToast("❌ You can't remove your own admin access from here.", 'error');
+    return;
+  }
+  if (!confirm(`Remove Super Admin access for "${email}"? Their login account isn't deleted — this only revokes platform admin access. You can re-invite them later.`)) return;
+
+  try {
+    const { error } = await client.from('super_admins').delete().eq('email', email);
+    if (error) throw error;
+    showToast(`✅ Removed ${email} from Super Admins.`, 'success');
+    loadSuperAdminsList();
+  } catch (err) {
+    console.error('Error removing admin:', err);
+    showToast('❌ Error: ' + err.message, 'error');
+  }
+}
+
+async function handleInviteTeammateSubmit(e) {
+  e.preventDefault();
+  if (!currentCompany) return;
+  const email = document.getElementById('invite-teammate-email').value.trim();
+
+  if (!email) {
+    showToast('Please enter an email', 'error');
+    return;
+  }
+
+  try {
+    showToast('Sending invite...', 'info');
+    await callInviteFunction({ companyId: currentCompany.id, email, role: 'staff' });
+    showToast(`✅ Invited ${email} to your team`, 'success');
+    document.getElementById('invite-teammate-form').reset();
+    loadTeamMembers();
+  } catch (err) {
+    console.error('Invite teammate error:', err);
+    showToast('Error: ' + err.message, 'error');
+  }
+}
+
+async function loadTeamMembers() {
+  if (!currentCompany) return;
+  try {
+    const { data: members, error: membersError } = await client
+      .from('company_members')
+      .select('id, role, email, user_id')
+      .eq('company_id', currentCompany.id)
+      .order('created_at', { ascending: true });
+
+    if (membersError) throw membersError;
+
+    const { data: invites } = await client
+      .from('company_invitations')
+      .select('id, email, created_at')
+      .eq('company_id', currentCompany.id)
+      .eq('status', 'pending')
+      .order('created_at', { ascending: false });
+
+    let html = '';
+
+    if (members && members.length > 0) {
+      html += members.map(m => `
+        <div style="display:flex; justify-content:space-between; align-items:center; padding:10px; border:1px solid var(--border); border-radius:4px; margin-bottom:8px;">
+          <span>${m.email || m.user_id}${currentUser && m.user_id === currentUser.id ? ' <span style="color:var(--border); font-size:12px;">(you)</span>' : ''}</span>
+          <span class="submission-status approved" style="text-transform:capitalize;">${m.role}</span>
+        </div>
+      `).join('');
+    } else {
+      html += '<p style="color:var(--border); font-style:italic;">No team members found.</p>';
+    }
+
+    if (invites && invites.length > 0) {
+      html += '<h4 style="margin-top:20px; margin-bottom:10px; font-size:12px; text-transform:uppercase; color:var(--border);">Pending Invites</h4>';
+      html += invites.map(inv => `
+        <div style="display:flex; justify-content:space-between; align-items:center; padding:10px; border:1px dashed var(--border); border-radius:4px; margin-bottom:8px;">
+          <span>${inv.email}</span>
+          <span style="font-size:12px; color:var(--border);">Invited ${new Date(inv.created_at).toLocaleDateString()}</span>
+        </div>
+      `).join('');
+    }
+
+    document.getElementById('team-members-list').innerHTML = html;
+  } catch (err) {
+    console.error('Error loading team:', err);
+    const el = document.getElementById('team-members-list');
+    if (el) el.innerHTML = '<p style="color:var(--warning);">Error loading team.</p>';
+  }
+}
+
+async function loadCurrentCompanyAndRoute(wantsAdmin) {
+  try {
+    // Check super-admin status first — a super-admin should be able to log in
+    // and reach Platform Admin even if they don't belong to any company.
+    const { data: adminCheck } = await client
+      .from('super_admins')
+      .select('email, can_manage_admins, permissions')
+      .eq('email', currentUser.email)
+      .maybeSingle();
+    isSuperAdmin = !!adminCheck;
+    isAdminManager = !!(adminCheck && adminCheck.can_manage_admins);
+    currentAdminPermissions = (adminCheck && adminCheck.permissions) || {};
+
+    const { data: membership, error } = await client
+      .from('company_members')
+      .select('company_id, role, companies(*)')
+      .eq('user_id', currentUser.id)
+      .limit(1)
+      .maybeSingle();
+
+    if (error) {
+      console.error('Error loading company membership:', error);
+    }
+
+    currentCompany = (membership && membership.companies) ? membership.companies : null;
+
+    if (currentCompany && currentCompany.status === 'suspended') {
+      showToast('This account has been suspended. Contact the platform admin.', 'error');
+      await client.auth.signOut();
+      currentCompany = null;
+      applyDefaultBranding();
+      showLandingView();
+      return;
+    }
+
+    if (!currentCompany && !isSuperAdmin) {
+      showToast('Could not find a company for this account', 'error');
+      await client.auth.signOut();
+      applyDefaultBranding();
+      showLandingView();
+      return;
+    }
+
+    if ((wantsAdmin || !currentCompany) && isSuperAdmin) {
+      showSuperAdminView();
+    } else {
+      showAdminView();
+    }
+  } catch (err) {
+    console.error('Error routing after login:', err);
+    showToast('Error loading account: ' + err.message, 'error');
+  }
+}
+
+async function logoutAdmin() {
+  await client.auth.signOut();
+  currentUser = null;
+  currentCompany = null;
+  isSuperAdmin = false;
+  isAdminManager = false;
+  currentAdminPermissions = {};
+  window.location.href = window.location.pathname;
+}
+
+// ===== CONTRACTOR VIEW =====
+async function loadContractorView(token) {
+  try {
+    console.log('Loading contractor view for token:', token);
+
+    hideAllTopLevelViews();
+    document.getElementById('public-view').style.display = 'block';
+    hideAllPublicSections();
+
+    const { data: invitation, error: invError } = await client
+      .from('rfq_invitations')
+      .select('*')
+      .eq('invitation_token', token)
+      .single();
+
+    if (invError || !invitation) {
+      console.error('Invitation not found');
+      document.getElementById('no-rfq-message').style.display = 'block';
+      document.getElementById('rfq-portal').style.display = 'none';
+      document.getElementById('no-rfq-message').innerHTML = '<div class="card"><h2>Invalid Link</h2><p>This RFQ link is invalid or has expired.</p></div>';
+      return;
+    }
+
+    currentRFQId = invitation.rfq_id;
+    console.log('✅ Invitation found for RFQ:', currentRFQId);
+
+    await loadRFQDetails(currentRFQId);
+    document.getElementById('rfq-portal').style.display = 'block';
+    document.getElementById('no-rfq-message').style.display = 'none';
+
+  } catch (err) {
+    console.error('Error loading contractor view:', err);
+  }
+}
+
+// Public "respond to an information request" page, reached via the emailed
+// ?info=TOKEN link. Uses the get_submission_by_info_token/submit_additional_info
+// RPCs (SECURITY DEFINER) since the contractor isn't logged in and RLS
+// otherwise blocks reading/updating someone else's submission — the token
+// itself is the credential, same trust model as the existing rfq_invitations
+// invite-link tokens.
+let currentInfoRequestToken = null;
+let currentInfoRequestSubmissionId = null;
+let currentInfoRequestRfqId = null;
+
+// Public "update my notification preferences" page, reached via the
+// ?prefs=TOKEN link included in every new-RFQ notification email. Uses
+// get_applicant_preferences/update_applicant_province (SECURITY DEFINER)
+// since the supplier isn't logged in — the token is the credential, same
+// trust model as the info-request/invite-link tokens above.
+let currentPrefsToken = null;
+
+async function loadInfoRequestView(token) {
+  try {
+    hideAllTopLevelViews();
+    document.getElementById('public-view').style.display = 'block';
+    hideAllPublicSections();
+
+    const { data, error } = await client.rpc('get_submission_by_info_token', { p_token: token });
+    const row = Array.isArray(data) ? data[0] : data;
+
+    if (error || !row) {
+      console.error('Info request link not found:', error);
+      document.getElementById('no-rfq-message').style.display = 'block';
+      document.getElementById('rfq-portal').style.display = 'none';
+      document.getElementById('no-rfq-message').innerHTML = '<div class="card"><h2>Invalid Link</h2><p>This link is invalid or has already been used.</p></div>';
+      return;
+    }
+
+    currentInfoRequestToken = token;
+    currentInfoRequestSubmissionId = row.submission_id;
+    currentInfoRequestRfqId = row.rfq_id;
+
+    if (row.company_id) {
+      const { data: company } = await client
+        .from('companies')
+        .select('*')
+        .eq('id', row.company_id)
+        .maybeSingle();
+      if (company) {
+        applyCompanyBranding(company, {
+          subtitle: 'Request for Quotation Portal',
+          heroTitle: company.name,
+          heroSubtitle: `${company.name} has asked for more information on your submission.`
+        });
+      } else {
+        applyDefaultBranding();
+      }
+    } else {
+      applyDefaultBranding();
+    }
+
+    const alreadyResponded = !!row.info_response_message;
+
+    const formHtml = `
+      <div class="card">
+        <h2 style="margin-top:0;">Additional Information Requested</h2>
+        <p style="color: var(--border); margin-bottom: 20px;">For your submission to: <strong>${row.rfq_name}</strong> (${row.project_name})</p>
+
+        <div style="background: var(--bg-2); padding: 15px; border-radius: 4px; margin-bottom: 20px;">
+          <p style="margin:0 0 6px 0; font-size:12px; text-transform:uppercase; color:var(--border); font-weight:bold;">They've asked for:</p>
+          <p style="margin:0; white-space:pre-wrap;">${row.info_request_message || ''}</p>
+        </div>
+
+        ${alreadyResponded ? `
+          <div style="background:#E1F0FF; padding:15px; border-radius:4px; margin-bottom:20px;">
+            <p style="margin:0 0 6px 0; font-size:12px; text-transform:uppercase; color:var(--border); font-weight:bold;">Your previous response:</p>
+            <p style="margin:0; white-space:pre-wrap;">${row.info_response_message}</p>
+          </div>
+        ` : ''}
+
+        <form id="info-request-form" style="margin-top: 10px;">
+          <div style="margin-bottom: 15px;">
+            <label>Your Response *</label>
+            <textarea id="info-response-message" required rows="4" style="width:100%; padding:10px; border:1px solid var(--border); border-radius:4px; font-family:inherit;" placeholder="Provide the requested information here..."></textarea>
+          </div>
+
+          <div style="margin-bottom: 15px;">
+            <label>Upload Supporting Document(s)</label>
+            <input type="file" id="info-response-files" multiple>
+          </div>
+
+          <button type="submit" class="btn gold" style="width: 100%; padding: 15px; margin-top: 10px;">Submit Response</button>
+        </form>
+      </div>
+    `;
+
+    document.getElementById('rfq-portal').innerHTML = formHtml;
+    document.getElementById('rfq-portal').style.display = 'block';
+    document.getElementById('no-rfq-message').style.display = 'none';
+
+    document.getElementById('info-request-form').addEventListener('submit', (e) => {
+      e.preventDefault();
+      submitAdditionalInfoForm();
+    });
+
+  } catch (err) {
+    console.error('Error loading info request view:', err);
+    showToast('Error loading page', 'error');
+  }
+}
+
+async function submitAdditionalInfoForm() {
+  try {
+    const message = document.getElementById('info-response-message').value.trim();
+    if (!message) {
+      showToast('Please enter a response', 'error');
+      return;
+    }
+
+    showToast('Submitting...', 'success');
+
+    const { data: submissionId, error } = await client.rpc('submit_additional_info', {
+      p_token: currentInfoRequestToken,
+      p_message: message
+    });
+
+    if (error) throw error;
+
+    const resolvedSubmissionId = submissionId || currentInfoRequestSubmissionId;
+
+    const fileInput = document.getElementById('info-response-files');
+    let filesUploaded = 0;
+    if (fileInput && fileInput.files && fileInput.files.length > 0) {
+      for (const file of fileInput.files) {
+        try {
+          const filePath = `rfq-${currentInfoRequestRfqId}/sub-${resolvedSubmissionId}/${Date.now()}-${file.name}`;
+          const { error: uploadError } = await client.storage
+            .from('rfq-documents')
+            .upload(filePath, file);
+
+          if (uploadError) {
+            console.warn('⚠️ File upload failed:', uploadError.message);
+            continue;
+          }
+
+          await client.from('rfq_submission_documents').insert([{
+            submission_id: resolvedSubmissionId,
+            file_name: file.name,
+            file_path: filePath,
+            file_size: file.size
+          }]);
+
+          filesUploaded++;
+        } catch (fileErr) {
+          console.warn('⚠️ Error uploading file:', fileErr.message);
+        }
+      }
+    }
+
+    showToast('✅ Response submitted!', 'success');
+    setTimeout(() => {
+      document.getElementById('rfq-portal').innerHTML = '<div class="card"><h2 style="margin-top:0; color:var(--success);">Thank You!</h2><p>Your response has been received.</p></div>';
+    }, 1000);
+
+  } catch (err) {
+    console.error('Error submitting response:', err);
+    showToast('Error: ' + err.message, 'error');
+  }
+}
+
+const PROVINCE_OPTIONS = [
+  'Eastern Cape', 'Free State', 'Gauteng', 'KwaZulu-Natal', 'Limpopo',
+  'Mpumalanga', 'Northern Cape', 'North West', 'Western Cape'
+];
+
+async function loadSupplierPreferencesView(token) {
+  try {
+    hideAllTopLevelViews();
+    document.getElementById('public-view').style.display = 'block';
+    hideAllPublicSections();
+
+    const { data, error } = await client.rpc('get_applicant_preferences', { p_token: token });
+    const row = Array.isArray(data) ? data[0] : data;
+
+    if (error || !row) {
+      console.error('Preferences link not found:', error);
+      document.getElementById('no-rfq-message').style.display = 'block';
+      document.getElementById('rfq-portal').style.display = 'none';
+      document.getElementById('no-rfq-message').innerHTML = '<div class="card"><h2>Invalid Link</h2><p>This link is invalid. Please use the link from your most recent RFQ Hub email.</p></div>';
+      return;
+    }
+
+    currentPrefsToken = token;
+
+    const optionsHtml = [
+      `<option value="ALL"${row.province === 'ALL' ? ' selected' : ''}>All Provinces</option>`,
+      ...PROVINCE_OPTIONS.map(p => `<option value="${p}"${row.province === p ? ' selected' : ''}>${p}</option>`)
+    ].join('');
+
+    const formHtml = `
+      <div class="card" style="max-width:480px; margin:0 auto;">
+        <h2 style="margin-top:0;">Notification Preferences</h2>
+        <p style="color: var(--border); margin-bottom: 20px;">${escapeHtmlClient(row.full_name)} (${escapeHtmlClient(row.email)})</p>
+
+        <form id="prefs-form">
+          <div style="margin-bottom: 15px;">
+            <label>Notify Me About New Opportunities In</label>
+            <select id="prefs-province" required style="width:100%; box-sizing:border-box; padding:10px; border:1px solid var(--border); border-radius:4px; font-family:inherit;">
+              ${row.province ? '' : '<option value="" selected disabled>Select a province...</option>'}
+              ${optionsHtml}
+            </select>
+            <p style="margin:6px 0 0 0; font-size:12px; color:var(--border);">Currently: ${row.province ? (row.province === 'ALL' ? 'All Provinces' : escapeHtmlClient(row.province)) : 'not set — you will not receive any RFQ notifications until you choose one.'}</p>
+          </div>
+          <button type="submit" class="btn gold" style="width: 100%; padding: 12px;">Save Preferences</button>
+        </form>
+      </div>
+    `;
+
+    document.getElementById('rfq-portal').innerHTML = formHtml;
+    document.getElementById('rfq-portal').style.display = 'block';
+    document.getElementById('no-rfq-message').style.display = 'none';
+
+    document.getElementById('prefs-form').addEventListener('submit', (e) => {
+      e.preventDefault();
+      submitSupplierPreferencesForm();
+    });
+
+  } catch (err) {
+    console.error('Error loading preferences view:', err);
+    showToast('Error loading page', 'error');
+  }
+}
+
+async function submitSupplierPreferencesForm() {
+  try {
+    const province = document.getElementById('prefs-province').value;
+    if (!province) {
+      showToast('Please select a province', 'error');
+      return;
+    }
+
+    const { error } = await client.rpc('update_applicant_province', {
+      p_token: currentPrefsToken,
+      p_province: province
+    });
+
+    if (error) throw error;
+
+    showToast('✅ Preferences saved', 'success');
+  } catch (err) {
+    console.error('Error saving preferences:', err);
+    showToast('Error: ' + err.message, 'error');
+  }
+}
+
+// Small standalone HTML-escaper for the preferences page (mirrors the
+// inline escaping style used elsewhere in this file for user-supplied text).
+function escapeHtmlClient(s) {
+  return String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+}
+
+async function loadOpenRFQView(rfqId) {
+  try {
+    console.log('Loading open RFQ view:', rfqId);
+
+    hideAllTopLevelViews();
+    document.getElementById('public-view').style.display = 'block';
+    hideAllPublicSections();
+
+    currentRFQId = rfqId;
+    await loadRFQDetails(rfqId, true);
+    document.getElementById('rfq-portal').style.display = 'block';
+    document.getElementById('no-rfq-message').style.display = 'none';
+
+  } catch (err) {
+    console.error('Error loading open RFQ view:', err);
+  }
+}
+
+async function loadRFQDetails(rfqId, isOpenAccess = false) {
+  try {
+    const { data: rfq, error } = await client
+      .from('rfqs')
+      .select('*')
+      .eq('id', rfqId)
+      .single();
+
+    if (error || !rfq) {
+      throw new Error('RFQ not found');
+    }
+
+    currentRFQData = rfq;
+
+    // Direct public-portal access must be to an RFQ the company actually
+    // marked "Open" — a closed RFQ is only reachable via its invite link,
+    // even if someone guesses/shares its id. An unpublished (withdrawn) RFQ
+    // is blocked the same way, even though it was originally Open — the
+    // real enforcement is the rfqs_select_scoped RLS policy (a withdrawn
+    // RFQ simply won't come back for an anonymous visitor at all), this is
+    // just the friendlier message for the rare case a company member views
+    // their own withdrawn RFQ via this same code path.
+    if (isOpenAccess && (!rfq.is_public || rfq.is_withdrawn)) {
+      document.getElementById('rfq-portal').innerHTML = rfq.is_withdrawn
+        ? '<div class="card"><h2 style="margin-top:0;">Not Available</h2><p>This opportunity has been unpublished by the issuing company and is no longer available.</p></div>'
+        : '<div class="card"><h2 style="margin-top:0;">Not Available</h2><p>This RFQ is invite-only and can\'t be accessed from the public portal.</p></div>';
+      document.getElementById('rfq-portal').style.display = 'block';
+      applyDefaultBranding();
+      return;
+    }
+
+    console.log('RFQ loaded:', rfq.rfq_name);
+
+    let company = null;
+    if (rfq.company_id) {
+      const { data: companyData } = await client
+        .from('companies')
+        .select('*')
+        .eq('id', rfq.company_id)
+        .maybeSingle();
+      company = companyData || null;
+    }
+
+    if (company) {
+      applyCompanyBranding(company, {
+        subtitle: 'Request for Quotation Portal',
+        heroTitle: company.name,
+        heroSubtitle: isOpenAccess
+          ? `${company.name} is accepting quotations for this RFQ.`
+          : `You've been invited to submit a quotation to ${company.name}.`
+      });
+    } else {
+      applyDefaultBranding();
+    }
+
+    // Suspended/removed suppliers can still view this RFQ (per Brent's
+    // explicit instruction) but can't apply — this only drives the UI
+    // (banner + disabled button); the real enforcement is the DB-level
+    // rfq_submissions insert policy, which blocks it regardless of this.
+    const isApplicationBlocked = !!(currentApplicantStatus && (currentApplicantStatus.status === 'suspended' || currentApplicantStatus.status === 'removed'));
+
+    // Build contractor form
+    let formHtml = `
+      <div class="card">
+        <h2 style="margin-top:0;">${rfq.rfq_name}</h2>
+        <p style="color: var(--border); margin-bottom: 20px;">${rfq.description}</p>
+
+        ${(rfq.location_area || (rfq.provinces && rfq.provinces.length > 0)) ? `<p><strong>Location:</strong> ${[rfq.location_area, ...(rfq.provinces || [])].filter(Boolean).join(', ')}</p>` : ''}
+        ${rfq.budget ? `<p><strong>Budget:</strong> R${rfq.budget.toLocaleString()}</p>` : ''}
+        ${rfq.deadline ? `<p><strong>Deadline:</strong> ${new Date(rfq.deadline).toLocaleDateString()}</p>` : ''}
+
+        ${rfq.required_documents && rfq.required_documents.length > 0 ? `
+          <div style="margin: 20px 0;">
+            <h4>Required Documents:</h4>
+            <ul>
+              ${rfq.required_documents.map(doc => `<li>${escapeHtmlClient(doc.name)}${doc.mandatory ? ' <strong style="color:var(--accent);">(Mandatory)</strong>' : ''}${doc.requires_expiry ? ' <span style="color:var(--border); font-size:12px;">— expiry date required</span>' : ''}</li>`).join('')}
+            </ul>
+          </div>
+        ` : ''}
+
+        ${rfq.attachments && rfq.attachments.length > 0 ? `
+          <div style="margin: 20px 0; padding: 15px; background: var(--bg-2); border-radius: 4px;">
+            <h4 style="margin-top:0;">RFQ Documents</h4>
+            <p style="color: var(--border); font-size: 14px; margin-bottom: 10px;">Please review before applying:</p>
+            <ul style="margin:0; padding-left:20px;">
+              ${rfq.attachments.map(att => `<li style="margin-bottom:6px;"><a href="${att.url}" target="_blank" rel="noopener noreferrer">${att.name}</a></li>`).join('')}
+            </ul>
+          </div>
+        ` : ''}
+
+        <div style="margin: 20px 0; padding: 15px; background: var(--bg-2); border-radius: 4px;">
+          <div style="display:flex; justify-content:space-between; align-items:center; gap:12px; flex-wrap:wrap;">
+            <h4 style="margin:0;">Questions &amp; Answers</h4>
+            <button type="button" class="btn secondary" style="padding:8px 14px;" onclick="openAskQuestionModal('${rfq.id}', '${escapeHtmlClient(rfq.rfq_name).replace(/'/g, "\\'")}')">❓ Ask a Question</button>
+          </div>
+          <div id="rfq-qa-list" style="margin-top:12px;"><p style="color: var(--border); font-size: 13px; margin:0;">Loading...</p></div>
+        </div>
+
+        ${currentApplicantStatus && (currentApplicantStatus.status === 'suspended' || currentApplicantStatus.status === 'removed') ? `
+          <div style="margin: 20px 0; padding: 15px; background:#FDECEA; border:1px solid #D32F2F; border-radius:4px;">
+            <p style="margin:0; font-weight:600; color:#D32F2F;">⚠️ Your supplier registration has been ${currentApplicantStatus.status === 'suspended' ? 'suspended' : 'removed'}.</p>
+            <p style="margin:6px 0 0 0; font-size:13px; color:var(--ink);">You can still view this RFQ, but you can't submit an application. ${currentApplicantStatus.status_reason ? 'Reason: ' + escapeHtmlClient(currentApplicantStatus.status_reason) + '.' : ''} Please contact us if you believe this is a mistake.</p>
+          </div>
+        ` : ''}
+
+        <form id="contractor-form" style="margin-top: 30px;">
+          <h3>Your Company Information</h3>
+
+          <div style="margin-bottom: 15px;">
+            <label>Company Name *</label>
+            <input type="text" id="contractor-name" required style="width:100%;">
+          </div>
+
+          <div style="margin-bottom: 15px;">
+            <label>Email Address *</label>
+            <input type="email" id="contractor-email" required style="width:100%;">
+          </div>
+
+          <div style="margin-bottom: 15px;">
+            <label>Phone Number</label>
+            <input type="tel" id="contractor-phone" style="width:100%;">
+          </div>
+
+          <div style="margin-bottom: 15px;">
+            <label>Company Registration Number</label>
+            <input type="text" id="contractor-reg" style="width:100%;">
+          </div>
+
+          <div style="margin-top: 30px;">
+            <h4>Upload Documents</h4>
+            <p style="color: var(--border); font-size: 14px;">Documents marked * are mandatory and must be uploaded to submit.</p>
+            ${rfq.required_documents.map((doc, idx) => `
+              <div style="margin-bottom: 15px;">
+                <label>${escapeHtmlClient(doc.name)}${doc.mandatory ? ' *' : ''}</label>
+                <input type="file" id="doc-${idx}" data-doc-name="${escapeHtmlClient(doc.name)}" accept=".pdf,.doc,.docx,.xls,.xlsx"${doc.mandatory ? ' required' : ''}>
+                ${doc.requires_expiry ? `
+                  <div style="margin-top:6px;">
+                    <label style="font-size:13px; font-weight:normal;">Expiry Date for ${escapeHtmlClient(doc.name)} *</label>
+                    <input type="date" id="doc-expiry-${idx}" required style="padding:8px; border:1px solid var(--border); border-radius:4px;">
+                  </div>
+                ` : ''}
+              </div>
+            `).join('')}
+          </div>
+
+          <button type="submit" class="btn gold" id="contractor-submit-btn" style="width: 100%; padding: 15px; margin-top: 20px;"${isApplicationBlocked ? ' disabled' : ''}>${isApplicationBlocked ? 'Application Unavailable' : 'Submit Application'}</button>
+        </form>
+      </div>
+    `;
+
+    document.getElementById('rfq-portal').innerHTML = formHtml;
+
+    document.getElementById('contractor-form').addEventListener('submit', (e) => {
+      e.preventDefault();
+      if (isApplicationBlocked) {
+        showToast('❌ Your supplier registration doesn\'t allow applying to RFQs right now.', 'error');
+        return;
+      }
+      const token = new URLSearchParams(window.location.search).get('rfq');
+      submitContractorForm(token);
+    });
+
+    loadPublicQA(rfq.id);
+
+  } catch (err) {
+    console.error('Error loading RFQ details:', err);
+    showToast('Error loading RFQ', 'error');
+  }
+}
+
+// Renders only questions the owning company chose to answer publicly —
+// get_public_rfq_questions() is a SECURITY DEFINER RPC that deliberately
+// excludes applicant_email/applicant_name so the asker stays anonymous to
+// other contractors viewing this page.
+async function loadPublicQA(rfqId) {
+  const listEl = document.getElementById('rfq-qa-list');
+  if (!listEl) return;
+
+  try {
+    const { data: qa, error } = await client.rpc('get_public_rfq_questions', { p_rfq_id: rfqId });
+    if (error) throw error;
+
+    if (!qa || qa.length === 0) {
+      listEl.innerHTML = '<p style="color: var(--border); font-size: 13px; margin:0;">No published questions yet. Be the first to ask.</p>';
+      return;
+    }
+
+    listEl.innerHTML = qa.map(item => `
+      <div style="background:white; border:1px solid var(--border); border-radius:4px; padding:12px; margin-bottom:10px;">
+        <p style="margin:0 0 6px 0; font-weight:bold; color:var(--ink);">Q: ${escapeHtmlClient(item.question)}</p>
+        <p style="margin:0; color:var(--ink); white-space:pre-wrap;">A: ${escapeHtmlClient(item.answer)}</p>
+      </div>
+    `).join('');
+  } catch (err) {
+    console.error('Error loading public Q&A:', err);
+    listEl.innerHTML = '<p style="color: var(--border); font-size: 13px; margin:0;">Could not load questions right now.</p>';
+  }
+}
+
+async function submitContractorForm(token) {
+  try {
+    const name = document.getElementById('contractor-name').value.trim();
+    const email = document.getElementById('contractor-email').value.trim();
+    const phone = document.getElementById('contractor-phone').value.trim();
+    const reg = document.getElementById('contractor-reg').value.trim();
+
+    if (!name || !email) {
+      showToast('Please fill in required fields', 'error');
+      return;
+    }
+
+    showToast('Submitting...', 'success');
+
+    // Generate the submission id client-side so we don't need to read the row
+    // back after insert (contractors are unauthenticated, and submissions are
+    // only readable by the owning company under RLS).
+    const submissionId = generateUUID();
+
+    const { error: subError } = await client
+      .from('rfq_submissions')
+      .insert([{
+        id: submissionId,
+        rfq_id: currentRFQId,
+        contractor_name: name,
+        contractor_email: email,
+        contractor_phone: phone,
+        contractor_reg: reg,
+        status: 'submitted'
+      }]);
+
+    if (subError) throw subError;
+
+    console.log('✅ Submission created:', submissionId);
+
+    // Upload files. Non-mandatory documents are optional, so a failed/missing
+    // upload here doesn't abort the whole submission — mandatory documents
+    // and required expiry dates are already enforced by the form's own
+    // `required` attributes before this handler ever runs (native HTML5
+    // validation blocks the submit event otherwise).
+    const fileInputs = document.querySelectorAll('input[type="file"][id^="doc-"]');
+    let filesUploaded = 0;
+
+    for (let input of fileInputs) {
+      if (input.files[0]) {
+        try {
+          const file = input.files[0];
+          const filePath = `rfq-${currentRFQId}/sub-${submissionId}/${Date.now()}-${file.name}`;
+
+          const { error: uploadError } = await client.storage
+            .from('rfq-documents')
+            .upload(filePath, file);
+
+          if (uploadError) {
+            console.warn('⚠️ File upload failed:', uploadError.message);
+            continue;
+          }
+
+          // Pair this upload back to its required-document entry (name +
+          // whether an expiry date was collected for it) using the same
+          // index the form was rendered with.
+          const idx = input.id.replace('doc-', '');
+          const docMeta = (currentRFQData && currentRFQData.required_documents && currentRFQData.required_documents[idx]) || null;
+          const expiryInput = docMeta && docMeta.requires_expiry ? document.getElementById(`doc-expiry-${idx}`) : null;
+
+          await client.from('rfq_submission_documents').insert([{
+            submission_id: submissionId,
+            file_name: file.name,
+            file_path: filePath,
+            file_size: file.size,
+            document_type: docMeta ? docMeta.name : null,
+            expiry_date: (expiryInput && expiryInput.value) ? expiryInput.value : null
+          }]);
+
+          filesUploaded++;
+        } catch (fileErr) {
+          console.warn('⚠️ Error uploading file:', fileErr.message);
+        }
+      }
+    }
+
+    // Mark token as used (only applies to invite-link applications; direct
+    // public-portal applications have no invitation token to update).
+    if (token) {
+      await client
+        .from('rfq_invitations')
+        .update({ used: true })
+        .eq('invitation_token', token);
+
+      console.log('✅ Token marked as used');
+    }
+
+    showToast('✅ Submission successful!', 'success');
+    setTimeout(() => {
+      document.getElementById('rfq-portal').innerHTML = '<div class="card"><h2 style="margin-top:0; color:var(--success);">Thank You!</h2><p>Your submission has been received.</p></div>';
+    }, 1000);
+
+  } catch (err) {
+    console.error('Error submitting:', err);
+    // A suspended/removed supplier's insert is rejected at the DB level
+    // (rfq_submissions' insert RLS policy) — this is the real enforcement,
+    // the disabled Submit button above is just a heads-up. Surface that
+    // specific case with a clear message instead of the raw Postgres
+    // "row violates row-level security policy" text.
+    if (err && err.code === '42501') {
+      showToast('❌ Your supplier registration doesn\'t allow applying to RFQs right now. Please contact us for details.', 'error');
+    } else {
+      showToast('Error: ' + err.message, 'error');
+    }
+  }
+}
+
+// Shows the company's logo next to its name in the dashboard header bar
+// (distinct from the site-wide masthead logo) so the page feels like it
+// belongs to that company. Hides the <img> entirely when there's no logo.
+function updateAdminHeaderLogo(company) {
+  const img = document.getElementById('admin-header-logo');
+  if (!img) return;
+  if (company && company.logo_url) {
+    img.src = company.logo_url;
+    img.alt = company.name || '';
+    img.style.display = 'block';
+  } else {
+    img.style.display = 'none';
+    img.src = '';
+  }
+}
+
+// ===== ADMIN VIEW (Company Dashboard) =====
+function showAdminView() {
+  hideAllTopLevelViews();
+  document.getElementById('admin-view').style.display = 'block';
+
+  document.getElementById('admin-company-name').textContent = currentCompany ? currentCompany.name : 'RFQ Management';
+  updateAdminHeaderLogo(currentCompany);
+  applyCompanyBranding(currentCompany, {
+    heroTitle: currentCompany ? currentCompany.name : 'RFQ Hub',
+    heroSubtitle: 'Manage your RFQs, contractor invitations, and submissions.'
+  });
+
+  const superLink = document.getElementById('super-admin-link');
+  if (superLink) superLink.style.display = isSuperAdmin ? 'inline' : 'none';
+
+  document.getElementById('create-tab').style.display = 'block';
+  document.getElementById('console-tab').style.display = 'none';
+  document.getElementById('submissions-tab').style.display = 'none';
+  document.getElementById('team-tab').style.display = 'none';
+  document.getElementById('settings-tab').style.display = 'none';
+
+  document.querySelectorAll('.company-tab-btn').forEach((btn, idx) => {
+    btn.classList.toggle('active', idx === 0);
+  });
+
+  // 'create' is the default tab shown above (switchAdminTab() is never
+  // called for it on initial load), so its drafts list needs its own
+  // explicit refresh here.
+  loadRFQDrafts();
+}
+
+function switchAdminTab(tabName, button) {
+  document.querySelectorAll('.admin-tab').forEach(tab => tab.style.display = 'none');
+  document.querySelectorAll('.company-tab-btn').forEach(btn => btn.classList.remove('active'));
+
+  document.getElementById(tabName + '-tab').style.display = 'block';
+  if (button) button.classList.add('active');
+
+  if (tabName === 'create') {
+    loadRFQDrafts();
+  } else if (tabName === 'console') {
+    loadRFQConsole();
+  } else if (tabName === 'submissions') {
+    loadSubmissions();
+  } else if (tabName === 'team') {
+    loadTeamMembers();
+  } else if (tabName === 'settings') {
+    loadSettingsTab();
+  }
+}
+
+// Super Admin dashboard uses its own tab/button classes (.super-tab /
+// .super-tab-btn) so switching a tab here never touches the company
+// admin dashboard's tab state, and vice versa — the two dashboards can
+// be left on different sections without clobbering each other.
+function switchSuperAdminTab(tabName, button) {
+  document.querySelectorAll('.super-tab').forEach(tab => tab.style.display = 'none');
+  document.querySelectorAll('.super-tab-btn').forEach(btn => btn.classList.remove('active'));
+
+  document.getElementById(tabName + '-tab').style.display = 'block';
+  if (button) button.classList.add('active');
+}
+
+// ===== SETTINGS =====
+function loadSettingsTab() {
+  if (!currentCompany) return;
+
+  document.getElementById('settings-company-name').value = currentCompany.name || '';
+  document.getElementById('settings-contact-email').value = currentCompany.contact_email || '';
+  document.getElementById('settings-contact-phone').value = currentCompany.contact_phone || '';
+  document.getElementById('settings-address').value = currentCompany.address || '';
+
+  const preview = document.getElementById('settings-logo-preview');
+  const placeholder = document.getElementById('settings-logo-placeholder');
+  const scaleInput = document.getElementById('settings-logo-scale');
+  const scaleLabel = document.getElementById('settings-logo-scale-label');
+
+  const scale = currentCompany.logo_scale || 1;
+  if (scaleInput) scaleInput.value = Math.round(scale * 100);
+  if (scaleLabel) scaleLabel.textContent = `${Math.round(scale * 100)}%`;
+
+  if (currentCompany.logo_url) {
+    applyLogoScale(preview, scale);
+    preview.src = currentCompany.logo_url;
+    preview.style.display = 'block';
+    placeholder.style.display = 'none';
+  } else {
+    preview.style.display = 'none';
+    placeholder.style.display = 'flex';
+  }
+}
+
+function handleSettingsLogoScaleInput(e) {
+  const pct = Number(e.target.value);
+  const label = document.getElementById('settings-logo-scale-label');
+  if (label) label.textContent = `${pct}%`;
+  const preview = document.getElementById('settings-logo-preview');
+  if (preview && preview.style.display !== 'none') {
+    applyLogoScale(preview, pct / 100);
+  }
+}
+
+async function handleSettingsLogoScaleChange(e) {
+  if (!currentCompany) return;
+  const pct = Number(e.target.value);
+  const scale = Math.min(1.5, Math.max(0.5, pct / 100));
+  try {
+    const { error } = await client
+      .from('companies')
+      .update({ logo_scale: scale, updated_at: new Date().toISOString() })
+      .eq('id', currentCompany.id);
+    if (error) throw error;
+
+    currentCompany.logo_scale = scale;
+
+    // Live-update the real header logo too, without disturbing the
+    // title/subtitle text currently shown there.
+    const brandImg = document.getElementById('brand-logo-img');
+    if (brandImg && brandImg.style.display !== 'none') {
+      applyLogoScale(brandImg, scale);
+    }
+
+    showToast('✅ Logo size saved', 'success');
+  } catch (err) {
+    console.error('Error saving logo size:', err);
+    showToast('❌ Error saving logo size: ' + err.message, 'error');
+  }
+}
+
+async function handleLogoFileChange(e) {
+  const file = e.target.files[0];
+  if (!file || !currentCompany) return;
+
+  try {
+    showToast('Uploading logo...', 'info');
+    const ext = (file.name.split('.').pop() || 'png').toLowerCase();
+    const path = `${currentCompany.id}/logo-${Date.now()}.${ext}`;
+
+    const { error: uploadError } = await client.storage
+      .from('company-logos')
+      .upload(path, file, { upsert: true });
+    if (uploadError) throw uploadError;
+
+    const { data: urlData } = client.storage.from('company-logos').getPublicUrl(path);
+    const logoUrl = urlData.publicUrl;
+
+    const { error: updateError } = await client
+      .from('companies')
+      .update({ logo_url: logoUrl, updated_at: new Date().toISOString() })
+      .eq('id', currentCompany.id);
+    if (updateError) throw updateError;
+
+    currentCompany.logo_url = logoUrl;
+    loadSettingsTab();
+    document.getElementById('admin-company-name').textContent = currentCompany.name;
+    updateAdminHeaderLogo(currentCompany);
+    applyCompanyBranding(currentCompany, {
+      heroTitle: currentCompany.name,
+      heroSubtitle: 'Manage your RFQs, contractor invitations, and submissions.'
+    });
+
+    showToast('✅ Logo updated!', 'success');
+  } catch (err) {
+    console.error('Logo upload error:', err);
+    showToast('Error uploading logo: ' + err.message, 'error');
+  }
+}
+
+async function handleSettingsSubmit(e) {
+  e.preventDefault();
+  if (!currentCompany) return;
+
+  const name = document.getElementById('settings-company-name').value.trim();
+  const contactEmail = document.getElementById('settings-contact-email').value.trim();
+  const contactPhone = document.getElementById('settings-contact-phone').value.trim();
+  const address = document.getElementById('settings-address').value.trim();
+
+  if (!name) {
+    showToast('Company name is required', 'error');
+    return;
+  }
+
+  try {
+    const { error } = await client
+      .from('companies')
+      .update({
+        name,
+        contact_email: contactEmail || null,
+        contact_phone: contactPhone || null,
+        address: address || null,
+        updated_at: new Date().toISOString()
+      })
+      .eq('id', currentCompany.id);
+    if (error) throw error;
+
+    currentCompany.name = name;
+    currentCompany.contact_email = contactEmail;
+    currentCompany.contact_phone = contactPhone;
+    currentCompany.address = address;
+
+    document.getElementById('admin-company-name').textContent = name;
+    updateAdminHeaderLogo(currentCompany);
+    applyCompanyBranding(currentCompany, {
+      heroTitle: name,
+      heroSubtitle: 'Manage your RFQs, contractor invitations, and submissions.'
+    });
+
+    showToast('✅ Settings saved!', 'success');
+  } catch (err) {
+    console.error('Error saving settings:', err);
+    showToast('Error saving settings: ' + err.message, 'error');
+  }
+}
+
+// ===== CREATE RFQ =====
+function setupCreateRFQForm() {
+  const form = document.getElementById('create-rfq-form');
+  if (form) {
+    form.addEventListener('submit', createNewRFQ);
+    console.log('✅ Create RFQ form found and hooked up');
+  }
+
+  document.querySelectorAll('input[name="rfq_visibility"]').forEach(radio => {
+    radio.addEventListener('change', updateVisibilityHint);
+  });
+  updateVisibilityHint();
+}
+
+// Reads the Create RFQ form's current values without validating or saving
+// anything. Shared by createNewRFQ() (publish), saveRFQDraft(), and
+// previewRFQ() so all three always agree on exactly what "the form" says —
+// a value read one way for publishing and another way for preview would be
+// a subtle, hard-to-notice bug.
+function collectRFQFormValues() {
+  const nameInput = document.querySelector('input[name="rfq_name"]');
+  const projectInput = document.querySelector('input[name="rfq_project"]');
+  const descInput = document.querySelector('textarea[name="rfq_description"]');
+  const deadlineInput = document.querySelector('input[name="rfq_deadline"]');
+  const budgetInput = document.querySelector('input[name="rfq_budget"]');
+  const emailInput = document.querySelector('textarea[name="contractor_emails"]');
+  const visibilityInput = document.querySelector('input[name="rfq_visibility"]:checked');
+  const locationAreaInput = document.querySelector('input[name="rfq_location_area"]');
+
+  const name = nameInput?.value?.trim() || '';
+  const project = projectInput?.value?.trim() || '';
+  const description = descInput?.value?.trim() || '';
+  const deadline = deadlineInput?.value?.trim() || '';
+  const budget = budgetInput?.value?.trim() || '';
+  const emailsText = emailInput?.value?.trim() || '';
+  const isPublic = (visibilityInput?.value || 'closed') === 'open';
+  const provinces = Array.from(document.querySelectorAll('.rfq-province-checkbox:checked')).map(cb => cb.value);
+  const locationArea = locationAreaInput?.value?.trim() || '';
+
+  const contractorEmails = emailsText
+    .split('\n')
+    .map(e => e.trim())
+    .filter(e => e.length > 0);
+
+  const docRows = document.querySelectorAll('#required-docs-builder .doc-row');
+  const requiredDocs = Array.from(docRows)
+    .map(row => {
+      const docNameInput = row.querySelector('.doc-field');
+      const docName = docNameInput && docNameInput.value ? docNameInput.value.trim() : '';
+      if (!docName) return null;
+      const mandatoryInput = row.querySelector('.doc-mandatory-field');
+      const expiryInput = row.querySelector('.doc-expiry-field');
+      return {
+        name: docName,
+        mandatory: !!(mandatoryInput && mandatoryInput.checked),
+        requires_expiry: !!(expiryInput && expiryInput.checked)
+      };
+    })
+    .filter(Boolean);
+
+  return { name, project, description, deadline, budget, contractorEmails, isPublic, provinces, locationArea, requiredDocs };
+}
+
+function updateVisibilityHint() {
+  const checked = document.querySelector('input[name="rfq_visibility"]:checked');
+  const isPublic = checked && checked.value === 'open';
+  const label = document.getElementById('contractor-emails-label');
+  const hint = document.getElementById('contractor-emails-hint');
+  if (!label || !hint) return;
+
+  if (isPublic) {
+    label.textContent = 'Contractor Email Addresses (optional)';
+    hint.textContent = "Optional for Open RFQs — anyone can find and apply via the public portal. Add emails here only if you also want to invite specific contractors directly.";
+  } else {
+    label.textContent = 'Contractor Email Addresses *';
+    hint.textContent = 'Enter email addresses (one per line). Each gets a direct invite link and email. Required for Closed RFQs.';
+  }
+}
+
+function addDocumentField() {
+  const builder = document.getElementById('required-docs-builder');
+  const field = document.createElement('div');
+  field.className = 'doc-row';
+  field.style.cssText = 'border:1px solid var(--border); border-radius:6px; padding:10px; margin-bottom:10px;';
+  field.innerHTML = `
+    <div style="display:flex; gap:10px; margin-bottom:8px;">
+      <input type="text" class="doc-field" placeholder="e.g., Insurance Certificate" style="flex:1; padding:8px; border:1px solid var(--border); border-radius:4px;">
+      <button type="button" onclick="this.closest('.doc-row').remove()" class="btn secondary" style="padding:8px 12px;">Remove</button>
+    </div>
+    <div style="display:flex; gap:20px; flex-wrap:wrap; font-size:13px; color:var(--ink);">
+      <label style="display:flex; align-items:center; gap:6px; font-weight:normal; cursor:pointer;">
+        <input type="checkbox" class="doc-mandatory-field"> Mandatory for submission
+      </label>
+      <label style="display:flex; align-items:center; gap:6px; font-weight:normal; cursor:pointer;">
+        <input type="checkbox" class="doc-expiry-field"> Requires an expiry date (e.g. COIDA, insurance)
+      </label>
+    </div>
+  `;
+  builder.appendChild(field);
+}
+
+function resetCreateForm() {
+  document.getElementById('create-rfq-form').reset();
+  document.getElementById('required-docs-builder').innerHTML = '';
+  currentDraftId = null;
+  updateDraftEditingBanner();
+}
+
+// Shown above the Create RFQ form whenever it's currently editing a saved
+// draft (rather than starting a blank one), so it's never ambiguous whether
+// Publish/Save Draft will create a new row or update the one being edited.
+function updateDraftEditingBanner() {
+  const banner = document.getElementById('draft-editing-banner');
+  if (banner) banner.style.display = currentDraftId ? 'block' : 'none';
+
+  const submitBtn = document.getElementById('create-rfq-submit-btn');
+  if (submitBtn) submitBtn.textContent = currentDraftId ? 'Publish RFQ & Generate Links' : 'Create RFQ & Generate Links';
+}
+
+async function createNewRFQ() {
+  if (isSubmittingRFQ) {
+    console.log('⏳ Already submitting, please wait...');
+    return;
+  }
+
+  if (!currentCompany) {
+    showToast('❌ No company account loaded', 'error');
+    return;
+  }
+
+  isSubmittingRFQ = true;
+
+  try {
+    console.log('=== CREATE RFQ STARTED ===');
+
+    const { name, project, description, deadline, budget, contractorEmails, isPublic, provinces, locationArea, requiredDocs } = collectRFQFormValues();
+
+    if (!name) {
+      showToast('❌ Please enter RFQ Name', 'error');
+      isSubmittingRFQ = false;
+      return;
+    }
+    if (!project) {
+      showToast('❌ Please enter Project Name', 'error');
+      isSubmittingRFQ = false;
+      return;
+    }
+    if (!description) {
+      showToast('❌ Please enter Description', 'error');
+      isSubmittingRFQ = false;
+      return;
+    }
+    if (!deadline) {
+      showToast('❌ Please select a Deadline', 'error');
+      isSubmittingRFQ = false;
+      return;
+    }
+    if (provinces.length === 0) {
+      showToast('❌ Please select at least one Province', 'error');
+      isSubmittingRFQ = false;
+      return;
+    }
+    if (requiredDocs.length === 0) {
+      showToast('❌ Please add at least one Required Document type', 'error');
+      isSubmittingRFQ = false;
+      return;
+    }
+    if (!isPublic && contractorEmails.length === 0) {
+      showToast('❌ Please enter at least one Contractor Email (required for Closed RFQs)', 'error');
+      isSubmittingRFQ = false;
+      return;
+    }
+
+    console.log('✅ All validations passed');
+    showToast(currentDraftId ? 'Publishing RFQ...' : 'Creating RFQ...', 'success');
+
+    const rfqPayload = {
+      rfq_name: name,
+      project_name: project,
+      description: description,
+      deadline: deadline,
+      budget: budget || null,
+      required_documents: requiredDocs,
+      company_id: currentCompany.id,
+      is_public: isPublic,
+      is_draft: false,
+      provinces: provinces,
+      province: provinces[0] || null,
+      location_area: locationArea || null
+    };
+
+    let rfq;
+    if (currentDraftId) {
+      // Publishing a draft that was already saved earlier — update that
+      // same row (and its id/links) rather than inserting a second one.
+      const { data, error: rfqError } = await client
+        .from('rfqs')
+        .update(rfqPayload)
+        .eq('id', currentDraftId)
+        .select()
+        .single();
+      if (rfqError || !data) throw new Error(rfqError ? rfqError.message : 'Failed to publish draft');
+      rfq = data;
+    } else {
+      const { data, error: rfqError } = await client
+        .from('rfqs')
+        .insert([{ ...rfqPayload, created_by: currentUser ? currentUser.email : 'unknown' }])
+        .select()
+        .single();
+      if (rfqError || !data || !data.id) throw new Error(rfqError ? rfqError.message : 'Failed to create RFQ');
+      rfq = data;
+    }
+
+    console.log('✅ RFQ saved:', rfq.id);
+
+    await uploadRFQAttachments(rfq.id);
+
+    if (isPublic) {
+      // Fire-and-forget: don't block the rest of RFQ creation on this.
+      notifySuppliersNewRFQ(rfq.id);
+    }
+
+    if (contractorEmails.length > 0) {
+      const invitations = contractorEmails.map(email => ({
+        rfq_id: rfq.id,
+        contractor_email: email,
+        invitation_token: generateToken(),
+        used: false
+      }));
+
+      const { error: invError } = await client
+        .from('rfq_invitations')
+        .insert(invitations);
+
+      if (invError) throw invError;
+
+      console.log('✅ Invitations created');
+
+      window.lastInvitations = invitations;
+      await sendRFQInviteEmails(rfq.id, invitations);
+      showGeneratedLinks(rfq.id, invitations);
+    } else {
+      showToast(isPublic ? '✅ RFQ created and listed on the public portal' : '✅ RFQ created', 'success');
+    }
+
+    resetCreateForm();
+    loadRFQDrafts();
+
+  } catch (err) {
+    console.error('❌ Error creating RFQ:', err);
+    showToast('Error: ' + err.message, 'error');
+  } finally {
+    isSubmittingRFQ = false;
+  }
+}
+
+// Saves the Create RFQ form as a Draft: not visible on the public portal,
+// no supplier notifications, no contractor invitations sent — just parked
+// so it can be finished later. Only the fields the rfqs table itself
+// requires (name/project/description/deadline) are enforced; everything
+// else (provinces, required documents, visibility, contractor emails) can
+// be filled in partially or left for later.
+async function saveRFQDraft() {
+  if (isSubmittingRFQ) {
+    console.log('⏳ Already submitting, please wait...');
+    return;
+  }
+  if (!currentCompany) {
+    showToast('❌ No company account loaded', 'error');
+    return;
+  }
+
+  const { name, project, description, deadline, budget, isPublic, provinces, locationArea, requiredDocs } = collectRFQFormValues();
+
+  if (!name || !project || !description || !deadline) {
+    showToast('❌ RFQ Name, Project Name, Description, and Deadline are needed to save a draft', 'error');
+    return;
+  }
+
+  isSubmittingRFQ = true;
+  try {
+    const rfqPayload = {
+      rfq_name: name,
+      project_name: project,
+      description: description,
+      deadline: deadline,
+      budget: budget || null,
+      required_documents: requiredDocs,
+      company_id: currentCompany.id,
+      is_public: isPublic,
+      is_draft: true,
+      provinces: provinces,
+      province: provinces[0] || null,
+      location_area: locationArea || null,
+      updated_at: new Date().toISOString()
+    };
+
+    let rfq;
+    if (currentDraftId) {
+      const { data, error } = await client
+        .from('rfqs')
+        .update(rfqPayload)
+        .eq('id', currentDraftId)
+        .select()
+        .single();
+      if (error || !data) throw new Error(error ? error.message : 'Failed to save draft');
+      rfq = data;
+    } else {
+      const { data, error } = await client
+        .from('rfqs')
+        .insert([{ ...rfqPayload, created_by: currentUser ? currentUser.email : 'unknown' }])
+        .select()
+        .single();
+      if (error || !data || !data.id) throw new Error(error ? error.message : 'Failed to save draft');
+      rfq = data;
+      currentDraftId = rfq.id;
+      updateDraftEditingBanner();
+    }
+
+    // Best-effort, same as publish — and self-guarding against duplicate
+    // uploads: uploadRFQAttachments() only touches the attachments column
+    // when the file input actually has files selected, and it's cleared
+    // right after a successful upload, so re-clicking Save Draft without
+    // picking new files won't re-upload (or lose) anything already stored.
+    await uploadRFQAttachments(rfq.id);
+
+    showToast('💾 Draft saved — it won\'t be visible to contractors until you publish it.', 'success');
+    loadRFQDrafts();
+  } catch (err) {
+    console.error('❌ Error saving draft:', err);
+    showToast('Error: ' + err.message, 'error');
+  } finally {
+    isSubmittingRFQ = false;
+  }
+}
+
+// Uploads any files picked in the "Attach RFQ Document(s)" input to the
+// public rfq-attachments bucket and records them on the rfq row so the
+// contractor portal can show download links. Best-effort: a failed file
+// doesn't stop the RFQ from being created.
+//
+// Merges onto whatever's already on the row (rather than replacing it) and
+// clears the file input once the upload succeeds — a draft can go through
+// Save Draft more than once, and without this a second save with no new
+// files picked would be a no-op (fine), but a second save *with* new files
+// picked would silently drop whatever was attached the first time.
+async function uploadRFQAttachments(rfqId) {
+  const input = document.getElementById('rfq-attachments-input');
+  const files = input && input.files ? Array.from(input.files) : [];
+  if (files.length === 0) return;
+
+  const uploaded = [];
+
+  for (const file of files) {
+    try {
+      const path = `rfq-${rfqId}/${Date.now()}-${file.name}`;
+      const { error: uploadError } = await client.storage
+        .from('rfq-attachments')
+        .upload(path, file);
+
+      if (uploadError) {
+        console.warn('⚠️ Attachment upload failed:', file.name, uploadError.message);
+        continue;
+      }
+
+      const { data: urlData } = client.storage.from('rfq-attachments').getPublicUrl(path);
+      uploaded.push({ name: file.name, url: urlData.publicUrl });
+    } catch (err) {
+      console.warn('⚠️ Attachment upload error:', file.name, err.message);
+    }
+  }
+
+  if (uploaded.length === 0) return;
+
+  const { data: existingRfq } = await client
+    .from('rfqs')
+    .select('attachments')
+    .eq('id', rfqId)
+    .maybeSingle();
+  const merged = [...((existingRfq && existingRfq.attachments) || []), ...uploaded];
+
+  const { error: updateError } = await client
+    .from('rfqs')
+    .update({ attachments: merged })
+    .eq('id', rfqId);
+
+  if (updateError) {
+    console.error('Error saving attachment list:', updateError);
+    showToast('RFQ created, but attaching documents failed', 'warning');
+  } else {
+    input.value = '';
+  }
+}
+
+// Renders a read-only preview of the RFQ exactly as a contractor would see
+// it on the public/invite RFQ detail page (see loadRFQDetails()), but built
+// entirely from whatever's currently typed into the Create RFQ form — no
+// save, no network call. Deliberately NOT sharing markup/ids with
+// loadRFQDetails() (e.g. no #contractor-form, no #doc-N inputs) so this can
+// never collide with a real contractor page if both were somehow present in
+// the same DOM, and so nothing here is mistaken for a live, submittable form.
+function buildRFQPreviewCardHtml(values) {
+  const { name, description, deadline, budget, provinces, locationArea, requiredDocs } = values;
+
+  const companyName = (currentCompany && currentCompany.name) || 'Your Company';
+  const logoUrl = currentCompany && currentCompany.logo_url;
+
+  return `
+    <div style="margin-bottom:16px; padding:10px 14px; background:#FFF8E1; border:1px solid #F5D67A; border-radius:4px; font-size:13px; color:var(--ink);">
+      👁️ <strong>Preview</strong> — this is exactly how contractors will see this RFQ. Nothing has been saved yet.
+    </div>
+    <div class="card" style="box-shadow:none; border:1px solid var(--border);">
+      <div style="display:flex; align-items:center; gap:12px; margin-bottom:20px;">
+        ${logoUrl ? `<img src="${logoUrl}" alt="${escapeHtmlClient(companyName)}" style="height:40px; max-width:120px; object-fit:contain;">` : ''}
+        <div>
+          <p style="margin:0; font-weight:bold; color:var(--primary);">${escapeHtmlClient(companyName)}</p>
+          <p style="margin:0; font-size:12px; color:var(--border);">Request for Quotation Portal</p>
+        </div>
+      </div>
+
+      <h2 style="margin-top:0;">${name ? escapeHtmlClient(name) : '<span style="color:var(--border); font-style:italic;">(RFQ Name not yet entered)</span>'}</h2>
+      <p style="color: var(--border); margin-bottom: 20px; white-space:pre-wrap;">${description ? escapeHtmlClient(description) : '<span style="font-style:italic;">(No description yet)</span>'}</p>
+
+      ${(locationArea || (provinces && provinces.length > 0)) ? `<p><strong>Location:</strong> ${[locationArea, ...(provinces || [])].filter(Boolean).map(escapeHtmlClient).join(', ')}</p>` : ''}
+      ${budget ? `<p><strong>Budget:</strong> R${escapeHtmlClient(String(budget))}</p>` : ''}
+      ${deadline ? `<p><strong>Deadline:</strong> ${new Date(deadline).toLocaleDateString()}</p>` : '<p style="color:var(--border); font-style:italic;">(No deadline selected yet)</p>'}
+
+      ${requiredDocs && requiredDocs.length > 0 ? `
+        <div style="margin: 20px 0;">
+          <h4>Required Documents:</h4>
+          <ul>
+            ${requiredDocs.map(doc => `<li>${escapeHtmlClient(doc.name)}${doc.mandatory ? ' <strong style="color:var(--accent);">(Mandatory)</strong>' : ''}${doc.requires_expiry ? ' <span style="color:var(--border); font-size:12px;">— expiry date required</span>' : ''}</li>`).join('')}
+          </ul>
+        </div>
+      ` : '<p style="color:var(--border); font-style:italic;">(No required documents added yet)</p>'}
+
+      <div style="margin-top: 30px; padding: 15px; background: var(--bg-2); border-radius: 4px; text-align:center;">
+        <p style="margin:0; font-size:13px; color:var(--border);">Contractors would see a "Your Company Information" form and document upload fields here, followed by a Submit Application button.</p>
+      </div>
+    </div>
+  `;
+}
+
+// Shows the read-only public-page preview in a modal, built from whatever's
+// currently in the Create RFQ form — nothing is saved or sent.
+function previewRFQ() {
+  const values = collectRFQFormValues();
+  const body = document.getElementById('rfq-preview-body');
+  if (!body) return;
+  body.innerHTML = buildRFQPreviewCardHtml(values);
+  openModal('rfq-preview-modal');
+}
+
+// Lists saved-but-unpublished drafts for the current company above the
+// Create RFQ form, so they're never lost track of and can be resumed or
+// discarded. Hides its own card entirely when there are none.
+async function loadRFQDrafts() {
+  const card = document.getElementById('rfq-drafts-card');
+  const list = document.getElementById('rfq-drafts-list');
+  if (!card || !list || !currentCompany) return;
+
+  try {
+    const { data: drafts, error } = await client
+      .from('rfqs')
+      .select('*')
+      .eq('company_id', currentCompany.id)
+      .eq('is_draft', true)
+      .order('updated_at', { ascending: false });
+
+    if (error) throw error;
+
+    if (!drafts || drafts.length === 0) {
+      card.style.display = 'none';
+      list.innerHTML = '';
+      return;
+    }
+
+    card.style.display = 'block';
+    list.innerHTML = drafts.map(draft => `
+      <div style="display:flex; justify-content:space-between; align-items:center; gap:12px; padding:12px; background:var(--bg-2); border-radius:4px; margin-bottom:8px; flex-wrap:wrap;">
+        <div style="flex:1; min-width:200px;">
+          <p style="margin:0 0 4px 0; font-weight:bold; color:var(--ink);">${draft.rfq_name ? escapeHtmlClient(draft.rfq_name) : '<span style="font-style:italic; color:var(--border);">(Untitled draft)</span>'}</p>
+          <p style="margin:0; font-size:12px; color:var(--border);">${draft.project_name ? 'Project: ' + escapeHtmlClient(draft.project_name) + ' · ' : ''}Last saved ${new Date(draft.updated_at || draft.created_at).toLocaleString()}</p>
+        </div>
+        <div style="display:flex; gap:8px; flex-shrink:0;">
+          <button type="button" onclick="continueEditingDraft('${draft.id}')" class="btn gold" style="padding:8px 12px; font-size:13px;">Continue Editing</button>
+          <button type="button" onclick="deleteDraft('${draft.id}')" class="btn secondary" style="padding:8px 12px; font-size:13px;">Delete</button>
+        </div>
+      </div>
+    `).join('');
+  } catch (err) {
+    console.error('❌ Error loading drafts:', err);
+  }
+}
+
+// Loads a saved draft's fields back into the Create RFQ form so it can be
+// finished and either saved again or published. Attachments already
+// uploaded to the draft are left as-is (uploadRFQAttachments() only adds
+// newly-picked files) — the draft's existing attachment list isn't shown as
+// individually re-removable here, matching how new RFQs are created today.
+async function continueEditingDraft(draftId) {
+  try {
+    const { data: draft, error } = await client
+      .from('rfqs')
+      .select('*')
+      .eq('id', draftId)
+      .single();
+    if (error || !draft) throw new Error(error ? error.message : 'Draft not found');
+
+    document.getElementById('create-rfq-form').reset();
+    document.getElementById('required-docs-builder').innerHTML = '';
+
+    document.querySelector('input[name="rfq_name"]').value = draft.rfq_name || '';
+    document.querySelector('input[name="rfq_project"]').value = draft.project_name || '';
+    document.querySelector('textarea[name="rfq_description"]').value = draft.description || '';
+    document.querySelector('input[name="rfq_deadline"]').value = draft.deadline || '';
+    document.querySelector('input[name="rfq_budget"]').value = draft.budget || '';
+    document.querySelector('input[name="rfq_location_area"]').value = draft.location_area || '';
+
+    const visibilityValue = draft.is_public ? 'open' : 'closed';
+    const visibilityInput = document.querySelector(`input[name="rfq_visibility"][value="${visibilityValue}"]`);
+    if (visibilityInput) visibilityInput.checked = true;
+    updateVisibilityHint();
+
+    (draft.provinces || []).forEach(p => {
+      const cb = document.querySelector(`.rfq-province-checkbox[value="${p}"]`);
+      if (cb) cb.checked = true;
+    });
+
+    (draft.required_documents || []).forEach(doc => {
+      addDocumentField();
+      const rows = document.querySelectorAll('#required-docs-builder .doc-row');
+      const row = rows[rows.length - 1];
+      row.querySelector('.doc-field').value = doc.name || '';
+      row.querySelector('.doc-mandatory-field').checked = !!doc.mandatory;
+      row.querySelector('.doc-expiry-field').checked = !!doc.requires_expiry;
+    });
+
+    currentDraftId = draft.id;
+    updateDraftEditingBanner();
+
+    document.getElementById('create-rfq-form').scrollIntoView({ behavior: 'smooth', block: 'start' });
+    showToast('📝 Draft loaded — continue editing below', 'success');
+  } catch (err) {
+    console.error('❌ Error loading draft:', err);
+    showToast('Error: ' + err.message, 'error');
+  }
+}
+
+// Permanently deletes a saved draft (never published, so nothing else
+// references it — no invitations, no submissions). If the draft being
+// deleted is the one currently loaded in the form, the form resets so
+// Publish/Save Draft doesn't try to update a row that no longer exists.
+async function deleteDraft(draftId) {
+  if (!confirm('Permanently delete this draft? This cannot be undone.')) return;
+
+  try {
+    const { error } = await client
+      .from('rfqs')
+      .delete()
+      .eq('id', draftId);
+    if (error) throw error;
+
+    if (currentDraftId === draftId) {
+      resetCreateForm();
+    }
+
+    showToast('🗑️ Draft deleted', 'success');
+    loadRFQDrafts();
+  } catch (err) {
+    console.error('❌ Error deleting draft:', err);
+    showToast('Error: ' + err.message, 'error');
+  }
+}
+
+// ===== RFQ CONSOLE =====
+async function loadRFQConsole() {
+  try {
+    if (!currentCompany) return;
+    console.log('Loading RFQ Console...');
+
+    const { data: rfqs, error: rfqError } = await client
+      .from('rfqs')
+      .select('*')
+      .eq('company_id', currentCompany.id)
+      .order('created_at', { ascending: false });
+
+    if (rfqError || !rfqs || rfqs.length === 0) {
+      document.getElementById('rfq-console-list').innerHTML =
+        '<div style="text-align: center; padding: 40px; color: var(--border);"><p>No active RFQs yet. <strong>Create one to get started!</strong></p></div>';
+      return;
+    }
+
+    let consoleHtml = '';
+    const baseUrl = window.location.origin + window.location.pathname;
+    rfqQuestionsById = {};
+
+    for (const rfq of rfqs) {
+      const { data: invitations } = await client
+        .from('rfq_invitations')
+        .select('*')
+        .eq('rfq_id', rfq.id);
+
+      const { data: submissions } = await client
+        .from('rfq_submissions')
+        .select('*')
+        .eq('rfq_id', rfq.id);
+
+      const { data: questions } = await client
+        .from('rfq_questions')
+        .select('*')
+        .eq('rfq_id', rfq.id)
+        .order('created_at', { ascending: false });
+
+      (questions || []).forEach(q => { rfqQuestionsById[q.id] = q; });
+      const pendingQuestionCount = (questions || []).filter(q => q.status === 'pending').length;
+
+      const deadlineDate = new Date(rfq.deadline);
+      const isExpired = deadlineDate < new Date();
+      const daysLeft = Math.ceil((deadlineDate - new Date()) / (1000 * 60 * 60 * 24));
+      const submissionCount = submissions ? submissions.length : 0;
+      const invitationCount = invitations ? invitations.length : 0;
+      const responseRate = invitationCount > 0 ? Math.round((submissionCount / invitationCount) * 100) : 0;
+
+      consoleHtml += `
+        <div class="rfq-console-card ${isExpired ? 'expired' : ''}">
+          <div style="display: flex; justify-content: space-between; align-items: start; margin-bottom: 20px; flex-wrap: wrap; gap: 15px;">
+            <div style="flex: 1; min-width: 220px;">
+              <h3 style="margin: 0 0 5px 0; color: var(--primary);">
+                ${rfq.rfq_name}
+                <span class="submission-status ${rfq.is_withdrawn ? 'rejected' : (rfq.is_public ? 'approved' : 'under_review')}" style="vertical-align:middle; margin-left:8px;">${rfq.is_withdrawn ? '🚫 Unpublished' : (rfq.is_public ? 'Open — Public' : 'Closed — Invite Only')}</span>
+              </h3>
+              <p style="margin: 0 0 8px 0; font-size: 14px; color: var(--border);">Project: <strong>${rfq.project_name}</strong></p>
+              ${(rfq.location_area || (rfq.provinces && rfq.provinces.length > 0)) ? `<p style="margin: 0 0 8px 0; font-size: 14px; color: var(--border);">📍 ${[rfq.location_area, ...(rfq.provinces || [])].filter(Boolean).join(', ')}</p>` : ''}
+              ${(rfq.is_public && rfq.notified_provinces && rfq.notified_provinces.length > 0) ? `<p style="margin: 0 0 8px 0; font-size: 13px; color: var(--border);">📢 Suppliers notified in: ${rfq.notified_provinces.map(p => escapeHtmlClient(p)).join(', ')}</p>` : ''}
+              <p style="margin: 0; font-size: 14px; color: var(--border);">
+                Deadline: ${deadlineDate.toLocaleDateString()}
+                <span style="color: ${isExpired ? 'var(--warning)' : 'var(--success)'}; font-weight: bold; margin-left: 8px;">
+                  ${isExpired ? '❌ Expired' : `📅 ${daysLeft} days left`}
+                </span>
+              </p>
+            </div>
+            <div style="text-align: center; background: var(--bg-2); padding: 12px 16px; border-radius: 4px;">
+              <p style="margin: 0; font-size: 11px; text-transform: uppercase; color: var(--border); font-weight: bold;">Response Rate</p>
+              <p style="margin: 5px 0 0 0; font-size: 28px; font-weight: bold; color: var(--accent);">${responseRate}%</p>
+              <p style="margin: 5px 0 0 0; font-size: 12px; color: var(--border);">${submissionCount}/${invitationCount} responses</p>
+            </div>
+          </div>
+
+          <div style="background: var(--bg-2); padding: 15px; border-radius: 4px; margin-bottom: 15px;">
+            <div style="margin-bottom: 15px;">
+              <h4 style="margin: 0 0 8px 0; font-size: 12px; text-transform: uppercase; color: var(--border); font-weight: bold;">Description</h4>
+              <p style="margin: 0; color: var(--ink); line-height: 1.5;">${rfq.description}</p>
+            </div>
+
+            ${rfq.budget ? `
+              <div style="padding-top: 15px; border-top: 1px solid var(--border); margin-top: 15px;">
+                <h4 style="margin: 0 0 8px 0; font-size: 12px; text-transform: uppercase; color: var(--border); font-weight: bold;">Budget</h4>
+                <p style="margin: 0; color: var(--ink); font-size: 18px; font-weight: bold;">R${rfq.budget.toLocaleString()}</p>
+              </div>
+            ` : ''}
+          </div>
+
+          ${rfq.required_documents && rfq.required_documents.length > 0 ? `
+            <div style="background: var(--bg-2); padding: 15px; border-radius: 4px; margin-bottom: 15px;">
+              <h4 style="margin: 0 0 10px 0; font-size: 12px; text-transform: uppercase; color: var(--border); font-weight: bold;">Required Documents</h4>
+              <ul style="margin: 0; padding-left: 20px; color: var(--ink);">
+                ${rfq.required_documents.map(doc => `<li style="margin-bottom: 5px;">${escapeHtmlClient(doc.name)}${doc.mandatory ? ' <strong style="color:var(--accent);">(Mandatory)</strong>' : ''}${doc.requires_expiry ? ' <span style="color:var(--border); font-size:12px;">— expiry date required</span>' : ''}</li>`).join('')}
+              </ul>
+            </div>
+          ` : ''}
+
+          ${rfq.attachments && rfq.attachments.length > 0 ? `
+            <div style="background: var(--bg-2); padding: 15px; border-radius: 4px; margin-bottom: 15px;">
+              <h4 style="margin: 0 0 10px 0; font-size: 12px; text-transform: uppercase; color: var(--border); font-weight: bold;">RFQ Documents (visible to contractors)</h4>
+              <ul style="margin: 0; padding-left: 20px; color: var(--ink);">
+                ${rfq.attachments.map(att => `<li style="margin-bottom: 5px;"><a href="${att.url}" target="_blank" rel="noopener noreferrer">${att.name}</a></li>`).join('')}
+              </ul>
+            </div>
+          ` : ''}
+
+          <div style="background: var(--bg-2); padding: 15px; border-radius: 4px; margin-bottom: 15px; max-height: 300px; overflow-y: auto;">
+            <h4 style="margin-top: 0; margin-bottom: 10px; color: var(--ink);">Contractor Links (${invitationCount})</h4>
+            <div style="display: flex; flex-direction: column; gap: 8px;">
+              ${invitations && invitations.length > 0 ? invitations.map((inv, idx) => `
+                <div style="display: flex; justify-content: space-between; align-items: center; padding: 10px; background: white; border: 1px solid var(--border); border-radius: 3px;">
+                  <div style="flex: 1; min-width: 0;">
+                    <p style="margin: 0 0 4px 0; font-size: 13px; font-weight: bold; color: var(--ink);">${idx + 1}. ${inv.contractor_email}</p>
+                    <code style="font-size: 11px; color: var(--border); display: block; word-break: break-all; font-family: var(--mono);">${baseUrl}?rfq=${inv.invitation_token}</code>
+                    <p style="margin: 4px 0 0 0; font-size: 11px; color: var(--border);">${inv.used ? '✅ Submitted' : '⏳ Pending'}</p>
+                  </div>
+                  <button onclick="copyToClipboard('${baseUrl}?rfq=${inv.invitation_token}')"
+                    class="btn" style="margin-left: 10px; padding: 6px 10px; font-size: 12px; white-space: nowrap; flex-shrink: 0;">
+                    Copy
+                  </button>
+                </div>
+              `).join('') : '<p style="margin: 0; color: var(--border); font-style: italic;">No invitations sent yet</p>'}
+            </div>
+          </div>
+
+          <div style="background: var(--bg-2); padding: 15px; border-radius: 4px; margin-bottom: 15px; max-height: 320px; overflow-y: auto;">
+            <h4 style="margin-top: 0; margin-bottom: 10px; color: var(--ink);">Questions ${pendingQuestionCount > 0 ? `<span class="submission-status info_requested" style="vertical-align:middle; margin-left:6px;">${pendingQuestionCount} pending</span>` : `(${(questions || []).length})`}</h4>
+            <div style="display: flex; flex-direction: column; gap: 8px;">
+              ${questions && questions.length > 0 ? questions.map(q => `
+                <div style="padding: 10px; background: white; border: 1px solid var(--border); border-radius: 3px;">
+                  <p style="margin: 0 0 6px 0; font-size: 13px; font-weight: bold; color: var(--ink);">${escapeHtmlClient(q.question)}</p>
+                  <p style="margin: 0 0 8px 0; font-size: 11px; color: var(--border);">From ${escapeHtmlClient(q.applicant_name || q.applicant_email)} · ${new Date(q.created_at).toLocaleDateString()}</p>
+                  ${q.status === 'answered' ? `
+                    <div style="background: var(--bg-2); border-radius: 3px; padding: 8px; margin-bottom: 6px;">
+                      <p style="margin: 0; font-size: 13px; color: var(--ink); white-space:pre-wrap;">${escapeHtmlClient(q.answer)}</p>
+                    </div>
+                    <p style="margin: 0; font-size: 11px; color: var(--border);">${q.answer_visibility === 'public' ? '🌐 Posted publicly' : '✉️ Sent privately'} · answered ${q.answered_at ? new Date(q.answered_at).toLocaleDateString() : ''}</p>
+                  ` : `
+                    <button onclick="openAnswerQuestionModal('${q.id}')" class="btn gold" style="padding: 6px 12px; font-size: 12px;">Reply</button>
+                  `}
+                </div>
+              `).join('') : '<p style="margin: 0; color: var(--border); font-style: italic;">No questions yet</p>'}
+            </div>
+          </div>
+
+          <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">
+            <button onclick="showAddContractorForm('${rfq.id}')" class="btn secondary" style="padding: 10px;">
+              + Add Contractor
+            </button>
+            <button onclick="copyAllRFQLinks('${rfq.id}')" class="btn gold" style="padding: 10px;">
+              Copy All Links
+            </button>
+          </div>
+
+          ${rfq.is_public ? `
+            <div style="display: grid; grid-template-columns: ${rfq.is_withdrawn ? '1fr' : '1fr 1fr'}; gap: 10px; margin-top: 10px;">
+              ${rfq.is_withdrawn ? `
+                <button onclick="republishRFQ('${rfq.id}')" class="btn gold" style="padding: 10px;">
+                  🔓 Republish
+                </button>
+              ` : `
+                <button onclick='openExpandSearchModal("${rfq.id}", ${JSON.stringify(JSON.stringify(rfq.notified_provinces || []))})' class="btn secondary" style="padding: 10px;">
+                  📢 Expand Supplier Search
+                </button>
+                <button onclick="unpublishRFQ('${rfq.id}')" class="btn" style="padding: 10px; background: var(--bg-2); color: var(--warning);">
+                  🚫 Unpublish
+                </button>
+              `}
+            </div>
+          ` : ''}
+        </div>
+      `;
+    }
+
+    document.getElementById('rfq-console-list').innerHTML = consoleHtml;
+
+  } catch (err) {
+    console.error('Error in loadRFQConsole:', err);
+    showToast('Error: ' + err.message, 'error');
+  }
+}
+
+// ===== SUBMISSIONS =====
+async function loadSubmissions() {
+  try {
+    if (!currentCompany) return;
+    console.log('Loading submissions...');
+
+    const { data: allSubmissions, error } = await client
+      .from('rfq_submissions')
+      .select(`*, rfqs!inner(rfq_name, company_id)`)
+      .eq('rfqs.company_id', currentCompany.id)
+      .order('created_at', { ascending: false });
+
+    if (error) throw error;
+
+    console.log('Submissions loaded:', allSubmissions ? allSubmissions.length : 0);
+
+    // Flag any submission that has at least one document whose expiry date
+    // had already passed by the time it was submitted, so staff can spot
+    // problem submissions from the list without opening every one.
+    const submissionIds = (allSubmissions || []).map(s => s.id);
+    const expiredSubmissionIds = new Set();
+    if (submissionIds.length > 0) {
+      const { data: docsWithExpiry } = await client
+        .from('rfq_submission_documents')
+        .select('submission_id, expiry_date')
+        .in('submission_id', submissionIds)
+        .not('expiry_date', 'is', null);
+
+      const createdAtById = new Map((allSubmissions || []).map(s => [s.id, s.created_at]));
+      (docsWithExpiry || []).forEach(doc => {
+        const submittedAt = createdAtById.get(doc.submission_id);
+        if (submittedAt && new Date(doc.expiry_date) < new Date(submittedAt)) {
+          expiredSubmissionIds.add(doc.submission_id);
+        }
+      });
+    }
+
+    // Populate the RFQ filter's options from the full (unfiltered) set so the
+    // dropdown always lists every RFQ that has submissions, regardless of the
+    // currently-selected filters — rebuilding it from an already-filtered
+    // list would make other RFQs disappear from the dropdown itself.
+    const rfqFilterEl = document.getElementById('rfq-filter');
+    if (rfqFilterEl) {
+      const previousSelection = rfqFilterEl.value;
+      const rfqOptionsById = new Map();
+      (allSubmissions || []).forEach(sub => {
+        if (sub.rfq_id && !rfqOptionsById.has(sub.rfq_id)) {
+          rfqOptionsById.set(sub.rfq_id, sub.rfqs ? sub.rfqs.rfq_name : sub.rfq_id);
+        }
+      });
+      rfqFilterEl.innerHTML = '<option value="">All RFQs</option>' +
+        Array.from(rfqOptionsById.entries()).map(([id, name]) => `<option value="${id}">${name}</option>`).join('');
+      rfqFilterEl.value = previousSelection && rfqOptionsById.has(previousSelection) ? previousSelection : '';
+    }
+
+    const rfqFilterValue = rfqFilterEl ? rfqFilterEl.value : '';
+    const statusFilterValue = document.getElementById('status-filter') ? document.getElementById('status-filter').value : '';
+
+    const submissions = (allSubmissions || []).filter(sub => {
+      if (rfqFilterValue && sub.rfq_id !== rfqFilterValue) return false;
+      if (statusFilterValue && sub.status !== statusFilterValue) return false;
+      return true;
+    });
+
+    if (submissions.length === 0) {
+      document.getElementById('submissions-list').innerHTML = `<p style="text-align: center; color: var(--border); padding: 40px;">${(allSubmissions || []).length === 0 ? 'No submissions yet' : 'No submissions match this filter'}</p>`;
+      return;
+    }
+
+    const listHtml = submissions.map(sub => `
+      <div class="submission-card" onclick="openSubmissionDetail('${sub.id}')">
+        <h3 style="margin: 0 0 10px 0; color: var(--ink);">${sub.contractor_name}${expiredSubmissionIds.has(sub.id) ? ' <span title="Contains a document that was already expired at submission" style="color:var(--closing-today, #D8452B); font-size:14px; font-weight:bold;">🚩 Expired document</span>' : ''}</h3>
+        <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 15px; margin-bottom: 15px; font-size: 14px;">
+          <div>
+            <p style="margin: 0; color: var(--border);">Email: <strong>${sub.contractor_email}</strong></p>
+          </div>
+          <div>
+            <p style="margin: 0; color: var(--border);">RFQ: <strong>${sub.rfqs.rfq_name}</strong></p>
+          </div>
+          <div>
+            <p style="margin: 0; color: var(--border);">Submitted: ${new Date(sub.created_at).toLocaleDateString()}</p>
+          </div>
+        </div>
+        <div class="submission-status ${sub.status}">${sub.status}</div>
+      </div>
+    `).join('');
+
+    document.getElementById('submissions-list').innerHTML = listHtml;
+
+  } catch (err) {
+    console.error('Error in loadSubmissions:', err);
+    showToast('Error loading submissions: ' + err.message, 'error');
+  }
+}
+
+async function openSubmissionDetail(id) {
+  try {
+    const { data: submission } = await client
+      .from('rfq_submissions')
+      .select('*')
+      .eq('id', id)
+      .single();
+
+    const { data: rfq } = await client
+      .from('rfqs')
+      .select('*')
+      .eq('id', submission.rfq_id)
+      .single();
+
+    const { data: documents } = await client
+      .from('rfq_submission_documents')
+      .select('*')
+      .eq('submission_id', id);
+
+    let detailsHtml = `
+      <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px; margin-bottom: 20px;">
+        <div>
+          <label style="font-weight: bold; font-size: 12px; text-transform: uppercase; color: var(--ink);">Company Name</label>
+          <p style="margin: 5px 0; font-size: 16px; color: var(--ink);">${submission.contractor_name}</p>
+        </div>
+        <div>
+          <label style="font-weight: bold; font-size: 12px; text-transform: uppercase; color: var(--ink);">Email</label>
+          <p style="margin: 5px 0; font-size: 16px; color: var(--ink);">${submission.contractor_email}</p>
+        </div>
+        <div>
+          <label style="font-weight: bold; font-size: 12px; text-transform: uppercase; color: var(--ink);">Phone</label>
+          <p style="margin: 5px 0; font-size: 16px; color: var(--ink);">${submission.contractor_phone}</p>
+        </div>
+        <div>
+          <label style="font-weight: bold; font-size: 12px; text-transform: uppercase; color: var(--ink);">Reg Number</label>
+          <p style="margin: 5px 0; font-size: 16px; color: var(--ink);">${submission.contractor_reg}</p>
+        </div>
+      </div>
+
+      ${rfq ? `
+        <div style="background: var(--bg-2); padding: 15px; border-radius: 4px; margin-bottom: 20px;">
+          <h4 style="margin: 0 0 10px 0; color: var(--ink);">RFQ: ${rfq.rfq_name}</h4>
+          <p style="margin: 5px 0; font-size: 14px; color: var(--border);">Project: ${rfq.project_name}</p>
+          <p style="margin: 5px 0; font-size: 14px; color: var(--border);">Deadline: ${new Date(rfq.deadline).toLocaleDateString()}</p>
+        </div>
+      ` : ''}
+
+      <div>
+        <label style="font-weight: bold; font-size: 12px; text-transform: uppercase; color: var(--ink);">Submitted</label>
+        <p style="margin: 5px 0; font-size: 14px; color: var(--border);">${new Date(submission.created_at).toLocaleString()}</p>
+      </div>
+    `;
+
+    const docsHtml = documents && documents.length > 0
+      ? documents.map(doc => {
+          // "Expired" here means the document's own expiry date had already
+          // passed by the time it was submitted — not that it has since
+          // expired — since that's the compliance check that matters (did
+          // the contractor submit a document that was already out of date).
+          const isExpired = !!(doc.expiry_date && submission.created_at && new Date(doc.expiry_date) < new Date(submission.created_at));
+          return `
+          <div style="padding: 8px; border: 1px solid ${isExpired ? 'var(--closing-today, #D8452B)' : 'var(--border)'}; border-radius: 4px; margin-bottom: 8px;${isExpired ? ' background:#FDECEA;' : ''}">
+            <div style="display: flex; justify-content: space-between; align-items: center; gap: 10px;">
+              <span style="color: var(--ink);">📄 ${escapeHtmlClient(doc.file_name)}</span>
+              <button onclick="downloadDocument('${doc.file_path}', '${doc.file_name}')"
+                class="btn" style="padding: 4px 12px; font-size: 12px; flex-shrink:0;">
+                Download
+              </button>
+            </div>
+            ${doc.document_type ? `<p style="margin:6px 0 0 0; font-size:12px; color:var(--border);">Type: ${escapeHtmlClient(doc.document_type)}</p>` : ''}
+            ${doc.expiry_date ? `<p style="margin:2px 0 0 0; font-size:12px; ${isExpired ? 'color:var(--closing-today, #D8452B); font-weight:bold;' : 'color:var(--border);'}">
+              Expiry: ${new Date(doc.expiry_date).toLocaleDateString()}${isExpired ? ' — 🚩 Already expired at time of submission' : ''}
+            </p>` : ''}
+          </div>
+        `;
+        }).join('')
+      : '<p style="color: var(--border); font-style: italic;">No documents submitted</p>';
+
+    const detailsContent = document.getElementById('submission-details-content');
+    const docsContent = document.getElementById('submission-documents-list');
+
+    if (detailsContent) detailsContent.innerHTML = detailsHtml;
+    if (docsContent) docsContent.innerHTML = docsHtml;
+
+    const requestBox = document.getElementById('submission-info-request-box');
+    if (requestBox) {
+      if (submission.info_request_message) {
+        requestBox.style.display = 'block';
+        document.getElementById('submission-info-request-text').textContent = submission.info_request_message;
+        document.getElementById('submission-info-request-date').textContent = submission.info_requested_at
+          ? `Requested ${new Date(submission.info_requested_at).toLocaleString()}`
+          : '';
+      } else {
+        requestBox.style.display = 'none';
+      }
+    }
+
+    const responseBox = document.getElementById('submission-info-response-box');
+    if (responseBox) {
+      if (submission.info_response_message) {
+        responseBox.style.display = 'block';
+        document.getElementById('submission-info-response-text').textContent = submission.info_response_message;
+        document.getElementById('submission-info-response-date').textContent = submission.info_response_at
+          ? `Received ${new Date(submission.info_response_at).toLocaleString()}`
+          : '';
+      } else {
+        responseBox.style.display = 'none';
+      }
+    }
+
+    const statusSelect = document.getElementById('submission-status-update');
+    if (statusSelect) {
+      statusSelect.value = submission.status;
+      statusSelect.dataset.submissionId = id;
+    }
+    const messageBox = document.getElementById('submission-info-request-message');
+    if (messageBox) messageBox.value = '';
+    onSubmissionStatusSelectChange();
+
+    const title = document.getElementById('submission-title');
+    if (title) title.textContent = submission.contractor_name;
+
+    openModal('submission-detail-modal');
+
+  } catch (err) {
+    console.error('Error opening submission detail:', err);
+    showToast('Error: ' + err.message, 'error');
+  }
+}
+
+// Toggles the "what do you need?" message box and relabels the action
+// button based on which status is currently selected — Request More
+// Information needs a message + triggers an email, everything else is a
+// plain status write.
+function onSubmissionStatusSelectChange() {
+  const statusSelect = document.getElementById('submission-status-update');
+  const formBox = document.getElementById('submission-info-request-form');
+  const actionBtn = document.getElementById('submission-status-action-btn');
+  if (!statusSelect || !formBox || !actionBtn) return;
+
+  const isInfoRequest = statusSelect.value === 'info_requested';
+  formBox.style.display = isInfoRequest ? 'block' : 'none';
+  actionBtn.textContent = isInfoRequest ? 'Send Request' : 'Update Status';
+}
+
+async function handleSubmissionStatusAction() {
+  const statusSelect = document.getElementById('submission-status-update');
+  if (!statusSelect || !statusSelect.dataset.submissionId) {
+    showToast('Error: submission ID not found', 'error');
+    return;
+  }
+
+  const id = statusSelect.dataset.submissionId;
+  const newStatus = statusSelect.value;
+
+  if (newStatus === 'info_requested') {
+    await sendSubmissionInfoRequest(id);
+    return;
+  }
+
+  try {
+    const { error } = await client
+      .from('rfq_submissions')
+      .update({ status: newStatus, updated_at: new Date().toISOString() })
+      .eq('id', id);
+
+    if (error) throw error;
+
+    showToast('✅ Status updated!', 'success');
+    closeModal('submission-detail-modal');
+    loadSubmissions();
+
+  } catch (err) {
+    console.error('Error:', err);
+    showToast('Error: ' + err.message, 'error');
+  }
+}
+
+// Emails the contractor asking for more information/documents via the
+// request-submission-info Edge Function (Resend) — mirrors the pattern used
+// for send-rfq-invites. The submission's status flips to 'info_requested'
+// server-side once the email is queued.
+async function sendSubmissionInfoRequest(submissionId) {
+  const messageBox = document.getElementById('submission-info-request-message');
+  const message = messageBox ? messageBox.value.trim() : '';
+
+  if (!message) {
+    showToast('Please describe what information you need', 'error');
+    return;
+  }
+
+  try {
+    showToast('Sending request...', 'info');
+    await callEdgeFunction('request-submission-info', { submissionId, message });
+    showToast('✅ Information request emailed to the contractor', 'success');
+    closeModal('submission-detail-modal');
+    loadSubmissions();
+  } catch (err) {
+    console.error('Error sending info request:', err);
+    showToast('Error: ' + err.message, 'error');
+  }
+}
+
+function filterSubmissions() {
+  loadSubmissions();
+}
+
+// ===== SUPER ADMIN =====
+// Permission helpers: the admin-manager (owner, super_admins.can_manage_admins)
+// always has full access regardless of the permissions column — same bypass
+// the DB-layer has_admin_permission() function applies. This client-side
+// check is UX only; the real enforcement is the RLS policies/Edge Functions
+// that call has_admin_permission() directly (see the Edit Supplier /
+// Manage Admins-era RLS gotchas documented in the project notes).
+function canViewSection(section) {
+  if (isAdminManager) return true;
+  const perm = currentAdminPermissions && currentAdminPermissions[section];
+  return !!(perm && (perm.view || perm.edit));
+}
+function canEditSection(section) {
+  if (isAdminManager) return true;
+  const perm = currentAdminPermissions && currentAdminPermissions[section];
+  return !!(perm && perm.edit);
+}
+
+// Shows/hides each of the 4 gate-able Super Admin sidebar tabs + disables
+// their write controls based on currentAdminPermissions, then makes sure
+// the currently-open tab is one this admin can actually see (falling back
+// to the first visible tab, or a "no access" message if there are none).
+function applySuperAdminPermissionsToUI() {
+  const SECTION_TABS = {
+    invite_company: 'super-invite',
+    platform_branding: 'super-branding',
+    companies: 'super-companies',
+    applicants: 'super-applicants'
+  };
+
+  Object.entries(SECTION_TABS).forEach(([section, tabId]) => {
+    const btn = document.getElementById(tabId + '-tab-btn');
+    if (btn) btn.style.display = canViewSection(section) ? '' : 'none';
+  });
+
+  // Invite a Company: disable the form itself when view-only.
+  const inviteEditable = canEditSection('invite_company');
+  ['invite-company-name', 'invite-company-email', 'invite-company-submit-btn'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.disabled = !inviteEditable;
+  });
+  const inviteNote = document.getElementById('invite-company-readonly-note');
+  if (inviteNote) inviteNote.style.display = (canViewSection('invite_company') && !inviteEditable) ? 'block' : 'none';
+
+  // Platform Branding: disable the upload input + size slider when view-only.
+  const brandingEditable = canEditSection('platform_branding');
+  ['platform-logo-file', 'platform-logo-scale'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.disabled = !brandingEditable;
+  });
+  const brandingNote = document.getElementById('platform-branding-readonly-note');
+  if (brandingNote) brandingNote.style.display = (canViewSection('platform_branding') && !brandingEditable) ? 'block' : 'none';
+
+  // Supplier Database: the Import Suppliers button is a write action.
+  const importBtn = document.getElementById('import-suppliers-btn');
+  if (importBtn) importBtn.style.display = canEditSection('applicants') ? '' : 'none';
+
+  // If the tab that's about to be shown (first tab, per showSuperAdminView's
+  // reset-to-first-tab behavior) isn't one this admin can view, jump to the
+  // first section they *can* see instead — Manage Admins (owner-only,
+  // handled separately) and Change Password are never section-gated.
+  const firstVisibleSection = Object.entries(SECTION_TABS).find(([section]) => canViewSection(section));
+  document.querySelectorAll('.super-tab').forEach(tab => tab.style.display = 'none');
+  document.querySelectorAll('.super-tab-btn').forEach(btn => btn.classList.remove('active'));
+  if (firstVisibleSection) {
+    const [, tabId] = firstVisibleSection;
+    document.getElementById(tabId + '-tab').style.display = 'block';
+    const btn = document.getElementById(tabId + '-tab-btn');
+    if (btn) btn.classList.add('active');
+  } else {
+    // No section access at all yet — land on Change Password rather than a blank page.
+    document.getElementById('super-password-tab').style.display = 'block';
+    const pwBtn = document.querySelector('.super-tab-btn[onclick*="super-password"]');
+    if (pwBtn) pwBtn.classList.add('active');
+  }
+}
+
+function openSuperAdminView() {
+  if (!isSuperAdmin) {
+    showToast('Not authorized', 'error');
+    return;
+  }
+  showSuperAdminView();
+}
+
+// ----- Admin permission grid helpers (shared by the Invite Admin form's
+// grid and the Edit Permissions modal's grid, distinguished by idPrefix
+// "invite-perm" / "edit-perm") -----
+
+// "Edit" implies "View": checking Edit auto-checks View, and unchecking
+// View auto-unchecks Edit, so the two checkboxes can never end up in an
+// inconsistent state (matches how canViewSection() already treats edit:true
+// as also granting view).
+function wirePermissionCheckboxes(idPrefix) {
+  ADMIN_PERMISSION_SECTIONS.forEach(section => {
+    const viewBox = document.getElementById(`${idPrefix}-${section}-view`);
+    const editBox = document.getElementById(`${idPrefix}-${section}-edit`);
+    if (!viewBox || !editBox || viewBox.dataset.wired) return;
+    editBox.addEventListener('change', () => { if (editBox.checked) viewBox.checked = true; });
+    viewBox.addEventListener('change', () => { if (!viewBox.checked) editBox.checked = false; });
+    viewBox.dataset.wired = 'true';
+  });
+}
+
+function collectPermissionsFromGrid(idPrefix) {
+  const permissions = {};
+  ADMIN_PERMISSION_SECTIONS.forEach(section => {
+    const viewBox = document.getElementById(`${idPrefix}-${section}-view`);
+    const editBox = document.getElementById(`${idPrefix}-${section}-edit`);
+    const edit = !!(editBox && editBox.checked);
+    permissions[section] = { view: !!(viewBox && viewBox.checked) || edit, edit };
+  });
+  return permissions;
+}
+
+function setPermissionsGrid(idPrefix, permissions) {
+  ADMIN_PERMISSION_SECTIONS.forEach(section => {
+    const perm = (permissions && permissions[section]) || {};
+    const viewBox = document.getElementById(`${idPrefix}-${section}-view`);
+    const editBox = document.getElementById(`${idPrefix}-${section}-edit`);
+    if (viewBox) viewBox.checked = !!(perm.view || perm.edit);
+    if (editBox) editBox.checked = !!perm.edit;
+  });
+}
+
+let pendingAdminPermissionsEmail = null;
+function openAdminPermissionsModal(email) {
+  pendingAdminPermissionsEmail = email;
+  const admin = lastLoadedSuperAdmins.find(a => a.email === email);
+  const label = document.getElementById('edit-perm-target-label');
+  if (label) label.textContent = `Setting permissions for ${email}`;
+  setPermissionsGrid('edit-perm', (admin && admin.permissions) || {});
+  openModal('admin-permissions-modal');
+}
+
+async function handleSaveAdminPermissions() {
+  if (!pendingAdminPermissionsEmail) return;
+  const permissions = collectPermissionsFromGrid('edit-perm');
+  try {
+    const { error } = await client
+      .from('super_admins')
+      .update({ permissions })
+      .eq('email', pendingAdminPermissionsEmail);
+    if (error) throw error;
+    showToast(`✅ Updated permissions for ${pendingAdminPermissionsEmail}`, 'success');
+    closeModal('admin-permissions-modal');
+    loadSuperAdminsList();
+  } catch (err) {
+    console.error('Error saving admin permissions:', err);
+    showToast('❌ Error: ' + err.message, 'error');
+  }
+}
+
+function showSuperAdminView() {
+  hideAllTopLevelViews();
+  document.getElementById('super-admin-view').style.display = 'block';
+  applyDefaultBranding();
+  document.getElementById('brand-title').textContent = 'RFQ Hub — Platform Admin';
+
+  // Only offer "Back to Dashboard" if there's actually a company dashboard to go back to.
+  const backLink = document.getElementById('back-to-dashboard-link');
+  if (backLink) backLink.style.display = currentCompany ? 'inline-block' : 'none';
+
+  renderPlatformLogoPreview();
+  // Companies data is public anyway (see companies_select_public RLS), so
+  // loading it is harmless even if this admin can't view the tab; the
+  // Supplier Database is genuinely permission-gated at the RLS layer, so
+  // only fetch it if this admin actually has view access — otherwise the
+  // query would just come back empty and print a confusing "no one has
+  // registered" message behind a tab that's hidden anyway.
+  loadSuperAdminCompanies();
+  if (canViewSection('applicants')) loadSuperAdminApplicants();
+
+  // "Manage Admins" is only usable by the admin-manager (see
+  // isAdminManager) — hidden entirely for any other super admin. Unlike
+  // the 4 permission-gated sections above, this one is never grantable —
+  // only the owner can invite/remove admins or change their permissions.
+  const manageAdminsBtn = document.getElementById('super-manage-admins-tab-btn');
+  if (manageAdminsBtn) manageAdminsBtn.style.display = isAdminManager ? '' : 'none';
+  if (isAdminManager) loadSuperAdminsList();
+
+  // Hide/show each gate-able tab per this admin's permissions and land on
+  // the first one they can actually see (see applySuperAdminPermissionsToUI).
+  applySuperAdminPermissionsToUI();
+}
+
+function closeSuperAdminView() {
+  if (!currentCompany) {
+    showToast("You're not a member of any company yet — invite one above to get started.", 'info');
+    return;
+  }
+  showAdminView();
+}
+
+async function loadSuperAdminCompanies() {
+  try {
+    const { data: companies, error } = await client
+      .from('companies')
+      .select('*')
+      .order('created_at', { ascending: false });
+
+    if (error) throw error;
+
+    const list = document.getElementById('super-admin-companies-list');
+    if (!companies || companies.length === 0) {
+      list.innerHTML = '<p style="color:var(--border); text-align:center; padding:20px;">No companies yet.</p>';
+      return;
+    }
+
+    list.innerHTML = companies.map(c => `
+      <div style="display:flex; justify-content:space-between; align-items:center; padding:15px; border:1px solid var(--border); border-radius:4px; margin-bottom:10px; flex-wrap:wrap; gap:10px;">
+        <div style="display:flex; align-items:center; gap:12px;">
+          ${c.logo_url ? `<img src="${c.logo_url}" style="width:36px; height:36px; object-fit:contain; border-radius:6px;">` : ''}
+          <div>
+            <p style="margin:0; font-weight:600;">${c.name}</p>
+            <p style="margin:0; font-size:12px; color:var(--border);">${c.contact_email || 'No contact email'} · Joined ${new Date(c.created_at).toLocaleDateString()}</p>
+          </div>
+        </div>
+        <div style="display:flex; align-items:center; gap:10px;">
+          <span class="submission-status ${c.status === 'active' ? 'approved' : 'rejected'}">${c.status}</span>
+          ${canEditSection('companies') ? `
+            <button onclick="toggleCompanyStatus('${c.id}', '${c.status}')" class="btn secondary" style="padding:6px 12px; font-size:12px;">
+              ${c.status === 'active' ? 'Suspend' : 'Reactivate'}
+            </button>
+            <button onclick="deleteCompany('${c.id}', '${(c.name || '').replace(/'/g, "\\'")}')" class="btn secondary" style="padding:6px 12px; font-size:12px; color:#D32F2F; border-color:#D32F2F;">
+              Delete
+            </button>
+          ` : ''}
+        </div>
+      </div>
+    `).join('');
+  } catch (err) {
+    console.error('Error loading companies:', err);
+    showToast('Error loading companies: ' + err.message, 'error');
+  }
+}
+
+// "Removed" suppliers are hidden from the default Supplier Database list
+// (reversible removal, not a hard delete — see suspendSupplier/
+// removeSupplier below) — this toggles whether the list also shows them.
+let showRemovedSuppliers = false;
+
+// Full, unfiltered list fetched from the DB, cached here so the search box
+// and the two filter dropdowns can re-render instantly from memory on
+// every keystroke/change instead of re-querying the database each time.
+let allSupplierApplicants = [];
+
+function toggleShowRemovedSuppliers() {
+  showRemovedSuppliers = !showRemovedSuppliers;
+  renderSupplierList();
+}
+
+// Re-renders the Supplier Database list from the already-fetched
+// allSupplierApplicants cache, applying the search box + province/status
+// filters. Called on every keystroke/change in those controls, and after
+// loadSuperAdminApplicants() re-fetches from the DB.
+function filterSupplierDatabase() {
+  renderSupplierList();
+}
+
+function renderSupplierList() {
+  const list = document.getElementById('super-admin-applicants-list');
+  if (!list) return;
+
+  const allApplicants = allSupplierApplicants;
+  const removedCount = allApplicants.filter(a => a.status === 'removed').length;
+
+  const searchInput = document.getElementById('supplier-search-input');
+  const provinceFilter = document.getElementById('supplier-province-filter');
+  const statusFilter = document.getElementById('supplier-status-filter');
+  const searchTerm = (searchInput ? searchInput.value : '').trim().toLowerCase();
+  const provinceValue = provinceFilter ? provinceFilter.value : '';
+  const statusValue = statusFilter ? statusFilter.value : '';
+
+  let visibleApplicants = allApplicants.filter(a => {
+    // An explicit "Removed" status filter always wins over the show/hide
+    // toggle below; otherwise the toggle keeps its existing behavior of
+    // hiding removed suppliers from the default view.
+    if (statusValue) {
+      if (a.status !== statusValue) return false;
+    } else if (a.status === 'removed' && !showRemovedSuppliers) {
+      return false;
+    }
+    if (provinceValue && a.province !== provinceValue) return false;
+    if (searchTerm) {
+      const haystack = [a.company_name, a.full_name, a.email, a.phone, a.additional_phone]
+        .filter(Boolean).join(' ').toLowerCase();
+      if (!haystack.includes(searchTerm)) return false;
+    }
+    return true;
+  });
+
+  const toggleHtml = `
+    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px; flex-wrap:wrap; gap:10px;">
+      <p style="color:var(--border); font-size:13px; margin:0;">${visibleApplicants.length} supplier${visibleApplicants.length === 1 ? '' : 's'} shown</p>
+      ${removedCount > 0 ? `<button type="button" class="btn secondary" style="padding:6px 12px; font-size:12px;" onclick="toggleShowRemovedSuppliers()">${showRemovedSuppliers ? 'Hide' : 'Show'} Removed (${removedCount})</button>` : ''}
+    </div>
+  `;
+
+  if (allApplicants.length === 0) {
+    list.innerHTML = '<p style="color:var(--border); text-align:center; padding:20px;">No one has registered yet.</p>';
+    return;
+  }
+  if (visibleApplicants.length === 0) {
+    list.innerHTML = toggleHtml + '<p style="color:var(--border); text-align:center; padding:20px;">No suppliers match your search/filters.</p>';
+    return;
+  }
+
+  // The 3 documents an admin can upload/replace directly (see
+  // uploadOrReplaceSupplierDocument below) — kept separate from the
+  // remaining optional documents below, which stay download-only.
+  const MANAGED_DOC_FIELDS = [
+    ['cipc_document_path', 'CIPC/ID'],
+    ['proof_of_address_document_path', 'Proof of Address'],
+    ['sars_document_path', 'SARS Info']
+  ];
+
+  const managedDocButtons = (a) => MANAGED_DOC_FIELDS.map(([col, label]) => {
+    const path = a[col];
+    const canEditApplicants = canEditSection('applicants');
+    if (path) {
+      return `
+        <span style="display:inline-flex; gap:4px;">
+          <button type="button" class="btn secondary" style="padding:6px 10px; font-size:12px;" onclick="downloadSupplierDocument('${path}', '${label.replace(/'/g, "\\'")}')">📄 ${label}</button>
+          ${canEditApplicants ? `<button type="button" class="btn secondary" style="padding:6px 10px; font-size:12px;" onclick="uploadOrReplaceSupplierDocument('${a.id}', '${col}', '${label.replace(/'/g, "\\'")}')">🔄 Replace</button>` : ''}
+        </span>
+      `;
+    }
+    if (!canEditApplicants) return '';
+    return `<button type="button" class="btn secondary" style="padding:6px 10px; font-size:12px; border-color:var(--warning); color:var(--warning);" onclick="uploadOrReplaceSupplierDocument('${a.id}', '${col}', '${label.replace(/'/g, "\\'")}')">⬆️ Upload ${label}</button>`;
+  }).join('');
+
+  // Remaining optional documents stay download-only, same as before.
+  const otherDocFields = (a) => {
+    const fields = [
+      ['Proof of Banking', a.proof_of_banking_document_path],
+      ['B-BBEE', a.bbbee_document_path],
+      ['Health & Safety', a.health_safety_document_path],
+      ['Special Permits', a.special_permits_document_path]
+    ].filter(([, path]) => !!path);
+    (a.other_documents || []).forEach(doc => fields.push([doc.name || 'Other Document', doc.path]));
+    return fields;
+  };
+
+  const statusBadge = (a) => {
+    if (a.status === 'suspended') return '<span class="submission-status info_requested">Suspended</span>';
+    if (a.status === 'removed') return '<span class="submission-status rejected">Removed</span>';
+    return '<span class="submission-status approved">Active</span>';
+  };
+
+  // Shown regardless of status: flags a row missing any of the 3
+  // mandatory documents (always true right after a bulk import, since
+  // documents aren't part of that flow — see openImportSuppliersModal)
+  // so it's easy to spot who still needs paperwork uploaded.
+  const docsPendingBadge = (a) => {
+    const missing = MANAGED_DOC_FIELDS.some(([col]) => !a[col]);
+    if (!missing) return '';
+    return ' <span class="submission-status info_requested" title="Missing one or more of CIPC/ID, Proof of Address, or SARS Info">📋 Documents Pending</span>';
+  };
+
+  const importedBadge = (a) => a.registration_source === 'imported'
+    ? ' <span class="submission-status" style="background:var(--bg-2); color:var(--border); border:1px solid var(--border);">Imported</span>'
+    : '';
+
+  const statusActions = (a) => {
+    const escapedName = (a.company_name || a.full_name || '').replace(/'/g, "\\'");
+    if (a.status === 'active') {
+      return `
+        <button type="button" class="btn secondary" style="padding:6px 12px; font-size:12px;" onclick="suspendSupplier('${a.id}', '${escapedName}')">Suspend</button>
+        <button type="button" class="btn secondary" style="padding:6px 12px; font-size:12px; color:#D32F2F; border-color:#D32F2F;" onclick="removeSupplier('${a.id}', '${escapedName}')">Remove</button>
+      `;
+    }
+    if (a.status === 'suspended') {
+      return `
+        <button type="button" class="btn secondary" style="padding:6px 12px; font-size:12px;" onclick="reactivateSupplier('${a.id}', '${escapedName}')">Reactivate</button>
+        <button type="button" class="btn secondary" style="padding:6px 12px; font-size:12px; color:#D32F2F; border-color:#D32F2F;" onclick="removeSupplier('${a.id}', '${escapedName}')">Remove</button>
+      `;
+    }
+    // removed
+    return `<button type="button" class="btn secondary" style="padding:6px 12px; font-size:12px;" onclick="restoreSupplier('${a.id}', '${escapedName}')">Restore</button>`;
+  };
+
+  list.innerHTML = toggleHtml + `
+    <div style="max-height:600px; overflow-y:auto;">
+      ${visibleApplicants.map(a => `
+        <div style="padding:15px; border:1px solid var(--border); border-radius:4px; margin-bottom:10px; ${a.status !== 'active' ? 'background:var(--bg-2);' : ''}">
+          <div style="display:flex; justify-content:space-between; align-items:flex-start; flex-wrap:wrap; gap:10px;">
+            <div>
+              <p style="margin:0; font-weight:600;">${a.company_name}${statusBadge(a)}${docsPendingBadge(a)}${importedBadge(a)}</p>
+              <p style="margin:2px 0 0 0; font-size:13px; color:var(--ink);">${a.title ? a.title + ' ' : ''}${a.full_name}${a.designation ? ' · ' + a.designation : ''}</p>
+              <p style="margin:2px 0 0 0; font-size:12px; color:var(--border);">${a.email}${a.phone ? ' · ' + a.phone : ''}${a.additional_phone ? ' · ' + a.additional_phone : ''}</p>
+            </div>
+            <p style="margin:0; font-size:12px; color:var(--border); white-space:nowrap;">Registered ${new Date(a.created_at).toLocaleDateString()}</p>
+          </div>
+          ${a.status !== 'active' ? `
+            <div style="margin-top:10px; padding:10px; background:white; border:1px solid var(--border); border-radius:4px; font-size:12px;">
+              <p style="margin:0;"><strong>${a.status === 'suspended' ? 'Suspended' : 'Removed'} — reason:</strong> ${a.status_reason || '—'}</p>
+              <p style="margin:4px 0 0 0; color:var(--border);">${a.status_changed_by ? 'By ' + a.status_changed_by + ' · ' : ''}${a.status_changed_at ? new Date(a.status_changed_at).toLocaleString() : ''}</p>
+            </div>
+          ` : ''}
+          <div style="margin-top:10px; display:grid; grid-template-columns:repeat(auto-fit, minmax(200px, 1fr)); gap:6px 20px; font-size:12px; color:var(--ink);">
+            <p style="margin:0;"><strong>Years in Business:</strong> ${a.years_in_business != null ? a.years_in_business : '—'}</p>
+            <p style="margin:0;"><strong>Notify Province:</strong> ${a.province || '—'}</p>
+            <p style="margin:0; grid-column:1/-1;"><strong>Address:</strong> ${a.address || '—'}</p>
+            ${a.website_social ? `<p style="margin:0; grid-column:1/-1;"><strong>Website/Social:</strong> ${a.website_social}</p>` : ''}
+            <p style="margin:0; grid-column:1/-1;"><strong>Services:</strong> ${a.services_description || '—'}</p>
+            <p style="margin:0; grid-column:1/-1;"><strong>Service Areas:</strong> ${a.service_areas || '—'}</p>
+          </div>
+          <div style="margin-top:12px; display:flex; flex-wrap:wrap; gap:8px; align-items:center;">
+            ${managedDocButtons(a)}
+            ${otherDocFields(a).map(([label, path]) => `
+              <button type="button" class="btn secondary" style="padding:6px 10px; font-size:12px;" onclick="downloadSupplierDocument('${path}', '${label.replace(/'/g, "\\'")}')">📄 ${label}</button>
+            `).join('')}
+          </div>
+          <div style="margin-top:10px; display:flex; flex-wrap:wrap; gap:8px; border-top:1px solid var(--border); padding-top:10px;">
+            ${canEditSection('applicants') ? `
+              <button type="button" class="btn secondary" style="padding:6px 12px; font-size:12px;" onclick="openEditSupplierModal('${a.id}')">✏️ Edit</button>
+              ${statusActions(a)}
+            ` : ''}
+          </div>
+        </div>
+      `).join('')}
+    </div>
+  `;
+}
+
+// Fetches the full Supplier Database from the DB and populates the
+// province filter's options (once), then hands off to renderSupplierList()
+// for the actual (filterable, cheap) rendering.
+async function loadSuperAdminApplicants() {
+  try {
+    const { data: applicants, error } = await client
+      .from('applicant_registrations')
+      .select('*')
+      .order('created_at', { ascending: false });
+
+    if (error) throw error;
+
+    allSupplierApplicants = applicants || [];
+
+    const provinceFilter = document.getElementById('supplier-province-filter');
+    if (provinceFilter && !provinceFilter.dataset.populated) {
+      provinceFilter.insertAdjacentHTML('beforeend', PROVINCE_OPTIONS.map(p => `<option value="${p}">${p}</option>`).join(''));
+      provinceFilter.dataset.populated = 'true';
+    }
+
+    const editProvinceSelect = document.getElementById('edit-supplier-province');
+    if (editProvinceSelect && !editProvinceSelect.dataset.populated) {
+      editProvinceSelect.insertAdjacentHTML('beforeend', PROVINCE_OPTIONS.map(p => `<option value="${p}">${p}</option>`).join(''));
+      editProvinceSelect.dataset.populated = 'true';
+    }
+
+    renderSupplierList();
+  } catch (err) {
+    console.error('Error loading applicants:', err);
+    const list = document.getElementById('super-admin-applicants-list');
+    if (list) list.innerHTML = '<p style="color:var(--warning);">Error loading registered applicants.</p>';
+  }
+}
+
+// Uploads a new file for one of the 3 admin-manageable mandatory
+// documents (CIPC/ID, Proof of Address, SARS Info) and points the
+// supplier's row at it — used both to fill in a missing document (e.g.
+// after a bulk import) and to replace an existing one. The old file (if
+// any) is left in storage rather than deleted, same tradeoff already
+// accepted elsewhere in this app for superseded links/tokens.
+let pendingSupplierDocUpload = null; // { applicantId, column, label }
+
+function uploadOrReplaceSupplierDocument(applicantId, column, label) {
+  pendingSupplierDocUpload = { applicantId, column, label };
+  const input = document.getElementById('supplier-doc-upload-input');
+  if (!input) return;
+  input.value = '';
+  input.click();
+}
+
+async function handleSupplierDocFileSelected(e) {
+  const file = e.target.files[0];
+  const pending = pendingSupplierDocUpload;
+  pendingSupplierDocUpload = null;
+  if (!file || !pending) return;
+
+  try {
+    const path = await uploadSupplierDocument(pending.applicantId, pending.column, file);
+    const { error } = await client
+      .from('applicant_registrations')
+      .update({ [pending.column]: path })
+      .eq('id', pending.applicantId);
+    if (error) throw error;
+    showToast(`✅ ${pending.label} uploaded.`, 'success');
+    loadSuperAdminApplicants();
+  } catch (err) {
+    console.error('Error uploading supplier document:', err);
+    showToast('❌ Error uploading document: ' + err.message, 'error');
+  }
+}
+
+// ---------------------------------------------------------------------
+// Import Suppliers: upload a CSV/Excel export of an existing supplier
+// list, map its columns onto our fields (auto-guessed, editable), preview
+// what will and won't be imported, then bulk-insert. Documents and the
+// registration declaration are deliberately NOT part of this flow — per
+// Brent's instruction, imported suppliers get flagged "Documents Pending"
+// (see docsPendingBadge above) and documents/declaration are added later,
+// one at a time, via the per-supplier Upload/Replace buttons.
+// ---------------------------------------------------------------------
+
+const IMPORT_TARGET_FIELDS = [
+  { key: 'company_name', label: 'Company Name *', required: true, synonyms: ['company name', 'company', 'business name', 'organisation', 'organization', 'trading name'] },
+  { key: 'full_name', label: 'Contact Person *', required: true, synonyms: ['contact person', 'contact name', 'full name', 'name', 'contact'] },
+  { key: 'email', label: 'Email *', required: true, synonyms: ['email address', 'email', 'e-mail'] },
+  { key: 'phone', label: 'Phone', required: false, synonyms: ['phone', 'cell', 'cell number', 'mobile', 'telephone', 'contact number', 'tel'] },
+  { key: 'additional_phone', label: 'Additional Phone', required: false, synonyms: ['additional phone', 'alternative phone', 'alt phone', 'second number', 'other phone'] },
+  { key: 'title', label: 'Title (Ms/Mrs/Mr/Dr/Professor)', required: false, synonyms: ['title'] },
+  { key: 'designation', label: 'Designation', required: false, synonyms: ['designation', 'position', 'job title', 'role'] },
+  { key: 'years_in_business', label: 'Years in Business', required: false, synonyms: ['years in business', 'years trading', 'years operating', 'years'] },
+  { key: 'address', label: 'Address', required: false, synonyms: ['address', 'physical address', 'location'] },
+  { key: 'province', label: 'Notify Province', required: false, synonyms: ['province', 'region'] },
+  { key: 'website_social', label: 'Website / Social', required: false, synonyms: ['website', 'social media', 'social', 'url', 'web'] },
+  { key: 'services_description', label: 'Services', required: false, synonyms: ['services', 'service description', 'services offered', 'products/services'] },
+  { key: 'service_areas', label: 'Service Areas', required: false, synonyms: ['service areas', 'areas served', 'coverage area', 'areas covered'] }
+];
+
+let importWizardState = null; // { headers, rows, mapping }
+
+function openImportSuppliersModal() {
+  importWizardState = null;
+  document.getElementById('import-suppliers-body').innerHTML = `
+    <div>
+      <label style="display:block; margin-bottom:8px; font-weight:600; font-size:13px;">Choose a CSV or Excel (.xlsx/.xls) file</label>
+      <input type="file" id="import-file-input" accept=".csv,.xlsx,.xls" onchange="handleImportFileSelected(event)" style="padding:8px; border:1px solid var(--border); border-radius:4px; width:100%;">
+      <div id="import-file-status" style="margin-top:10px; font-size:12px; color:var(--border);"></div>
+    </div>
+  `;
+  openModal('import-suppliers-modal');
+}
+
+function guessColumnForField(headers, synonyms, usedHeaders) {
+  const available = headers.filter(h => !usedHeaders.has(h));
+  const normalized = available.map(h => (h || '').toString().trim().toLowerCase());
+  for (const syn of synonyms) {
+    const exactIdx = normalized.indexOf(syn);
+    if (exactIdx !== -1) return available[exactIdx];
+  }
+  // Substring fallback is intentionally last-resort and only matches a
+  // whole word/token (split on any non-alphanumeric run), not a raw
+  // substring — otherwise a synonym like "address" would wrongly latch
+  // onto an unrelated column such as "Email Address" before the real
+  // "Address" (or no) column is ever considered.
+  for (const syn of synonyms) {
+    const idx = normalized.findIndex(h => h.split(/[^a-z0-9]+/).includes(syn));
+    if (idx !== -1) return available[idx];
+  }
+  return '';
+}
+
+function handleImportFileSelected(e) {
+  const file = e.target.files[0];
+  if (!file) return;
+  const statusEl = document.getElementById('import-file-status');
+  if (statusEl) statusEl.textContent = 'Reading file...';
+
+  const reader = new FileReader();
+  reader.onload = (evt) => {
+    try {
+      if (typeof XLSX === 'undefined') {
+        throw new Error('File-reading library failed to load. Check your connection and try again.');
+      }
+      const workbook = XLSX.read(evt.target.result, { type: 'array' });
+      const firstSheetName = workbook.SheetNames[0];
+      const sheet = workbook.Sheets[firstSheetName];
+      const rows = XLSX.utils.sheet_to_json(sheet, { defval: '', raw: false });
+
+      if (!rows.length) {
+        if (statusEl) statusEl.textContent = 'No rows found in that file — check it has a header row and at least one data row.';
+        return;
+      }
+
+      const headers = Object.keys(rows[0]);
+      const mapping = {};
+      const usedHeaders = new Set();
+      IMPORT_TARGET_FIELDS.forEach(f => {
+        const guess = guessColumnForField(headers, f.synonyms, usedHeaders);
+        mapping[f.key] = guess;
+        if (guess) usedHeaders.add(guess);
+      });
+
+      importWizardState = { headers, rows, mapping };
+      renderImportMappingStep();
+    } catch (err) {
+      console.error('Error reading import file:', err);
+      if (statusEl) statusEl.textContent = '❌ Could not read that file: ' + err.message;
+    }
+  };
+  reader.onerror = () => {
+    if (statusEl) statusEl.textContent = '❌ Could not read that file.';
+  };
+  reader.readAsArrayBuffer(file);
+}
+
+function updateImportMapping(fieldKey, column) {
+  if (!importWizardState) return;
+  importWizardState.mapping[fieldKey] = column;
+}
+
+function renderImportMappingStep() {
+  const { headers, rows, mapping } = importWizardState;
+  const columnOptionsHtml = (selected) => [
+    `<option value=""${selected ? '' : ' selected'}>-- Not in file --</option>`,
+    ...headers.map(h => `<option value="${escapeHtmlClient(h)}"${h === selected ? ' selected' : ''}>${escapeHtmlClient(h)}</option>`)
+  ].join('');
+
+  document.getElementById('import-suppliers-body').innerHTML = `
+    <p style="margin:0 0 15px 0; font-size:13px;"><strong>${rows.length}</strong> row${rows.length === 1 ? '' : 's'} found. Match each field below to a column from your file (auto-matched where possible) — leave "Not in file" for anything you don't have.</p>
+    <div style="display:grid; grid-template-columns:1fr 1fr; gap:10px 16px; max-height:340px; overflow-y:auto; padding-right:4px;">
+      ${IMPORT_TARGET_FIELDS.map(f => `
+        <div>
+          <label style="display:block; font-size:12px; font-weight:600; margin-bottom:4px;">${f.label}</label>
+          <select onchange="updateImportMapping('${f.key}', this.value)" style="width:100%; padding:8px; border:1px solid var(--border); border-radius:4px; font-size:13px;">
+            ${columnOptionsHtml(mapping[f.key])}
+          </select>
+        </div>
+      `).join('')}
+    </div>
+    <div style="margin-top:20px; display:flex; gap:10px; justify-content:flex-end;">
+      <button type="button" class="btn secondary" onclick="openImportSuppliersModal()">Start Over</button>
+      <button type="button" class="btn gold" onclick="renderImportPreviewStep()">Preview Import</button>
+    </div>
+  `;
+}
+
+function renderImportPreviewStep() {
+  const { rows, mapping } = importWizardState;
+  const missingRequired = IMPORT_TARGET_FIELDS.filter(f => f.required && !mapping[f.key]);
+  if (missingRequired.length > 0) {
+    showToast('❌ Please map: ' + missingRequired.map(f => f.label).join(', '), 'error');
+    return;
+  }
+
+  const existingEmails = new Set(allSupplierApplicants.map(a => (a.email || '').trim().toLowerCase()));
+  const seenInFile = new Set();
+  const toImport = [];
+  let skippedMissing = 0;
+  let skippedDuplicate = 0;
+
+  const getVal = (row, key) => {
+    const col = mapping[key];
+    if (!col) return '';
+    return (row[col] === undefined || row[col] === null) ? '' : row[col].toString().trim();
+  };
+
+  rows.forEach(row => {
+    const companyName = getVal(row, 'company_name');
+    const fullName = getVal(row, 'full_name');
+    const email = getVal(row, 'email').toLowerCase();
+
+    if (!companyName || !fullName || !email) { skippedMissing++; return; }
+    if (existingEmails.has(email) || seenInFile.has(email)) { skippedDuplicate++; return; }
+    seenInFile.add(email);
+
+    const titleRaw = getVal(row, 'title');
+    const title = ['Ms', 'Mrs', 'Mr', 'Dr', 'Professor'].find(t => t.toLowerCase() === titleRaw.toLowerCase()) || null;
+
+    const provinceRaw = getVal(row, 'province');
+    const province = [...PROVINCE_OPTIONS, 'ALL'].find(p => p.toLowerCase() === provinceRaw.toLowerCase()) || null;
+
+    const yearsRaw = getVal(row, 'years_in_business');
+    const yearsParsed = parseInt(yearsRaw, 10);
+    const yearsInBusiness = (Number.isFinite(yearsParsed) && yearsParsed >= 0) ? yearsParsed : null;
+
+    toImport.push({
+      id: generateUUID(),
+      company_name: companyName,
+      full_name: fullName,
+      email,
+      phone: getVal(row, 'phone') || null,
+      additional_phone: getVal(row, 'additional_phone') || null,
+      title,
+      designation: getVal(row, 'designation') || null,
+      years_in_business: yearsInBusiness,
+      address: getVal(row, 'address') || null,
+      province,
+      website_social: getVal(row, 'website_social') || null,
+      services_description: getVal(row, 'services_description') || null,
+      service_areas: getVal(row, 'service_areas') || null,
+      declaration_accepted: false,
+      registration_source: 'imported'
+    });
+  });
+
+  importWizardState.toImport = toImport;
+
+  document.getElementById('import-suppliers-body').innerHTML = `
+    <div style="padding:12px; background:var(--bg-2); border-radius:4px; font-size:13px; margin-bottom:15px;">
+      <p style="margin:0;"><strong>${toImport.length}</strong> supplier${toImport.length === 1 ? '' : 's'} ready to import.</p>
+      ${skippedMissing > 0 ? `<p style="margin:4px 0 0 0; color:var(--warning);">${skippedMissing} row${skippedMissing === 1 ? '' : 's'} skipped — missing Company Name, Contact Person, or Email.</p>` : ''}
+      ${skippedDuplicate > 0 ? `<p style="margin:4px 0 0 0; color:var(--border);">${skippedDuplicate} row${skippedDuplicate === 1 ? '' : 's'} skipped — already in the Supplier Database (or duplicated in the file).</p>` : ''}
+    </div>
+    ${toImport.length > 0 ? `
+      <p style="margin:0 0 8px 0; font-size:12px; color:var(--border);">Preview (first 5):</p>
+      <div style="max-height:180px; overflow-y:auto; font-size:12px; border:1px solid var(--border); border-radius:4px; padding:10px;">
+        ${toImport.slice(0, 5).map(r => `<p style="margin:0 0 6px 0;">${escapeHtmlClient(r.company_name)} — ${escapeHtmlClient(r.full_name)} (${escapeHtmlClient(r.email)})</p>`).join('')}
+      </div>
+    ` : ''}
+    <div style="margin-top:20px; display:flex; gap:10px; justify-content:flex-end;">
+      <button type="button" class="btn secondary" onclick="renderImportMappingStep()">Back</button>
+      <button type="button" class="btn gold" ${toImport.length === 0 ? 'disabled' : ''} onclick="runSupplierImport()">Import ${toImport.length} Supplier${toImport.length === 1 ? '' : 's'}</button>
+    </div>
+  `;
+}
+
+async function runSupplierImport() {
+  if (!importWizardState || !importWizardState.toImport || importWizardState.toImport.length === 0) return;
+  const rows = importWizardState.toImport;
+
+  try {
+    const { error } = await client.from('applicant_registrations').insert(rows);
+    if (error) throw error;
+    showToast(`✅ Imported ${rows.length} supplier${rows.length === 1 ? '' : 's'}. They're flagged "Documents Pending" until documents are uploaded.`, 'success');
+    closeModal('import-suppliers-modal');
+    importWizardState = null;
+    loadSuperAdminApplicants();
+  } catch (err) {
+    console.error('Error importing suppliers:', err);
+    showToast('❌ Import failed: ' + err.message, 'error');
+  }
+}
+
+// Suspend/remove/reactivate/restore a supplier. Suspended and removed both
+// stop them from applying to RFQs (enforced at the DB/RLS level, not just
+// here — see the rfq_submissions insert policy) but per Brent's explicit
+// instruction they can still browse/view RFQs either way. "Removed" is
+// reversible (restore below), not a hard delete — the record, reason, and
+// documents are kept, just hidden from the default list.
+async function suspendSupplier(applicantId, name) {
+  const reason = prompt(`Reason for suspending "${name}"?`);
+  if (reason === null) return; // cancelled
+  if (!reason.trim()) {
+    showToast('❌ A reason is required to suspend a supplier.', 'error');
+    return;
+  }
+  try {
+    const { error } = await client
+      .from('applicant_registrations')
+      .update({
+        status: 'suspended',
+        status_reason: reason.trim(),
+        status_changed_at: new Date().toISOString(),
+        status_changed_by: currentUser ? currentUser.email : 'unknown'
+      })
+      .eq('id', applicantId);
+    if (error) throw error;
+    showToast(`✅ ${name} suspended.`, 'success');
+    loadSuperAdminApplicants();
+  } catch (err) {
+    console.error('Error suspending supplier:', err);
+    showToast('❌ Error: ' + err.message, 'error');
+  }
+}
+
+async function removeSupplier(applicantId, name) {
+  const reason = prompt(`Reason for removing "${name}"? This can be undone later via "Restore".`);
+  if (reason === null) return; // cancelled
+  if (!reason.trim()) {
+    showToast('❌ A reason is required to remove a supplier.', 'error');
+    return;
+  }
+  try {
+    const { error } = await client
+      .from('applicant_registrations')
+      .update({
+        status: 'removed',
+        status_reason: reason.trim(),
+        status_changed_at: new Date().toISOString(),
+        status_changed_by: currentUser ? currentUser.email : 'unknown'
+      })
+      .eq('id', applicantId);
+    if (error) throw error;
+    showToast(`✅ ${name} removed from the Supplier Database.`, 'success');
+    loadSuperAdminApplicants();
+  } catch (err) {
+    console.error('Error removing supplier:', err);
+    showToast('❌ Error: ' + err.message, 'error');
+  }
+}
+
+async function reactivateSupplier(applicantId, name) {
+  if (!confirm(`Reactivate "${name}"? They will be able to apply to RFQs again.`)) return;
+  try {
+    const { error } = await client
+      .from('applicant_registrations')
+      .update({
+        status: 'active',
+        status_reason: null,
+        status_changed_at: new Date().toISOString(),
+        status_changed_by: currentUser ? currentUser.email : 'unknown'
+      })
+      .eq('id', applicantId);
+    if (error) throw error;
+    showToast(`✅ ${name} reactivated.`, 'success');
+    loadSuperAdminApplicants();
+  } catch (err) {
+    console.error('Error reactivating supplier:', err);
+    showToast('❌ Error: ' + err.message, 'error');
+  }
+}
+
+async function restoreSupplier(applicantId, name) {
+  if (!confirm(`Restore "${name}" to the Supplier Database as active?`)) return;
+  try {
+    const { error } = await client
+      .from('applicant_registrations')
+      .update({
+        status: 'active',
+        status_reason: null,
+        status_changed_at: new Date().toISOString(),
+        status_changed_by: currentUser ? currentUser.email : 'unknown'
+      })
+      .eq('id', applicantId);
+    if (error) throw error;
+    showToast(`✅ ${name} restored.`, 'success');
+    loadSuperAdminApplicants();
+  } catch (err) {
+    console.error('Error restoring supplier:', err);
+    showToast('❌ Error: ' + err.message, 'error');
+  }
+}
+
+// Edit a supplier's own profile fields directly (name/contact/address/
+// services/etc.) — separate from the status actions above (suspend/
+// remove/reactivate/restore) and from the per-document upload/replace
+// buttons, neither of which this touches. Available regardless of the
+// supplier's current status, since a suspended/removed supplier's details
+// can still need correcting.
+let pendingEditSupplierId = null;
+
+function openEditSupplierModal(applicantId) {
+  const a = allSupplierApplicants.find(x => x.id === applicantId);
+  if (!a) return;
+  pendingEditSupplierId = applicantId;
+
+  document.getElementById('edit-supplier-company-name').value = a.company_name || '';
+  document.getElementById('edit-supplier-full-name').value = a.full_name || '';
+  document.getElementById('edit-supplier-title').value = a.title || '';
+  document.getElementById('edit-supplier-designation').value = a.designation || '';
+  document.getElementById('edit-supplier-email').value = a.email || '';
+  document.getElementById('edit-supplier-province').value = a.province || '';
+  document.getElementById('edit-supplier-phone').value = a.phone || '';
+  document.getElementById('edit-supplier-additional-phone').value = a.additional_phone || '';
+  document.getElementById('edit-supplier-years').value = a.years_in_business != null ? a.years_in_business : '';
+  document.getElementById('edit-supplier-website').value = a.website_social || '';
+  document.getElementById('edit-supplier-address').value = a.address || '';
+  document.getElementById('edit-supplier-services').value = a.services_description || '';
+  document.getElementById('edit-supplier-service-areas').value = a.service_areas || '';
+
+  openModal('edit-supplier-modal');
+}
+
+async function handleEditSupplierSubmit(e) {
+  e.preventDefault();
+  if (!pendingEditSupplierId) return;
+
+  const companyName = document.getElementById('edit-supplier-company-name').value.trim();
+  const fullName = document.getElementById('edit-supplier-full-name').value.trim();
+  const email = document.getElementById('edit-supplier-email').value.trim();
+
+  if (!companyName || !fullName || !email) {
+    showToast('❌ Company Name, Contact Person, and Email are required.', 'error');
+    return;
+  }
+
+  const yearsRaw = document.getElementById('edit-supplier-years').value;
+
+  const payload = {
+    company_name: companyName,
+    full_name: fullName,
+    email: email,
+    title: document.getElementById('edit-supplier-title').value || null,
+    designation: document.getElementById('edit-supplier-designation').value.trim() || null,
+    province: document.getElementById('edit-supplier-province').value || null,
+    phone: document.getElementById('edit-supplier-phone').value.trim() || null,
+    additional_phone: document.getElementById('edit-supplier-additional-phone').value.trim() || null,
+    years_in_business: yearsRaw !== '' ? Number(yearsRaw) : null,
+    website_social: document.getElementById('edit-supplier-website').value.trim() || null,
+    address: document.getElementById('edit-supplier-address').value.trim() || null,
+    services_description: document.getElementById('edit-supplier-services').value.trim() || null,
+    service_areas: document.getElementById('edit-supplier-service-areas').value.trim() || null
+  };
+
+  const submitBtn = document.getElementById('edit-supplier-submit');
+  const originalLabel = submitBtn.textContent;
+  submitBtn.disabled = true;
+  submitBtn.textContent = 'Saving...';
+
+  try {
+    const { error } = await client
+      .from('applicant_registrations')
+      .update(payload)
+      .eq('id', pendingEditSupplierId);
+    if (error) {
+      // Postgres unique_violation — most likely the new email already
+      // belongs to another registered supplier (applicant_registrations
+      // has a unique index on lower(email)).
+      if (error.code === '23505') {
+        throw new Error('That email address is already used by another supplier.');
+      }
+      throw error;
+    }
+    showToast('✅ Supplier updated.', 'success');
+    closeModal('edit-supplier-modal');
+    pendingEditSupplierId = null;
+    loadSuperAdminApplicants();
+  } catch (err) {
+    console.error('Error updating supplier:', err);
+    showToast('❌ Error: ' + err.message, 'error');
+  } finally {
+    submitBtn.disabled = false;
+    submitBtn.textContent = originalLabel;
+  }
+}
+
+async function toggleCompanyStatus(companyId, currentStatus) {
+  const newStatus = currentStatus === 'active' ? 'suspended' : 'active';
+  try {
+    const { error } = await client
+      .from('companies')
+      .update({ status: newStatus, updated_at: new Date().toISOString() })
+      .eq('id', companyId);
+    if (error) throw error;
+    showToast(`✅ Company ${newStatus}`, 'success');
+    loadSuperAdminCompanies();
+  } catch (err) {
+    showToast('Error: ' + err.message, 'error');
+  }
+}
+
+async function deleteCompany(companyId, companyName) {
+  const confirmed = window.confirm(`Permanently delete "${companyName}" and all of its RFQs, invitations and submissions? This cannot be undone.`);
+  if (!confirmed) return;
+
+  try {
+    const { error } = await client.from('companies').delete().eq('id', companyId);
+    if (error) throw error;
+    showToast('✅ Company deleted', 'success');
+    loadSuperAdminCompanies();
+  } catch (err) {
+    showToast('Error: ' + err.message, 'error');
+  }
+}
+
+// ===== UTILITY FUNCTIONS =====
+function showToast(message, type = 'info') {
+  const wrap = document.getElementById('toast-wrap');
+  const toast = document.createElement('div');
+  toast.className = `toast ${type}`;
+  toast.textContent = message;
+  wrap.appendChild(toast);
+
+  setTimeout(() => {
+    toast.style.animation = 'slideOut 0.3s';
+    setTimeout(() => toast.remove(), 300);
+  }, 4000);
+}
+
+function openModal(id) {
+  const modal = document.getElementById(id);
+  if (modal) modal.style.display = 'flex';
+}
+
+function closeModal(id) {
+  const modal = document.getElementById(id);
+  if (modal) modal.style.display = 'none';
+}
+
+function generateToken() {
+  const timestamp = Date.now();
+  const random = Math.random().toString(36).substring(2, 8);
+  return `token-${random}-${timestamp}`;
+}
+
+function generateUUID() {
+  if (window.crypto && typeof crypto.randomUUID === 'function') {
+    return crypto.randomUUID();
+  }
+  // RFC4122 v4 fallback for older browsers
+  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function (c) {
+    const r = Math.random() * 16 | 0;
+    const v = c === 'x' ? r : (r & 0x3 | 0x8);
+    return v.toString(16);
+  });
+}
+
+function copyToClipboard(text) {
+  navigator.clipboard.writeText(text).then(() => {
+    showToast('✅ Link copied!', 'success');
+  }).catch(() => {
+    showToast('Error copying', 'error');
+  });
+}
+
+async function copyAllRFQLinks(rfqId) {
+  try {
+    const { data: invitations } = await client
+      .from('rfq_invitations')
+      .select('*')
+      .eq('rfq_id', rfqId);
+
+    if (!invitations || invitations.length === 0) {
+      showToast('No contractor links to copy', 'info');
+      return;
+    }
+
+    const baseUrl = window.location.origin + window.location.pathname;
+    const allLinks = invitations.map(inv => `${baseUrl}?rfq=${inv.invitation_token}`).join('\n');
+
+    navigator.clipboard.writeText(allLinks).then(() => {
+      showToast(`✅ ${invitations.length} links copied!`, 'success');
+    }).catch(() => {
+      showToast('Error copying', 'error');
+    });
+  } catch (err) {
+    showToast('Error: ' + err.message, 'error');
+  }
+}
+
+async function showAddContractorForm(rfqId) {
+  const email = prompt('Enter contractor email:');
+  if (!email) return;
+
+  try {
+    const { data: inv, error } = await client
+      .from('rfq_invitations')
+      .insert([{
+        rfq_id: rfqId,
+        contractor_email: email,
+        invitation_token: generateToken(),
+        used: false
+      }])
+      .select()
+      .single();
+
+    if (error) throw error;
+
+    const baseUrl = window.location.origin + window.location.pathname;
+    const link = `${baseUrl}?rfq=${inv.invitation_token}`;
+
+    showToast('✅ Contractor added — sending invite email...', 'success');
+    navigator.clipboard.writeText(link);
+    await sendRFQInviteEmails(rfqId, [inv]);
+    loadRFQConsole();
+
+  } catch (err) {
+    showToast('Error: ' + err.message, 'error');
+  }
+}
+
+function showGeneratedLinks(rfqId, invitations) {
+  window.lastInvitations = invitations;
+
+  const baseUrl = window.location.origin + window.location.pathname;
+
+  let linksHtml = '<div style="font-family: monospace; font-size: 12px; line-height: 1.8;">';
+
+  invitations.forEach((inv, idx) => {
+    const link = `${baseUrl}?rfq=${inv.invitation_token}`;
+    linksHtml += `
+      <div style="margin-bottom: 20px; padding-bottom: 15px; border-bottom: 1px solid var(--border);">
+        <strong style="color: var(--ink);">${idx + 1}. ${inv.contractor_email}</strong><br>
+        <code style="background: var(--bg-2); padding: 8px; display: block; word-break: break-all; margin-top: 5px; border-radius: 4px;">${link}</code>
+      </div>
+    `;
+  });
+
+  linksHtml += '</div>';
+
+  const linksContainer = document.getElementById('generated-links-list');
+  if (linksContainer) linksContainer.innerHTML = linksHtml;
+
+  openModal('generated-links-modal');
+}
+
+function copyAllLinks() {
+  if (!window.lastInvitations || window.lastInvitations.length === 0) {
+    showToast('No links to copy', 'error');
+    return;
+  }
+
+  const baseUrl = window.location.origin + window.location.pathname;
+  const links = window.lastInvitations.map(inv => {
+    return `${baseUrl}?rfq=${inv.invitation_token}`;
+  }).join('\n');
+
+  navigator.clipboard.writeText(links).then(() => {
+    showToast('✅ URLs copied!', 'success');
+  }).catch(() => {
+    showToast('Error copying', 'error');
+  });
+}
+
+async function downloadDocument(path, name) {
+  try {
+    const { data, error } = await client.storage.from('rfq-documents').createSignedUrl(path, 120);
+    if (error) throw error;
+    if (data && data.signedUrl) {
+      const link = document.createElement('a');
+      link.href = data.signedUrl;
+      link.download = name;
+      link.target = '_blank';
+      link.click();
+      showToast('✅ Download started', 'success');
+    }
+  } catch (err) {
+    console.error('Download error:', err);
+    showToast('Error downloading document: ' + err.message, 'error');
+  }
+}
+
+// Same pattern as downloadDocument() above, but against the private
+// 'supplier-documents' bucket (only readable by the super admin) used for
+// Supplier Database registration documents.
+async function downloadSupplierDocument(path, name) {
+  try {
+    const { data, error } = await client.storage.from('supplier-documents').createSignedUrl(path, 120);
+    if (error) throw error;
+    if (data && data.signedUrl) {
+      const link = document.createElement('a');
+      link.href = data.signedUrl;
+      link.download = name;
+      link.target = '_blank';
+      link.click();
+      showToast('✅ Download started', 'success');
+    }
+  } catch (err) {
+    console.error('Download error:', err);
+    showToast('Error downloading document: ' + err.message, 'error');
+  }
+}
+
+function acceptPOPIA() {
+  closeModal('popia-modal');
+}
+
+// Initialize on page load
+window.addEventListener('DOMContentLoaded', () => {
+  console.log('Page loaded, initializing...');
+  setupCreateRFQForm();
+
+  const provinceFilter = document.getElementById('public-rfq-province-filter');
+  if (provinceFilter) {
+    provinceFilter.addEventListener('change', () => loadPublicRFQList());
+  }
+
+  const sortFilter = document.getElementById('public-rfq-sort');
+  if (sortFilter) {
+    sortFilter.addEventListener('change', () => loadPublicRFQList());
+  }
+
+  const heroSearchForm = document.getElementById('hero-search-form');
+  if (heroSearchForm) {
+    heroSearchForm.addEventListener('submit', (e) => {
+      e.preventDefault();
+      loadPublicRFQList();
+    });
+  }
+
+  const footerYear = document.getElementById('footer-year');
+  if (footerYear) {
+    footerYear.textContent = new Date().getFullYear();
+  }
+});
