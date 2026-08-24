@@ -263,16 +263,39 @@
             </div>
             <button type="submit" class="btn gold" style="padding:12px; margin-top:5px;">Log In</button>
           </form>
+          <p style="text-align:center; margin-top:12px; font-size:13px;">
+            <a href="#" onclick="showForgotPasswordView(); return false;" style="color:var(--primary); font-weight:600;">Forgot your password?</a>
+          </p>
           <p style="text-align:center; margin-top:15px; font-size:13px; color:var(--border);">
             No account yet? Access is by invitation — ask your company admin or the platform admin to invite you.
           </p>
         </div>
       </div>
 
+      <div id="forgot-password-section" style="display:none; max-width: 420px; margin: 0 auto;">
+        <div class="card">
+          <h2 style="margin-top:0;">Reset Your Password</h2>
+          <p style="color:var(--border); font-size:14px; margin-bottom:15px;">Enter the email address on your account and we'll send you a link to set a new password.</p>
+          <form id="forgot-password-form" style="display:flex; flex-direction:column; gap:15px;">
+            <div>
+              <label>Email</label>
+              <input type="email" id="forgot-password-email" required style="width:100%;">
+            </div>
+            <button type="submit" class="btn gold" style="padding:12px; margin-top:5px;">Send Reset Link</button>
+          </form>
+          <p id="forgot-password-sent-note" style="display:none; margin-top:15px; padding:12px; background:#E1F0FF; border-radius:4px; font-size:14px;">
+            If an account exists for that email, a password reset link is on its way. Check your inbox (and spam folder) — the link is valid for a limited time and can only be used once.
+          </p>
+          <p style="text-align:center; margin-top:15px; font-size:13px;">
+            <a href="#" onclick="showLoginForm(); return false;" style="color:var(--primary); font-weight:600;">Back to Sign In</a>
+          </p>
+        </div>
+      </div>
+
       <div id="set-password-section" style="display:none; max-width: 420px; margin: 0 auto;">
         <div class="card">
-          <h2 style="margin-top:0;">Choose a Password</h2>
-          <p style="color:var(--border); font-size:14px; margin-bottom:15px;">You've been invited to RFQ Hub. Set a password to finish setting up your account.</p>
+          <h2 id="set-password-heading" style="margin-top:0;">Choose a Password</h2>
+          <p id="set-password-subtext" style="color:var(--border); font-size:14px; margin-bottom:15px;">You've been invited to RFQ Hub. Set a password to finish setting up your account.</p>
           <form id="set-password-form" style="display:flex; flex-direction:column; gap:15px;">
             <div>
               <label>New Password *</label>
