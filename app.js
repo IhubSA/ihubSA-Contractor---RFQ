@@ -3131,6 +3131,24 @@ async function createNewRFQ(eventOrRelease) {
     // already-created RFQ) this submit actually is.
     const wasEditingExistingRfq = !!currentDraftId && !currentEditingIsDraft;
 
+    // editRFQ() deliberately never repopulates the Contractor Emails
+    // textarea (so a plain edit-and-save never re-sends/duplicates existing
+    // invitations — see the comment on editRFQ() itself). That means an
+    // empty textarea is completely normal and expected while editing an
+    // existing Closed RFQ that already has contractors on file — it should
+    // NOT be treated the same as "this Closed RFQ has zero contractors",
+    // which really would be a problem. So when editing an existing RFQ,
+    // check how many invitations already exist for it before deciding
+    // whether an empty textarea is actually an error.
+    let existingInvitationCount = 0;
+    if (wasEditingExistingRfq) {
+      const { count } = await client
+        .from('rfq_invitations')
+        .select('id', { count: 'exact', head: true })
+        .eq('rfq_id', currentDraftId);
+      existingInvitationCount = count || 0;
+    }
+
     const { name, project, description, deadline, budget, contractorEmails, isPublic, provinces, locationArea, requiredDocs } = collectRFQFormValues();
 
     if (!name) {
@@ -3163,7 +3181,7 @@ async function createNewRFQ(eventOrRelease) {
       isSubmittingRFQ = false;
       return;
     }
-    if (!isPublic && contractorEmails.length === 0) {
+    if (!isPublic && contractorEmails.length === 0 && existingInvitationCount === 0) {
       showToast('❌ Please enter at least one Contractor Email (required for Closed RFQs)', 'error');
       isSubmittingRFQ = false;
       return;
