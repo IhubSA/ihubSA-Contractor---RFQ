@@ -28,6 +28,7 @@ let pendingAnswerQuestionId = null; // which rfq_questions row the open "Reply" 
 let pendingExpandSearchRfqId = null; // which RFQ the open "Expand Supplier Search" modal is for
 let rfqQuestionsById = {}; // populated by loadRFQConsole so the answer modal can look up question text without embedding free-form text in onclick attributes
 let currentAuthType = null; // 'invite' or 'recovery' when landing from an invite/reset-password link — lets showSetPasswordView() tailor its copy (same form/flow handles both)
+let passwordResetEmail = null; // email address a forgot-password code was just sent to, kept so the code-entry step can call verifyOtp() without asking again
 
 const DEFAULT_HERO_SUBTITLE = "Open requests for quotation. Apply directly online — you'll get a reference number and a confirmation the moment your application is received.";
 
@@ -181,6 +182,12 @@ function setupStaticForms() {
   if (forgotPasswordForm && !forgotPasswordForm.dataset.wired) {
     forgotPasswordForm.addEventListener('submit', handleForgotPasswordSubmit);
     forgotPasswordForm.dataset.wired = 'true';
+  }
+
+  const resetCodeForm = document.getElementById('reset-code-form');
+  if (resetCodeForm && !resetCodeForm.dataset.wired) {
+    resetCodeForm.addEventListener('submit', handleResetCodeSubmit);
+    resetCodeForm.dataset.wired = 'true';
   }
 
   const settingsForm = document.getElementById('settings-form');
@@ -1388,6 +1395,11 @@ function showForgotPasswordView() {
   document.getElementById('forgot-password-sent-note').style.display = 'none';
   const form = document.getElementById('forgot-password-form');
   if (form) form.style.display = 'flex';
+  const codeForm = document.getElementById('reset-code-form');
+  if (codeForm) {
+    codeForm.style.display = 'none';
+    codeForm.reset();
+  }
   setHeaderActions('form');
   applyDefaultBranding();
 }
@@ -1497,6 +1509,10 @@ async function handleForgotPasswordSubmit(e) {
   if (submitBtn) submitBtn.disabled = true;
 
   try {
+    // redirectTo is kept for completeness (some Supabase email templates
+    // include the link alongside the code), but the flow below relies on
+    // the 6-digit {{ .Token }} code, not this link, to sidestep email
+    // security scanners pre-fetching and burning single-use links.
     const { error } = await client.auth.resetPasswordForEmail(email, { redirectTo: SITE_URL });
     if (error) throw error;
   } catch (err) {
@@ -1506,9 +1522,66 @@ async function handleForgotPasswordSubmit(e) {
     return;
   }
 
+  passwordResetEmail = email;
   document.getElementById('forgot-password-form').style.display = 'none';
   document.getElementById('forgot-password-sent-note').style.display = 'block';
+  const codeForm = document.getElementById('reset-code-form');
+  if (codeForm) codeForm.style.display = 'flex';
   if (submitBtn) submitBtn.disabled = false;
+}
+
+async function handleResetCodeSubmit(e) {
+  e.preventDefault();
+
+  if (!passwordResetEmail) {
+    showToast('Please request a new code first.', 'error');
+    showForgotPasswordView();
+    return;
+  }
+
+  const code = document.getElementById('reset-code-token').value.trim();
+  const password = document.getElementById('reset-code-new-password').value;
+  const confirmPassword = document.getElementById('reset-code-confirm-password').value;
+
+  if (!/^\d{6}$/.test(code)) {
+    showToast('Enter the 6-digit code from your email', 'error');
+    return;
+  }
+  if (password.length < 6) {
+    showToast('Password must be at least 6 characters', 'error');
+    return;
+  }
+  if (password !== confirmPassword) {
+    showToast('Passwords do not match', 'error');
+    return;
+  }
+
+  const submitBtn = e.target.querySelector('button[type="submit"]');
+  if (submitBtn) submitBtn.disabled = true;
+
+  try {
+    // Redeeming the code (rather than clicking a link) authenticates the
+    // recipient directly — there's no intermediate link for an email
+    // scanner to pre-fetch and burn before the real person acts.
+    const { error: verifyError } = await client.auth.verifyOtp({
+      email: passwordResetEmail,
+      token: code,
+      type: 'recovery',
+    });
+    if (verifyError) throw verifyError;
+
+    const { error: updateError } = await client.auth.updateUser({ password });
+    if (updateError) throw updateError;
+
+    passwordResetEmail = null;
+    showToast('✅ Password reset! You can now log in.', 'success');
+    showLoginForm();
+  } catch (err) {
+    console.error('Reset code error:', err);
+    showToast('Error: ' + err.message, 'error');
+  } finally {
+    if (submitBtn) submitBtn.disabled = false;
+  }
 }
 
 async function handleSetPasswordSubmit(e) {
