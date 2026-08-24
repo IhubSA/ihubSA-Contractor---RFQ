@@ -2745,11 +2745,6 @@ function showAdminView() {
   document.querySelectorAll('.company-tab-btn').forEach((btn, idx) => {
     btn.classList.toggle('active', idx === 0);
   });
-
-  // 'create' is the default tab shown above (switchAdminTab() is never
-  // called for it on initial load), so its drafts list needs its own
-  // explicit refresh here.
-  loadRFQDrafts();
 }
 
 function switchAdminTab(tabName, button) {
@@ -2759,9 +2754,7 @@ function switchAdminTab(tabName, button) {
   document.getElementById(tabName + '-tab').style.display = 'block';
   if (button) button.classList.add('active');
 
-  if (tabName === 'create') {
-    loadRFQDrafts();
-  } else if (tabName === 'console') {
+  if (tabName === 'console') {
     loadRFQConsole();
   } else if (tabName === 'submissions') {
     loadSubmissions();
@@ -3305,7 +3298,6 @@ async function createNewRFQ(eventOrRelease) {
     }
 
     resetCreateForm();
-    loadRFQDrafts();
     loadRFQConsole();
 
   } catch (err) {
@@ -3396,7 +3388,7 @@ async function saveRFQDraft() {
     await uploadRFQAttachments(rfq.id);
 
     showToast('💾 Draft saved — it won\'t be visible to contractors until you publish it.', 'success');
-    loadRFQDrafts();
+    loadRFQConsole();
   } catch (err) {
     console.error('❌ Error saving draft:', err);
     showToast('Error: ' + err.message, 'error');
@@ -3522,48 +3514,6 @@ function previewRFQ() {
   openModal('rfq-preview-modal');
 }
 
-// Lists saved-but-unpublished drafts for the current company above the
-// Create RFQ form, so they're never lost track of and can be resumed or
-// discarded. Hides its own card entirely when there are none.
-async function loadRFQDrafts() {
-  const card = document.getElementById('rfq-drafts-card');
-  const list = document.getElementById('rfq-drafts-list');
-  if (!card || !list || !currentCompany) return;
-
-  try {
-    const { data: drafts, error } = await client
-      .from('rfqs')
-      .select('*')
-      .eq('company_id', currentCompany.id)
-      .eq('is_draft', true)
-      .order('updated_at', { ascending: false });
-
-    if (error) throw error;
-
-    if (!drafts || drafts.length === 0) {
-      card.style.display = 'none';
-      list.innerHTML = '';
-      return;
-    }
-
-    card.style.display = 'block';
-    list.innerHTML = drafts.map(draft => `
-      <div style="display:flex; justify-content:space-between; align-items:center; gap:12px; padding:12px; background:var(--bg-2); border-radius:4px; margin-bottom:8px; flex-wrap:wrap;">
-        <div style="flex:1; min-width:200px;">
-          <p style="margin:0 0 4px 0; font-weight:bold; color:var(--ink);">${draft.rfq_name ? escapeHtmlClient(draft.rfq_name) : '<span style="font-style:italic; color:var(--border);">(Untitled draft)</span>'}</p>
-          <p style="margin:0; font-size:12px; color:var(--border);">${draft.project_name ? 'Project: ' + escapeHtmlClient(draft.project_name) + ' · ' : ''}Last saved ${new Date(draft.updated_at || draft.created_at).toLocaleString()}</p>
-        </div>
-        <div style="display:flex; gap:8px; flex-shrink:0;">
-          <button type="button" onclick="continueEditingDraft('${draft.id}')" class="btn gold" style="padding:8px 12px; font-size:13px;">Continue Editing</button>
-          <button type="button" onclick="deleteDraft('${draft.id}')" class="btn secondary" style="padding:8px 12px; font-size:13px;">Delete</button>
-        </div>
-      </div>
-    `).join('');
-  } catch (err) {
-    console.error('❌ Error loading drafts:', err);
-  }
-}
-
 // Shared loader behind both continueEditingDraft() and editRFQ() — reads one
 // row and repopulates every Create RFQ form field from it. Attachments
 // already on the row are left as-is (uploadRFQAttachments() only adds
@@ -3615,7 +3565,10 @@ async function loadRFQIntoCreateForm(rfqId) {
 }
 
 // Loads a saved draft's fields back into the Create RFQ form so it can be
-// finished and either saved again or published.
+// finished and either saved again or published. Called from the RFQ
+// Console (drafts are listed there alongside every other RFQ — see
+// loadRFQConsole()), so this also has to switch to the Create tab itself,
+// same as editRFQ() already does for non-draft rows.
 async function continueEditingDraft(draftId) {
   try {
     const draft = await loadRFQIntoCreateForm(draftId);
@@ -3624,6 +3577,10 @@ async function continueEditingDraft(draftId) {
     currentEditingIsDraft = true;
     currentEditingIsReleased = false; // a draft is never released by definition
     updateDraftEditingBanner();
+
+    const createTabBtn = Array.from(document.querySelectorAll('.company-tab-btn'))
+      .find(btn => (btn.getAttribute('onclick') || '').includes("'create'"));
+    switchAdminTab('create', createTabBtn || null);
 
     document.getElementById('create-rfq-form').scrollIntoView({ behavior: 'smooth', block: 'start' });
     showToast('📝 Draft loaded — continue editing below', 'success');
@@ -3678,7 +3635,7 @@ async function deleteDraft(draftId) {
     }
 
     showToast('🗑️ Draft deleted', 'success');
-    loadRFQDrafts();
+    loadRFQConsole();
   } catch (err) {
     console.error('❌ Error deleting draft:', err);
     showToast('Error: ' + err.message, 'error');
@@ -3686,6 +3643,10 @@ async function deleteDraft(draftId) {
 }
 
 // ===== RFQ CONSOLE =====
+// Lists every RFQ for the company, saved drafts included — a draft is just
+// an RFQ that hasn't been finalized yet (is_draft: true), so it belongs in
+// the same one place Brent manages every other RFQ rather than a separate
+// card elsewhere. See "Merge Saved Drafts into the RFQ Console" for why.
 async function loadRFQConsole() {
   try {
     if (!currentCompany) return;
@@ -3695,12 +3656,11 @@ async function loadRFQConsole() {
       .from('rfqs')
       .select('*')
       .eq('company_id', currentCompany.id)
-      .eq('is_draft', false)
       .order('created_at', { ascending: false });
 
     if (rfqError || !rfqs || rfqs.length === 0) {
       document.getElementById('rfq-console-list').innerHTML =
-        '<div style="text-align: center; padding: 40px; color: var(--border);"><p>No active RFQs yet. <strong>Create one to get started!</strong></p></div>';
+        '<div style="text-align: center; padding: 40px; color: var(--border);"><p>No RFQs yet. <strong>Create one to get started!</strong></p></div>';
       return;
     }
 
@@ -3709,6 +3669,36 @@ async function loadRFQConsole() {
     rfqQuestionsById = {};
 
     for (const rfq of rfqs) {
+      // A draft has no invitations/submissions/questions yet (those are
+      // only ever created once an RFQ is finalized via Save RFQ/Publish —
+      // see saveRFQDraft()), so it gets a short, dedicated card instead of
+      // the full one below: no point querying three empty tables per draft.
+      if (rfq.is_draft) {
+        consoleHtml += `
+          <div class="rfq-console-card">
+            <div style="display: flex; justify-content: space-between; align-items: start; margin-bottom: 15px; flex-wrap: wrap; gap: 15px;">
+              <div style="flex: 1; min-width: 220px;">
+                <h3 style="margin: 0 0 5px 0; color: var(--primary);">
+                  ${rfq.rfq_name ? escapeHtmlClient(rfq.rfq_name) : '<span style="font-style:italic; color:var(--border);">(Untitled draft)</span>'}
+                  <span class="submission-status info_requested" style="vertical-align:middle; margin-left:8px;">📝 Draft</span>
+                </h3>
+                ${rfq.project_name ? `<p style="margin: 0 0 8px 0; font-size: 14px; color: var(--border);">Project: <strong>${escapeHtmlClient(rfq.project_name)}</strong></p>` : ''}
+                <p style="margin: 0; font-size: 13px; color: var(--border);">Not visible to contractors — no notifications are sent until this is saved and released. Last saved ${new Date(rfq.updated_at || rfq.created_at).toLocaleString()}.</p>
+              </div>
+            </div>
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">
+              <button onclick="continueEditingDraft('${rfq.id}')" class="btn secondary" style="padding: 10px;">
+                ✏️ Continue Editing
+              </button>
+              <button onclick="deleteDraft('${rfq.id}')" class="btn" style="padding: 10px; background: var(--bg-2); color: var(--warning);">
+                🗑️ Delete Draft
+              </button>
+            </div>
+          </div>
+        `;
+        continue;
+      }
+
       const { data: invitations } = await client
         .from('rfq_invitations')
         .select('*')
