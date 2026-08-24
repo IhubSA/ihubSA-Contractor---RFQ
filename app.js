@@ -1710,16 +1710,16 @@ async function sendRFQInviteEmails(rfqId, invitations) {
     showToast(`✅ Emailed ${result.sent || invitations.length} contractor(s)`, 'success');
   } catch (err) {
     console.error('Error sending contractor emails:', err);
-    showToast('RFQ created, but emailing contractors failed: ' + err.message, 'warning');
+    showToast('Saved, but emailing contractors failed: ' + err.message, 'warning');
   }
 }
 
-// Fires automatically right after a new Open (public) RFQ is created —
-// emails every registered supplier whose notification province matches
-// this RFQ's province (or who chose "All Provinces"). Best-effort, same
-// as sendRFQInviteEmails: a failure here doesn't undo the RFQ itself, it
-// just means suppliers won't have been proactively emailed — the RFQ is
-// still live and browsable on the public portal either way.
+// Only ever called from releaseRFQ() (and from showAddContractorForm()'s
+// single-contractor add, which is its own always-immediate action) — emails
+// every registered supplier whose notification province matches this RFQ's
+// province (or who chose "All Provinces"). Best-effort, same as
+// sendRFQInviteEmails: a failure here doesn't undo the release itself, it
+// just means suppliers won't have been proactively emailed.
 async function notifySuppliersNewRFQ(rfqId) {
   try {
     const result = await callEdgeFunction('notify-suppliers-new-rfq', { rfqId });
@@ -1737,7 +1737,73 @@ async function notifySuppliersNewRFQ(rfqId) {
     }
   } catch (err) {
     console.error('Error notifying suppliers:', err);
-    showToast('RFQ created, but notifying suppliers failed: ' + err.message, 'warning');
+    showToast('RFQ released, but notifying suppliers failed: ' + err.message, 'warning');
+  }
+}
+
+// The ONLY action that makes an RFQ actually go out: flips is_released, and
+// from that single moment — never from Save/Save Draft/Save Changes —
+// triggers whatever "going live" means for this RFQ's visibility: an Open
+// RFQ becomes publicly listed and its registered suppliers get emailed/
+// texted; a Closed RFQ's contractor invitation links become reachable and
+// those contractors get emailed. Brent's explicit requirement (2026-08-24):
+// create → edit/re-save (as many times as needed, silently) → release once,
+// when ready — for both Open and Closed RFQs. Not offered again once
+// is_released is already true (see loadRFQConsole()); further edits after
+// that point stay silent, and Unpublish/Republish/Expand Supplier Search
+// remain the tools for managing an already-released Open RFQ's visibility
+// and notification reach.
+async function releaseRFQ(rfqId) {
+  if (!confirm('Release this RFQ? This makes it go live: if Open, it becomes publicly listed and registered suppliers are notified by email/SMS; if Closed, its contractor invitation links become active and those contractors are emailed. This cannot be undone by editing alone.')) return;
+
+  try {
+    const { data: rfq, error: fetchError } = await client
+      .from('rfqs')
+      .select('*')
+      .eq('id', rfqId)
+      .single();
+    if (fetchError || !rfq) throw new Error(fetchError ? fetchError.message : 'RFQ not found');
+    if (rfq.is_released) {
+      showToast('This RFQ has already been released.', 'info');
+      return;
+    }
+
+    const updatePayload = { is_released: true, released_at: new Date().toISOString() };
+    if (rfq.is_public) {
+      // Starting from a clean slate — this RFQ has never been notified
+      // before (nothing goes out before release), so these should already
+      // be at their defaults, but set them explicitly so notify-suppliers-
+      // new-rfq and Expand Search's per-province bookkeeping definitely
+      // start clean.
+      updatePayload.supplier_notification_sent = false;
+      updatePayload.sms_notification_sent = false;
+      updatePayload.notified_provinces = [];
+    }
+
+    const { error: updateError } = await client
+      .from('rfqs')
+      .update(updatePayload)
+      .eq('id', rfqId);
+    if (updateError) throw updateError;
+
+    if (rfq.is_public) {
+      // Fire-and-forget: don't block the rest of the release on this.
+      notifySuppliersNewRFQ(rfqId);
+    }
+
+    const { data: invitations } = await client
+      .from('rfq_invitations')
+      .select('*')
+      .eq('rfq_id', rfqId);
+    if (invitations && invitations.length > 0) {
+      await sendRFQInviteEmails(rfqId, invitations);
+    }
+
+    showToast('🚀 RFQ released' + (rfq.is_public ? ' — going out to registered suppliers now' : (invitations && invitations.length > 0 ? ' — inviting contractors now' : '')), 'success');
+    loadRFQConsole();
+  } catch (err) {
+    console.error('❌ Error releasing RFQ:', err);
+    showToast('Error: ' + err.message, 'error');
   }
 }
 
@@ -2975,21 +3041,21 @@ function updateDraftEditingBanner() {
   if (!currentDraftId) {
     if (banner) banner.style.display = 'none';
     if (saveDraftBtn) saveDraftBtn.style.display = '';
-    if (submitBtn) submitBtn.textContent = 'Create RFQ & Generate Links';
+    if (submitBtn) submitBtn.textContent = '💾 Save RFQ';
     return;
   }
 
   if (currentEditingIsDraft) {
     if (banner) {
       banner.style.display = 'block';
-      banner.innerHTML = '📝 <strong>Editing a saved draft</strong> — Save Draft will update it, and Publish will make it live.';
+      banner.innerHTML = '📝 <strong>Editing a saved draft</strong> — Save Draft keeps it a draft, and Save RFQ finalizes it into the Console. Either way, nothing is sent to suppliers or contractors until you explicitly click <strong>Release RFQ</strong> there.';
     }
     if (saveDraftBtn) saveDraftBtn.style.display = '';
-    if (submitBtn) submitBtn.textContent = 'Publish RFQ & Generate Links';
+    if (submitBtn) submitBtn.textContent = '💾 Save RFQ';
   } else {
     if (banner) {
       banner.style.display = 'block';
-      banner.innerHTML = '✏️ <strong>Editing an existing RFQ</strong> — saving updates the live version in place. If this RFQ is (or becomes) Open, its registered suppliers will be re-notified by email/SMS.';
+      banner.innerHTML = '✏️ <strong>Editing an existing RFQ</strong> — saving updates it in place, silently. Nothing is sent to suppliers or contractors as a result of saving.';
     }
     if (saveDraftBtn) saveDraftBtn.style.display = 'none';
     if (submitBtn) submitBtn.textContent = '💾 Save Changes';
@@ -3057,7 +3123,7 @@ async function createNewRFQ() {
     }
 
     console.log('✅ All validations passed');
-    showToast(wasEditingExistingRfq ? 'Saving changes...' : (currentDraftId ? 'Publishing RFQ...' : 'Creating RFQ...'), 'success');
+    showToast('Saving...', 'success');
 
     const rfqPayload = {
       rfq_name: name,
@@ -3073,20 +3139,17 @@ async function createNewRFQ() {
       province: provinces[0] || null,
       location_area: locationArea || null,
       updated_at: new Date().toISOString()
+      // Deliberately no `is_released` here, on either insert or update.
+      // Saving (first time or any later edit) must never by itself make an
+      // RFQ live — it only leaves an already-released RFQ's release state
+      // untouched, and leaves a never-released one at its column default of
+      // false. Going live (public listing, supplier notification, contractor
+      // invite emails) only ever happens via the explicit releaseRFQ()
+      // action in the Console. This is Brent's explicit requirement
+      // (2026-08-24): nothing goes out — for Open or Closed RFQs — until
+      // released, and saving/editing must be freely repeatable with zero
+      // side effects.
     };
-
-    if (isPublic) {
-      // Treat every (re-)publish of an Open RFQ as a fresh notification
-      // round: reset the idempotency flags notify-suppliers-new-rfq checks,
-      // so editing an already-live Open RFQ and saving re-notifies its
-      // registered suppliers (Brent's explicit choice — editing a live RFQ
-      // should re-notify, not go silent), and so Expand Search's per-
-      // province bookkeeping starts clean against the RFQ's current
-      // province list instead of a stale one from before the edit.
-      rfqPayload.supplier_notification_sent = false;
-      rfqPayload.sms_notification_sent = false;
-      rfqPayload.notified_provinces = [];
-    }
 
     let rfq;
     if (currentDraftId) {
@@ -3114,10 +3177,9 @@ async function createNewRFQ() {
 
     await uploadRFQAttachments(rfq.id);
 
-    if (isPublic) {
-      // Fire-and-forget: don't block the rest of RFQ creation on this.
-      notifySuppliersNewRFQ(rfq.id);
-    }
+    // No notify-suppliers call here — that only ever happens from
+    // releaseRFQ() now, whether this is the very first save of a brand new
+    // RFQ or an edit to one that's already been released.
 
     if (contractorEmails.length > 0) {
       const invitations = contractorEmails.map(email => ({
@@ -3136,12 +3198,20 @@ async function createNewRFQ() {
       console.log('✅ Invitations created');
 
       window.lastInvitations = invitations;
-      await sendRFQInviteEmails(rfq.id, invitations);
+      // Only actually email these contractors if the RFQ has already been
+      // released — otherwise the links are created (so they're ready and
+      // previewable) but stay unreachable (see rfqs_select_scoped) and
+      // unsent until releaseRFQ() sends them.
+      if (rfq.is_released) {
+        await sendRFQInviteEmails(rfq.id, invitations);
+      } else {
+        showToast(`✅ Saved — ${invitations.length} contractor link(s) ready (emailed when released)`, 'success');
+      }
       showGeneratedLinks(rfq.id, invitations);
     } else if (wasEditingExistingRfq) {
-      showToast('✅ Changes saved' + (isPublic ? ' — suppliers re-notified' : ''), 'success');
+      showToast('✅ Changes saved', 'success');
     } else {
-      showToast(isPublic ? '✅ RFQ created and listed on the public portal' : '✅ RFQ created', 'success');
+      showToast('✅ RFQ saved — release it from the Console when ready', 'success');
     }
 
     resetCreateForm();
@@ -3532,6 +3602,7 @@ async function loadRFQConsole() {
       .from('rfqs')
       .select('*')
       .eq('company_id', currentCompany.id)
+      .eq('is_draft', false)
       .order('created_at', { ascending: false });
 
     if (rfqError || !rfqs || rfqs.length === 0) {
@@ -3577,10 +3648,11 @@ async function loadRFQConsole() {
             <div style="flex: 1; min-width: 220px;">
               <h3 style="margin: 0 0 5px 0; color: var(--primary);">
                 ${rfq.rfq_name}
-                <span class="submission-status ${rfq.is_withdrawn ? 'rejected' : (rfq.is_public ? 'approved' : 'under_review')}" style="vertical-align:middle; margin-left:8px;">${rfq.is_withdrawn ? '🚫 Unpublished' : (rfq.is_public ? 'Open — Public' : 'Closed — Invite Only')}</span>
+                <span class="submission-status ${!rfq.is_released ? 'info_requested' : (rfq.is_withdrawn ? 'rejected' : (rfq.is_public ? 'approved' : 'under_review'))}" style="vertical-align:middle; margin-left:8px;">${!rfq.is_released ? '🕒 Not Released Yet' : (rfq.is_withdrawn ? '🚫 Unpublished' : (rfq.is_public ? 'Open — Public' : 'Closed — Invite Only'))}</span>
               </h3>
               <p style="margin: 0 0 8px 0; font-size: 14px; color: var(--border);">Project: <strong>${rfq.project_name}</strong></p>
               ${(rfq.location_area || (rfq.provinces && rfq.provinces.length > 0)) ? `<p style="margin: 0 0 8px 0; font-size: 14px; color: var(--border);">📍 ${[rfq.location_area, ...(rfq.provinces || [])].filter(Boolean).join(', ')}</p>` : ''}
+              ${!rfq.is_released ? `<p style="margin: 0 0 8px 0; font-size: 13px; color: var(--border);">Saved, not yet public — nothing has been sent to suppliers or contractors. Click <strong>Release RFQ</strong> below when ready.</p>` : ''}
               ${(rfq.is_public && rfq.notified_provinces && rfq.notified_provinces.length > 0) ? `<p style="margin: 0 0 8px 0; font-size: 13px; color: var(--border);">📢 Suppliers notified in: ${rfq.notified_provinces.map(p => escapeHtmlClient(p)).join(', ')}</p>` : ''}
               <p style="margin: 0; font-size: 14px; color: var(--border);">
                 Deadline: ${deadlineDate.toLocaleDateString()}
@@ -3667,10 +3739,15 @@ async function loadRFQConsole() {
             </div>
           </div>
 
-          <div style="margin-bottom: 10px;">
-            <button onclick="editRFQ('${rfq.id}')" class="btn secondary" style="padding: 10px; width: 100%;">
+          <div style="display: grid; grid-template-columns: ${rfq.is_released ? '1fr' : '1fr 1fr'}; gap: 10px; margin-bottom: 10px;">
+            <button onclick="editRFQ('${rfq.id}')" class="btn secondary" style="padding: 10px;">
               ✏️ Edit RFQ
             </button>
+            ${!rfq.is_released ? `
+              <button onclick="releaseRFQ('${rfq.id}')" class="btn gold" style="padding: 10px;">
+                🚀 Release RFQ
+              </button>
+            ` : ''}
           </div>
 
           <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">
@@ -3682,7 +3759,7 @@ async function loadRFQConsole() {
             </button>
           </div>
 
-          ${rfq.is_public ? `
+          ${(rfq.is_public && rfq.is_released) ? `
             <div style="display: grid; grid-template-columns: ${rfq.is_withdrawn ? '1fr' : '1fr 1fr'}; gap: 10px; margin-top: 10px;">
               ${rfq.is_withdrawn ? `
                 <button onclick="republishRFQ('${rfq.id}')" class="btn gold" style="padding: 10px;">
@@ -5042,6 +5119,17 @@ async function showAddContractorForm(rfqId) {
   if (!email) return;
 
   try {
+    // Only actually email this contractor if the RFQ has already been
+    // released — otherwise their link would be unreachable anyway (see
+    // rfqs_select_scoped) and Brent's "nothing goes out until released"
+    // rule applies here too, not just to the bulk save/create flow.
+    const { data: rfqRow } = await client
+      .from('rfqs')
+      .select('is_released')
+      .eq('id', rfqId)
+      .single();
+    const isReleased = !!(rfqRow && rfqRow.is_released);
+
     const { data: inv, error } = await client
       .from('rfq_invitations')
       .insert([{
@@ -5057,10 +5145,14 @@ async function showAddContractorForm(rfqId) {
 
     const baseUrl = window.location.origin + window.location.pathname;
     const link = `${baseUrl}?rfq=${inv.invitation_token}`;
-
-    showToast('✅ Contractor added — sending invite email...', 'success');
     navigator.clipboard.writeText(link);
-    await sendRFQInviteEmails(rfqId, [inv]);
+
+    if (isReleased) {
+      showToast('✅ Contractor added — sending invite email...', 'success');
+      await sendRFQInviteEmails(rfqId, [inv]);
+    } else {
+      showToast('✅ Contractor added — will be emailed when this RFQ is released', 'success');
+    }
     loadRFQConsole();
 
   } catch (err) {
