@@ -357,7 +357,7 @@
         <div id="create-tab" class="admin-tab" style="display:block;">
           <div id="rfq-drafts-card" class="card" style="display:none;">
             <h2 style="margin-top:0;">Saved Drafts</h2>
-            <p style="color: var(--border); font-size: 14px; margin-bottom: 16px;">Not visible to contractors and no notifications are sent until you release it from the Console.</p>
+            <p style="color: var(--border); font-size: 14px; margin-bottom: 16px;">Not visible to contractors and no notifications are sent until you publish/release it.</p>
             <div id="rfq-drafts-list"></div>
           </div>
           <div class="card">
@@ -438,16 +438,17 @@
 
               <div>
                 <label id="contractor-emails-label" style="font-weight:bold; display:block; margin-bottom:8px;">Contractor Email Addresses *</label>
-                <p id="contractor-emails-hint" style="font-size:14px; color:var(--border); margin:0 0 10px 0;">Enter email addresses (one per line). Each gets a direct invite link, emailed once you release this RFQ from the Console — not immediately on save. Required for Closed RFQs.</p>
+                <p id="contractor-emails-hint" style="font-size:14px; color:var(--border); margin:0 0 10px 0;">Enter email addresses (one per line). Each gets a direct invite link, emailed once this RFQ is published/released — not immediately on save. Required for Closed RFQs.</p>
                 <textarea name="contractor_emails" placeholder="contractor1@example.com&#10;contractor2@example.com" style="width:100%; padding:10px; border:1px solid var(--border); border-radius:4px; min-height:80px; box-sizing:border-box; font-family:inherit;"></textarea>
               </div>
 
-              <p style="font-size:13px; color:var(--border); margin:0; text-align:right;">💾 Saving here never makes an RFQ public or notifies anyone — that only happens when you click <strong>🚀 Release RFQ</strong> on it in the Console.</p>
+              <p style="font-size:13px; color:var(--border); margin:0; text-align:right;">💾 Save never makes an RFQ public or notifies anyone. 🚀 <strong>Publish RFQ</strong> is the only button that does — here, or on it later from the Console.</p>
               <div style="display:flex; gap:10px; justify-content:flex-end; flex-wrap:wrap;">
                 <button type="button" onclick="resetCreateForm()" class="btn secondary" style="padding:10px 20px;">Clear</button>
                 <button type="button" onclick="previewRFQ()" class="btn secondary" style="padding:10px 20px;">👁️ Preview</button>
                 <button type="button" id="save-draft-btn" onclick="saveRFQDraft()" class="btn secondary" style="padding:10px 20px;">💾 Save Draft</button>
                 <button type="submit" id="create-rfq-submit-btn" class="btn navy" style="padding:10px 20px;">💾 Save RFQ</button>
+                <button type="button" id="publish-rfq-btn" onclick="createNewRFQ(true)" class="btn gold" style="padding:10px 20px;">🚀 Publish RFQ</button>
               </div>
             </form>
           </div>
