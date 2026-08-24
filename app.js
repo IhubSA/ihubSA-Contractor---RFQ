@@ -2,6 +2,14 @@
 
 const SUPABASE_URL = 'https://zilumoopwnrtrtnsmjhr.supabase.co';
 const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InppbHVtb29wd25ydHJ0bnNtamhyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODYwOTU2MzgsImV4cCI6MjEwMTY3MTYzOH0.t8aQkOU29pwG9fwW9BlTwd4oie2jxkZa43mb3yc55kg';
+// Must match SITE_URL in the invite-super-admin/invite-member Edge Functions
+// exactly (including trailing slash) — this is the one already allow-listed
+// in Supabase Auth's redirect URL settings and proven to work for invite
+// links. Used as a fixed constant (rather than deriving it from
+// window.location) so a password-reset request always redirects to the
+// same allow-listed URL regardless of which page/URL variant the person
+// happened to submit the "Forgot Password" form from.
+const SITE_URL = 'https://ihubsa.github.io/ihubSA-Contractor---RFQ/';
 
 let client = null;
 let currentUser = null;
@@ -50,8 +58,35 @@ async function initApp() {
   setupStaticForms();
   setupWhatsappFabSync();
 
-  client = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+  // PKCE flow: invite/recovery links now require both the emailed link AND
+  // a secret held only by the browser that originally requested it, so an
+  // email security scanner pre-fetching the link (which is what was
+  // silently burning invite/reset links before a real person ever clicked
+  // them — confirmed via Supabase logs, and traced to angelsinc.co.za
+  // running Microsoft 365, whose Safe Links feature does exactly this)
+  // can no longer consume the one-time login on its own. supabase-js
+  // handles the code exchange automatically (same detectSessionInUrl
+  // mechanism already relied on for the old hash-based tokens below).
+  client = supabase.createClient(SUPABASE_URL, SUPABASE_KEY, { auth: { flowType: 'pkce' } });
   console.log('✅ Supabase connected');
+
+  // Belt-and-suspenders alongside the hash-based authType check above:
+  // supabase-js fires a dedicated PASSWORD_RECOVERY auth event once it
+  // finishes processing a recovery link, independent of our own hash
+  // parsing. This is the library's own recommended way to detect a
+  // recovery flow, and it's the authoritative signal — if it fires, force
+  // the set-password screen even if something upstream already routed
+  // elsewhere (e.g. into the dashboard) based on the hash check alone.
+  client.auth.onAuthStateChange((event, session) => {
+    if (event === 'PASSWORD_RECOVERY') {
+      console.log('PASSWORD_RECOVERY event received');
+      currentAuthType = 'recovery';
+      if (session && session.user) currentUser = session.user;
+      applyDefaultBranding();
+      showSetPasswordView();
+    }
+  });
+
   await loadPlatformSettings();
 
   if (rfqToken) {
@@ -94,7 +129,19 @@ async function initApp() {
     if (session && session.user) {
       currentUser = session.user;
 
-      if (authType === 'invite' || authType === 'recovery') {
+      // Under PKCE, invite/recovery links redirect back with a ?code=
+      // query param instead of the old #access_token=...&type=... hash, so
+      // authType (read from the hash, above) is normally null now — kept
+      // only as a fallback for any already-sent email still using the old
+      // format. The real, PKCE-proof signal for "just invited, hasn't set
+      // a password yet" is needs_password_setup in the user's own
+      // metadata, which we set ourselves when the invite was sent (see
+      // invite-super-admin/invite-member) and clear once they've set a
+      // password (see handleSetPasswordSubmit) — this doesn't depend on
+      // guessing exactly how Supabase's redirect happens to be shaped.
+      const stillNeedsPasswordSetup = !!(session.user.user_metadata && session.user.user_metadata.needs_password_setup);
+
+      if (authType === 'invite' || authType === 'recovery' || stillNeedsPasswordSetup) {
         // They have a valid session from the invite link but haven't set a
         // password yet — make them do that before routing into the dashboard.
         applyDefaultBranding();
@@ -1450,8 +1497,7 @@ async function handleForgotPasswordSubmit(e) {
   if (submitBtn) submitBtn.disabled = true;
 
   try {
-    const baseUrl = window.location.origin + window.location.pathname;
-    const { error } = await client.auth.resetPasswordForEmail(email, { redirectTo: baseUrl });
+    const { error } = await client.auth.resetPasswordForEmail(email, { redirectTo: SITE_URL });
     if (error) throw error;
   } catch (err) {
     console.error('Reset password error:', err);
@@ -1480,11 +1526,17 @@ async function handleSetPasswordSubmit(e) {
   }
 
   try {
-    const { error } = await client.auth.updateUser({ password });
+    // Clear needs_password_setup (set when the invite was sent — see
+    // invite-super-admin/invite-member) now that they've actually set one.
+    // updateUser's `data` merges into existing user_metadata rather than
+    // replacing it, so this doesn't touch invited_company_id/invited_role.
+    const { error } = await client.auth.updateUser({ password, data: { needs_password_setup: false } });
     if (error) throw error;
 
-    // Drop the invite/recovery hash so a page refresh doesn't re-trigger this view
-    history.replaceState(null, '', window.location.pathname + window.location.search);
+    // Drop the invite/recovery hash AND query (PKCE's ?code=... lives in
+    // the query string, not the hash) so a page refresh doesn't try to
+    // re-process an already-used link.
+    history.replaceState(null, '', window.location.pathname);
 
     showToast('✅ Password set!', 'success');
     await loadCurrentCompanyAndRoute(false);
