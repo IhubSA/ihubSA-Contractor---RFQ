@@ -355,8 +355,16 @@
           <div class="admin-content">
         <!-- CREATE RFQ TAB -->
         <div id="create-tab" class="admin-tab" style="display:block;">
+          <div id="rfq-drafts-card" class="card" style="display:none;">
+            <h2 style="margin-top:0;">Saved Drafts</h2>
+            <p style="color: var(--border); font-size: 14px; margin-bottom: 16px;">Not visible to contractors and no notifications are sent until you publish.</p>
+            <div id="rfq-drafts-list"></div>
+          </div>
           <div class="card">
             <h2 style="margin-top:0;">Create New RFQ</h2>
+            <div id="draft-editing-banner" style="display:none; margin-bottom:16px; padding:10px 14px; background:#FFF8E1; border:1px solid #F5D67A; border-radius:4px; font-size:13px; color:var(--ink);">
+              📝 <strong>Editing a saved draft</strong> — Save Draft will update it, and Publish will make it live.
+            </div>
             <form id="create-rfq-form" onsubmit="return false;" style="display:flex; flex-direction:column; gap:20px;">
               <div class="form-grid-2">
                 <div>
@@ -434,9 +442,11 @@
                 <textarea name="contractor_emails" placeholder="contractor1@example.com&#10;contractor2@example.com" style="width:100%; padding:10px; border:1px solid var(--border); border-radius:4px; min-height:80px; box-sizing:border-box; font-family:inherit;"></textarea>
               </div>
 
-              <div style="display:flex; gap:10px; justify-content:flex-end;">
+              <div style="display:flex; gap:10px; justify-content:flex-end; flex-wrap:wrap;">
                 <button type="button" onclick="resetCreateForm()" class="btn secondary" style="padding:10px 20px;">Clear</button>
-                <button type="submit" class="btn gold" style="padding:10px 20px;">Create RFQ & Generate Links</button>
+                <button type="button" onclick="previewRFQ()" class="btn secondary" style="padding:10px 20px;">👁️ Preview</button>
+                <button type="button" onclick="saveRFQDraft()" class="btn secondary" style="padding:10px 20px;">💾 Save Draft</button>
+                <button type="submit" id="create-rfq-submit-btn" class="btn gold" style="padding:10px 20px;">Create RFQ & Generate Links</button>
               </div>
             </form>
           </div>
@@ -881,6 +891,22 @@
       <div class="modal-foot">
         <button type="button" class="btn secondary" onclick="closeModal('generated-links-modal')">Done</button>
         <button type="button" class="btn gold" onclick="copyAllLinks()">Copy All Links</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- RFQ PREVIEW MODAL -->
+  <div id="rfq-preview-modal" class="modal" style="display:none;">
+    <div class="modal-content" style="max-width:700px;">
+      <div class="modal-head">
+        <h3>RFQ Preview</h3>
+        <button class="drawer-close" onclick="closeModal('rfq-preview-modal')">✕</button>
+      </div>
+      <div class="modal-body">
+        <div id="rfq-preview-body"></div>
+      </div>
+      <div class="modal-foot">
+        <button type="button" class="btn secondary" onclick="closeModal('rfq-preview-modal')">Close</button>
       </div>
     </div>
   </div>
