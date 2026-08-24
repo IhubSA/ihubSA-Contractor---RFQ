@@ -29,7 +29,8 @@ let pendingExpandSearchRfqId = null; // which RFQ the open "Expand Supplier Sear
 let rfqQuestionsById = {}; // populated by loadRFQConsole so the answer modal can look up question text without embedding free-form text in onclick attributes
 let currentAuthType = null; // 'invite' or 'recovery' when landing from an invite/reset-password link — lets showSetPasswordView() tailor its copy (same form/flow handles both)
 let passwordResetEmail = null; // email address a forgot-password code was just sent to, kept so the code-entry step can call verifyOtp() without asking again
-let currentDraftId = null; // id of the draft RFQ currently loaded into the Create RFQ form, if any — set when "Continue Editing" is clicked or right after the first Save Draft, so subsequent Save Draft/Publish calls UPDATE that row instead of inserting a new one
+let currentDraftId = null; // id of the RFQ currently loaded into the Create RFQ form, if any — set when "Continue Editing"/"Edit" is clicked or right after the first Save Draft, so subsequent Save Draft/Publish calls UPDATE that row instead of inserting a new one
+let currentEditingIsDraft = true; // only meaningful when currentDraftId is set — true while editing a not-yet-published draft (Save Draft is safe), false while editing an already-created RFQ via editRFQ() (Save Draft is hidden, since it would wrongly flip a live/closed RFQ's is_draft back to true)
 
 const DEFAULT_HERO_SUBTITLE = "Open requests for quotation. Apply directly online — you'll get a reference number and a confirmation the moment your application is received.";
 
@@ -2955,18 +2956,44 @@ function resetCreateForm() {
   document.getElementById('create-rfq-form').reset();
   document.getElementById('required-docs-builder').innerHTML = '';
   currentDraftId = null;
+  currentEditingIsDraft = true;
   updateDraftEditingBanner();
 }
 
-// Shown above the Create RFQ form whenever it's currently editing a saved
-// draft (rather than starting a blank one), so it's never ambiguous whether
-// Publish/Save Draft will create a new row or update the one being edited.
+// Shown above the Create RFQ form whenever it's currently editing an
+// existing row (a saved draft, or an already-created RFQ loaded via
+// editRFQ()) rather than starting a blank one, so it's never ambiguous
+// whether Save/Publish will create a new row or update the one being
+// edited. Also toggles the Save Draft button — it's hidden while editing an
+// already-created RFQ, since saving a draft always sets is_draft:true, which
+// would wrongly pull an already-published RFQ back off the public portal.
 function updateDraftEditingBanner() {
   const banner = document.getElementById('draft-editing-banner');
-  if (banner) banner.style.display = currentDraftId ? 'block' : 'none';
-
+  const saveDraftBtn = document.getElementById('save-draft-btn');
   const submitBtn = document.getElementById('create-rfq-submit-btn');
-  if (submitBtn) submitBtn.textContent = currentDraftId ? 'Publish RFQ & Generate Links' : 'Create RFQ & Generate Links';
+
+  if (!currentDraftId) {
+    if (banner) banner.style.display = 'none';
+    if (saveDraftBtn) saveDraftBtn.style.display = '';
+    if (submitBtn) submitBtn.textContent = 'Create RFQ & Generate Links';
+    return;
+  }
+
+  if (currentEditingIsDraft) {
+    if (banner) {
+      banner.style.display = 'block';
+      banner.innerHTML = '📝 <strong>Editing a saved draft</strong> — Save Draft will update it, and Publish will make it live.';
+    }
+    if (saveDraftBtn) saveDraftBtn.style.display = '';
+    if (submitBtn) submitBtn.textContent = 'Publish RFQ & Generate Links';
+  } else {
+    if (banner) {
+      banner.style.display = 'block';
+      banner.innerHTML = '✏️ <strong>Editing an existing RFQ</strong> — saving updates the live version in place. If this RFQ is (or becomes) Open, its registered suppliers will be re-notified by email/SMS.';
+    }
+    if (saveDraftBtn) saveDraftBtn.style.display = 'none';
+    if (submitBtn) submitBtn.textContent = '💾 Save Changes';
+  }
 }
 
 async function createNewRFQ() {
@@ -2984,6 +3011,12 @@ async function createNewRFQ() {
 
   try {
     console.log('=== CREATE RFQ STARTED ===');
+
+    // Captured up front — resetCreateForm() at the end clears currentDraftId/
+    // currentEditingIsDraft, so this is the only reliable point to remember
+    // which of the three modes (new RFQ / publishing a draft / editing an
+    // already-created RFQ) this submit actually is.
+    const wasEditingExistingRfq = !!currentDraftId && !currentEditingIsDraft;
 
     const { name, project, description, deadline, budget, contractorEmails, isPublic, provinces, locationArea, requiredDocs } = collectRFQFormValues();
 
@@ -3024,7 +3057,7 @@ async function createNewRFQ() {
     }
 
     console.log('✅ All validations passed');
-    showToast(currentDraftId ? 'Publishing RFQ...' : 'Creating RFQ...', 'success');
+    showToast(wasEditingExistingRfq ? 'Saving changes...' : (currentDraftId ? 'Publishing RFQ...' : 'Creating RFQ...'), 'success');
 
     const rfqPayload = {
       rfq_name: name,
@@ -3038,8 +3071,22 @@ async function createNewRFQ() {
       is_draft: false,
       provinces: provinces,
       province: provinces[0] || null,
-      location_area: locationArea || null
+      location_area: locationArea || null,
+      updated_at: new Date().toISOString()
     };
+
+    if (isPublic) {
+      // Treat every (re-)publish of an Open RFQ as a fresh notification
+      // round: reset the idempotency flags notify-suppliers-new-rfq checks,
+      // so editing an already-live Open RFQ and saving re-notifies its
+      // registered suppliers (Brent's explicit choice — editing a live RFQ
+      // should re-notify, not go silent), and so Expand Search's per-
+      // province bookkeeping starts clean against the RFQ's current
+      // province list instead of a stale one from before the edit.
+      rfqPayload.supplier_notification_sent = false;
+      rfqPayload.sms_notification_sent = false;
+      rfqPayload.notified_provinces = [];
+    }
 
     let rfq;
     if (currentDraftId) {
@@ -3091,6 +3138,8 @@ async function createNewRFQ() {
       window.lastInvitations = invitations;
       await sendRFQInviteEmails(rfq.id, invitations);
       showGeneratedLinks(rfq.id, invitations);
+    } else if (wasEditingExistingRfq) {
+      showToast('✅ Changes saved' + (isPublic ? ' — suppliers re-notified' : ''), 'success');
     } else {
       showToast(isPublic ? '✅ RFQ created and listed on the public portal' : '✅ RFQ created', 'success');
     }
@@ -3119,6 +3168,15 @@ async function saveRFQDraft() {
   }
   if (!currentCompany) {
     showToast('❌ No company account loaded', 'error');
+    return;
+  }
+  // Defensive guard, not just UI hiding: this always sets is_draft:true, so
+  // it must never run against an already-created RFQ being edited via
+  // editRFQ() — that would silently pull a live/closed RFQ back into draft
+  // status and off the public portal. The button itself is hidden in this
+  // mode (see updateDraftEditingBanner()); this is the backstop.
+  if (currentDraftId && !currentEditingIsDraft) {
+    showToast('❌ This is an existing RFQ, not a draft — use Save Changes instead', 'error');
     return;
   }
 
@@ -3345,56 +3403,95 @@ async function loadRFQDrafts() {
   }
 }
 
-// Loads a saved draft's fields back into the Create RFQ form so it can be
-// finished and either saved again or published. Attachments already
-// uploaded to the draft are left as-is (uploadRFQAttachments() only adds
-// newly-picked files) — the draft's existing attachment list isn't shown as
+// Shared loader behind both continueEditingDraft() and editRFQ() — reads one
+// row and repopulates every Create RFQ form field from it. Attachments
+// already on the row are left as-is (uploadRFQAttachments() only adds
+// newly-picked files) — the existing attachment list isn't shown as
 // individually re-removable here, matching how new RFQs are created today.
+// Contractor emails are deliberately NOT repopulated: they're never
+// persisted on the row (only turned into rfq_invitations at publish time),
+// so leaving the field blank means a plain re-save never re-sends/duplicates
+// invitations — typing new emails in and saving is exactly how "invite more
+// contractors" already works via createNewRFQ().
+async function loadRFQIntoCreateForm(rfqId) {
+  const { data: row, error } = await client
+    .from('rfqs')
+    .select('*')
+    .eq('id', rfqId)
+    .single();
+  if (error || !row) throw new Error(error ? error.message : 'RFQ not found');
+
+  document.getElementById('create-rfq-form').reset();
+  document.getElementById('required-docs-builder').innerHTML = '';
+
+  document.querySelector('input[name="rfq_name"]').value = row.rfq_name || '';
+  document.querySelector('input[name="rfq_project"]').value = row.project_name || '';
+  document.querySelector('textarea[name="rfq_description"]').value = row.description || '';
+  document.querySelector('input[name="rfq_deadline"]').value = row.deadline || '';
+  document.querySelector('input[name="rfq_budget"]').value = row.budget || '';
+  document.querySelector('input[name="rfq_location_area"]').value = row.location_area || '';
+
+  const visibilityValue = row.is_public ? 'open' : 'closed';
+  const visibilityInput = document.querySelector(`input[name="rfq_visibility"][value="${visibilityValue}"]`);
+  if (visibilityInput) visibilityInput.checked = true;
+  updateVisibilityHint();
+
+  (row.provinces || []).forEach(p => {
+    const cb = document.querySelector(`.rfq-province-checkbox[value="${p}"]`);
+    if (cb) cb.checked = true;
+  });
+
+  (row.required_documents || []).forEach(doc => {
+    addDocumentField();
+    const rows = document.querySelectorAll('#required-docs-builder .doc-row');
+    const docRow = rows[rows.length - 1];
+    docRow.querySelector('.doc-field').value = doc.name || '';
+    docRow.querySelector('.doc-mandatory-field').checked = !!doc.mandatory;
+    docRow.querySelector('.doc-expiry-field').checked = !!doc.requires_expiry;
+  });
+
+  return row;
+}
+
+// Loads a saved draft's fields back into the Create RFQ form so it can be
+// finished and either saved again or published.
 async function continueEditingDraft(draftId) {
   try {
-    const { data: draft, error } = await client
-      .from('rfqs')
-      .select('*')
-      .eq('id', draftId)
-      .single();
-    if (error || !draft) throw new Error(error ? error.message : 'Draft not found');
-
-    document.getElementById('create-rfq-form').reset();
-    document.getElementById('required-docs-builder').innerHTML = '';
-
-    document.querySelector('input[name="rfq_name"]').value = draft.rfq_name || '';
-    document.querySelector('input[name="rfq_project"]').value = draft.project_name || '';
-    document.querySelector('textarea[name="rfq_description"]').value = draft.description || '';
-    document.querySelector('input[name="rfq_deadline"]').value = draft.deadline || '';
-    document.querySelector('input[name="rfq_budget"]').value = draft.budget || '';
-    document.querySelector('input[name="rfq_location_area"]').value = draft.location_area || '';
-
-    const visibilityValue = draft.is_public ? 'open' : 'closed';
-    const visibilityInput = document.querySelector(`input[name="rfq_visibility"][value="${visibilityValue}"]`);
-    if (visibilityInput) visibilityInput.checked = true;
-    updateVisibilityHint();
-
-    (draft.provinces || []).forEach(p => {
-      const cb = document.querySelector(`.rfq-province-checkbox[value="${p}"]`);
-      if (cb) cb.checked = true;
-    });
-
-    (draft.required_documents || []).forEach(doc => {
-      addDocumentField();
-      const rows = document.querySelectorAll('#required-docs-builder .doc-row');
-      const row = rows[rows.length - 1];
-      row.querySelector('.doc-field').value = doc.name || '';
-      row.querySelector('.doc-mandatory-field').checked = !!doc.mandatory;
-      row.querySelector('.doc-expiry-field').checked = !!doc.requires_expiry;
-    });
+    const draft = await loadRFQIntoCreateForm(draftId);
 
     currentDraftId = draft.id;
+    currentEditingIsDraft = true;
     updateDraftEditingBanner();
 
     document.getElementById('create-rfq-form').scrollIntoView({ behavior: 'smooth', block: 'start' });
     showToast('📝 Draft loaded — continue editing below', 'success');
   } catch (err) {
     console.error('❌ Error loading draft:', err);
+    showToast('Error: ' + err.message, 'error');
+  }
+}
+
+// Loads an already-created RFQ (published or not) from the RFQ Console back
+// into the Create RFQ form for editing — same form, same Save/Publish
+// buttons, which then UPDATE this row instead of inserting a new one. This
+// is also how an existing Closed RFQ gets "released" to Open: visibility is
+// just one of the fields being edited here, same as any other field.
+async function editRFQ(rfqId) {
+  try {
+    const row = await loadRFQIntoCreateForm(rfqId);
+
+    currentDraftId = row.id;
+    currentEditingIsDraft = false;
+    updateDraftEditingBanner();
+
+    const createTabBtn = Array.from(document.querySelectorAll('.company-tab-btn'))
+      .find(btn => (btn.getAttribute('onclick') || '').includes("'create'"));
+    switchAdminTab('create', createTabBtn || null);
+
+    document.getElementById('create-rfq-form').scrollIntoView({ behavior: 'smooth', block: 'start' });
+    showToast('✏️ RFQ loaded for editing — scroll down to make changes', 'success');
+  } catch (err) {
+    console.error('❌ Error loading RFQ for editing:', err);
     showToast('Error: ' + err.message, 'error');
   }
 }
@@ -3568,6 +3665,12 @@ async function loadRFQConsole() {
                 </div>
               `).join('') : '<p style="margin: 0; color: var(--border); font-style: italic;">No questions yet</p>'}
             </div>
+          </div>
+
+          <div style="margin-bottom: 10px;">
+            <button onclick="editRFQ('${rfq.id}')" class="btn secondary" style="padding: 10px; width: 100%;">
+              ✏️ Edit RFQ
+            </button>
           </div>
 
           <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">
