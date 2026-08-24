@@ -357,13 +357,13 @@
         <div id="create-tab" class="admin-tab" style="display:block;">
           <div id="rfq-drafts-card" class="card" style="display:none;">
             <h2 style="margin-top:0;">Saved Drafts</h2>
-            <p style="color: var(--border); font-size: 14px; margin-bottom: 16px;">Not visible to contractors and no notifications are sent until you publish.</p>
+            <p style="color: var(--border); font-size: 14px; margin-bottom: 16px;">Not visible to contractors and no notifications are sent until you release it from the Console.</p>
             <div id="rfq-drafts-list"></div>
           </div>
           <div class="card">
             <h2 style="margin-top:0;">Create New RFQ</h2>
             <div id="draft-editing-banner" style="display:none; margin-bottom:16px; padding:10px 14px; background:#FFF8E1; border:1px solid #F5D67A; border-radius:4px; font-size:13px; color:var(--ink);">
-              📝 <strong>Editing a saved draft</strong> — Save Draft will update it, and Publish will make it live.
+              📝 <strong>Editing a saved draft</strong> — Save Draft keeps it a draft, and Save RFQ finalizes it into the Console. Nothing is sent to suppliers or contractors until you explicitly Release it there.
             </div>
             <form id="create-rfq-form" onsubmit="return false;" style="display:flex; flex-direction:column; gap:20px;">
               <div class="form-grid-2">
@@ -446,7 +446,7 @@
                 <button type="button" onclick="resetCreateForm()" class="btn secondary" style="padding:10px 20px;">Clear</button>
                 <button type="button" onclick="previewRFQ()" class="btn secondary" style="padding:10px 20px;">👁️ Preview</button>
                 <button type="button" id="save-draft-btn" onclick="saveRFQDraft()" class="btn secondary" style="padding:10px 20px;">💾 Save Draft</button>
-                <button type="submit" id="create-rfq-submit-btn" class="btn gold" style="padding:10px 20px;">Create RFQ & Generate Links</button>
+                <button type="submit" id="create-rfq-submit-btn" class="btn gold" style="padding:10px 20px;">💾 Save RFQ</button>
               </div>
             </form>
           </div>
