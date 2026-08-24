@@ -19,6 +19,7 @@ let pendingAskQuestionRfqId = null; // which RFQ the open "Ask a Question" modal
 let pendingAnswerQuestionId = null; // which rfq_questions row the open "Reply" modal is answering
 let pendingExpandSearchRfqId = null; // which RFQ the open "Expand Supplier Search" modal is for
 let rfqQuestionsById = {}; // populated by loadRFQConsole so the answer modal can look up question text without embedding free-form text in onclick attributes
+let currentAuthType = null; // 'invite' or 'recovery' when landing from an invite/reset-password link — lets showSetPasswordView() tailor its copy (same form/flow handles both)
 
 const DEFAULT_HERO_SUBTITLE = "Open requests for quotation. Apply directly online — you'll get a reference number and a confirmation the moment your application is received.";
 
@@ -39,6 +40,7 @@ async function initApp() {
   const prefsToken = params.get('prefs');
   const wantsAdmin = params.has('admin');
   const authType = getUrlHashParams().get('type'); // 'invite' or 'recovery' when landing from an invite/reset link
+  currentAuthType = authType;
 
   // Wire up static form/UI listeners before touching the Supabase client —
   // this work has no network dependency, so the page stays interactive
@@ -126,6 +128,12 @@ function setupStaticForms() {
   if (setPasswordForm && !setPasswordForm.dataset.wired) {
     setPasswordForm.addEventListener('submit', handleSetPasswordSubmit);
     setPasswordForm.dataset.wired = 'true';
+  }
+
+  const forgotPasswordForm = document.getElementById('forgot-password-form');
+  if (forgotPasswordForm && !forgotPasswordForm.dataset.wired) {
+    forgotPasswordForm.addEventListener('submit', handleForgotPasswordSubmit);
+    forgotPasswordForm.dataset.wired = 'true';
   }
 
   const settingsForm = document.getElementById('settings-form');
@@ -391,7 +399,7 @@ function setupWhatsappFabSync() {
 }
 
 function hideAllPublicSections() {
-  ['rfq-portal', 'no-rfq-message', 'landing-section', 'login-section', 'set-password-section'].forEach(id => {
+  ['rfq-portal', 'no-rfq-message', 'landing-section', 'login-section', 'forgot-password-section', 'set-password-section'].forEach(id => {
     const el = document.getElementById(id);
     if (el) el.style.display = 'none';
   });
@@ -1307,6 +1315,32 @@ function showSetPasswordView() {
   document.getElementById('public-view').style.display = 'block';
   hideAllPublicSections();
   document.getElementById('set-password-section').style.display = 'block';
+
+  // Same form/flow (client.auth.updateUser({ password })) handles both a
+  // brand-new invited account and an existing account resetting a
+  // forgotten password — only the copy needs to differ.
+  const heading = document.getElementById('set-password-heading');
+  const subtext = document.getElementById('set-password-subtext');
+  if (currentAuthType === 'recovery') {
+    if (heading) heading.textContent = 'Reset Your Password';
+    if (subtext) subtext.textContent = 'Choose a new password for your account.';
+  } else {
+    if (heading) heading.textContent = 'Choose a Password';
+    if (subtext) subtext.textContent = "You've been invited to RFQ Hub. Set a password to finish setting up your account.";
+  }
+
+  setHeaderActions('form');
+  applyDefaultBranding();
+}
+
+function showForgotPasswordView() {
+  hideAllTopLevelViews();
+  document.getElementById('public-view').style.display = 'block';
+  hideAllPublicSections();
+  document.getElementById('forgot-password-section').style.display = 'block';
+  document.getElementById('forgot-password-sent-note').style.display = 'none';
+  const form = document.getElementById('forgot-password-form');
+  if (form) form.style.display = 'flex';
   setHeaderActions('form');
   applyDefaultBranding();
 }
@@ -1400,6 +1434,35 @@ async function handleLoginSubmit(e) {
     console.error('Login error:', err);
     showToast('Login failed: ' + err.message, 'error');
   }
+}
+
+// Deliberately shows the same "check your inbox" message whether or not the
+// email actually has an account — same reasoning Supabase's own API follows
+// by default: telling an unauthenticated visitor "no account exists for that
+// email" lets them enumerate who's registered. Only a genuine send failure
+// (bad request, rate limit, etc.) surfaces as an error.
+async function handleForgotPasswordSubmit(e) {
+  e.preventDefault();
+  const email = document.getElementById('forgot-password-email').value.trim();
+  if (!email) return;
+
+  const submitBtn = e.target.querySelector('button[type="submit"]');
+  if (submitBtn) submitBtn.disabled = true;
+
+  try {
+    const baseUrl = window.location.origin + window.location.pathname;
+    const { error } = await client.auth.resetPasswordForEmail(email, { redirectTo: baseUrl });
+    if (error) throw error;
+  } catch (err) {
+    console.error('Reset password error:', err);
+    showToast('Error: ' + err.message, 'error');
+    if (submitBtn) submitBtn.disabled = false;
+    return;
+  }
+
+  document.getElementById('forgot-password-form').style.display = 'none';
+  document.getElementById('forgot-password-sent-note').style.display = 'block';
+  if (submitBtn) submitBtn.disabled = false;
 }
 
 async function handleSetPasswordSubmit(e) {
