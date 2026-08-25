@@ -853,6 +853,15 @@ let pendingGateRfqId = null;
 // actual enforcement.
 let currentApplicantStatus = null;
 
+// Populated once a visitor is confirmed registered (either by matching an
+// existing email or by completing registration on the spot) — feeds the
+// "reuse a document already on file" choice on the RFQ application form.
+// currentApplicantDocuments mirrors the shape returned by the
+// get_my_supplier_documents RPC: { has_cipc, cipc_file_name,
+// has_proof_of_address, proof_of_address_file_name, has_sars, sars_file_name }.
+let currentApplicantEmail = null;
+let currentApplicantDocuments = null;
+
 function openApplicantGate(rfqId) {
   pendingGateRfqId = rfqId;
 
@@ -881,6 +890,8 @@ function openApplicantGate(rfqId) {
   const declarationEl = document.getElementById('gate-declaration-accept');
   if (declarationEl) declarationEl.checked = false;
   currentApplicantStatus = null;
+  currentApplicantEmail = null;
+  currentApplicantDocuments = null;
 
   // "Register Free" / "Register as a Supplier" open this same gate with no
   // specific RFQ in mind (rfqId is null) — swap the copy so it reads as a
@@ -927,6 +938,19 @@ async function handleGateEmailSubmit(e) {
         currentApplicantStatus = (statusRows && statusRows[0]) || null;
       } catch (statusErr) {
         console.warn('Could not check applicant status:', statusErr.message);
+      }
+
+      // Also best-effort: which of the 3 mandatory documents does this
+      // applicant already have on file? Feeds the "use document on file"
+      // offer on the RFQ application form below — never required, so a
+      // failure here just means everyone re-uploads as before.
+      currentApplicantEmail = email;
+      currentApplicantDocuments = null;
+      try {
+        const { data: docRows } = await client.rpc('get_my_supplier_documents', { p_email: email });
+        currentApplicantDocuments = (docRows && docRows[0]) || null;
+      } catch (docsErr) {
+        console.warn('Could not fetch documents on file:', docsErr.message);
       }
 
       if (currentApplicantStatus && currentApplicantStatus.status === 'suspended') {
@@ -1088,6 +1112,20 @@ async function handleGateRegisterSubmit(e) {
     // double-submitting) isn't a real problem here — they're registered
     // either way, so let them through rather than showing an error.
     if (error && error.code !== '23505') throw error;
+
+    // The 3 mandatory documents were just uploaded above, so we already
+    // know they're on file — no need for a round-trip to
+    // get_my_supplier_documents to populate the same "reuse on file"
+    // offer the RFQ application form uses for a returning applicant.
+    currentApplicantEmail = email;
+    currentApplicantDocuments = {
+      has_cipc: true,
+      cipc_file_name: cipcFile.name,
+      has_proof_of_address: true,
+      proof_of_address_file_name: proofAddressFile.name,
+      has_sars: true,
+      sars_file_name: sarsFile.name
+    };
 
     showToast(pendingGateRfqId ? '✅ Registered! Loading RFQ...' : '✅ You\'re registered! Browse open opportunities below.', 'success');
     proceedPastGate();
@@ -2525,10 +2563,33 @@ async function loadRFQDetails(rfqId, isOpenAccess = false) {
           <div style="margin-top: 30px;">
             <h4>Upload Documents</h4>
             <p style="color: var(--border); font-size: 14px;">Documents marked * are mandatory and must be uploaded to submit.</p>
-            ${rfq.required_documents.map((doc, idx) => `
+            ${rfq.required_documents.map((doc, idx) => {
+              const reuseAvailable = !!(doc.supplier_doc_category && !doc.requires_expiry &&
+                currentApplicantDocuments && currentApplicantDocuments['has_' + doc.supplier_doc_category]);
+              const wasRequired = !!doc.mandatory;
+              // When a reuse offer is on the table, default to "reuse" and keep
+              // the underlying file input hidden + not required — toggleDocReuse
+              // flips both if the applicant picks "upload a new one" instead.
+              // data-was-required remembers the original required-ness so it can
+              // be restored; a hidden `required` file input misbehaves in some
+              // browsers' native validation, so it's only ever added while shown.
+              const fileInputHtml = `<input type="file" id="doc-${idx}" data-doc-name="${escapeHtmlClient(doc.name)}" accept=".pdf,.doc,.docx,.xls,.xlsx" data-was-required="${wasRequired}"${reuseAvailable ? ' data-supplier-category="' + doc.supplier_doc_category + '" style="display:none;"' : (wasRequired ? ' required' : '')}>`;
+              const onFileName = reuseAvailable ? currentApplicantDocuments[doc.supplier_doc_category + '_file_name'] : '';
+              return `
               <div style="margin-bottom: 15px;">
                 <label>${escapeHtmlClient(doc.name)}${doc.mandatory ? ' *' : ''}</label>
-                <input type="file" id="doc-${idx}" data-doc-name="${escapeHtmlClient(doc.name)}" accept=".pdf,.doc,.docx,.xls,.xlsx"${doc.mandatory ? ' required' : ''}>
+                ${reuseAvailable ? `
+                  <div style="margin:6px 0 10px 0; padding:10px; background:var(--bg-2); border-radius:4px;">
+                    <p style="margin:0 0 6px 0; font-size:13px; color:var(--ink);">You already have a document on file for this: <strong>${escapeHtmlClient(onFileName || '')}</strong></p>
+                    <label style="display:block; font-size:13px; font-weight:normal; margin-bottom:4px;">
+                      <input type="radio" name="doc-reuse-${idx}" value="reuse" checked onchange="toggleDocReuse(${idx})"> Use the document on file
+                    </label>
+                    <label style="display:block; font-size:13px; font-weight:normal;">
+                      <input type="radio" name="doc-reuse-${idx}" value="new" onchange="toggleDocReuse(${idx})"> Upload a different one
+                    </label>
+                  </div>
+                ` : ''}
+                ${fileInputHtml}
                 ${doc.requires_expiry ? `
                   <div style="margin-top:6px;">
                     <label style="font-size:13px; font-weight:normal;">Expiry Date for ${escapeHtmlClient(doc.name)} *</label>
@@ -2536,7 +2597,8 @@ async function loadRFQDetails(rfqId, isOpenAccess = false) {
                   </div>
                 ` : ''}
               </div>
-            `).join('')}
+            `;
+            }).join('')}
           </div>
 
           <button type="submit" class="btn gold" id="contractor-submit-btn" style="width: 100%; padding: 15px; margin-top: 20px;"${isApplicationBlocked ? ' disabled' : ''}>${isApplicationBlocked ? 'Application Unavailable' : 'Submit Application'}</button>
@@ -2593,6 +2655,27 @@ async function loadPublicQA(rfqId) {
   }
 }
 
+// Flips a required document's file input between "hidden, reusing the
+// on-file copy" and "visible, upload a new one" as the applicant switches
+// the doc-reuse-${idx} radio choice. The `required` attribute is added or
+// removed here rather than just toggled via CSS, since a hidden `required`
+// file input trips up native constraint validation in some browsers —
+// data-was-required (recorded at render time) is what it's restored from.
+function toggleDocReuse(idx) {
+  const fileInput = document.getElementById(`doc-${idx}`);
+  if (!fileInput) return;
+  const selected = document.querySelector(`input[name="doc-reuse-${idx}"]:checked`);
+  const useNew = !!(selected && selected.value === 'new');
+  if (useNew) {
+    fileInput.style.display = '';
+    if (fileInput.dataset.wasRequired === 'true') fileInput.setAttribute('required', 'required');
+  } else {
+    fileInput.style.display = 'none';
+    fileInput.value = '';
+    fileInput.removeAttribute('required');
+  }
+}
+
 async function submitContractorForm(token) {
   try {
     const name = document.getElementById('contractor-name').value.trim();
@@ -2603,6 +2686,52 @@ async function submitContractorForm(token) {
     if (!name || !email) {
       showToast('Please fill in required fields', 'error');
       return;
+    }
+
+    // Collect any "use the document on file" choices before touching the
+    // database — reused documents are copied via the reuse-supplier-documents
+    // Edge Function (the Supplier Database's own document bucket is private,
+    // so a contractor's browser can't read it directly; the function is the
+    // one privileged step that can, and hands back a copy the client is
+    // allowed to reference). A mandatory document that fails to copy must
+    // abort the whole submission rather than silently going missing.
+    const reuseSelections = []; // [{ idx, category, documentName, mandatory }]
+    (currentRFQData.required_documents || []).forEach((doc, idx) => {
+      const radios = document.getElementsByName(`doc-reuse-${idx}`);
+      if (!radios || radios.length === 0) return;
+      const checked = Array.from(radios).find(r => r.checked);
+      if (checked && checked.value === 'reuse' && doc.supplier_doc_category) {
+        reuseSelections.push({
+          idx,
+          category: doc.supplier_doc_category,
+          documentName: doc.name,
+          mandatory: !!doc.mandatory
+        });
+      }
+    });
+
+    let reuseResults = {}; // category -> { success, filePath, fileName, fileSize, error? }
+    if (reuseSelections.length > 0) {
+      showToast('Preparing documents on file...', 'success');
+      try {
+        const reuseResponse = await callPublicEdgeFunction('reuse-supplier-documents', {
+          email: currentApplicantEmail || email,
+          rfqId: currentRFQId,
+          categories: reuseSelections.map(sel => sel.category)
+        });
+        reuseResults = reuseResponse.results || {};
+      } catch (reuseErr) {
+        console.error('Error reusing documents on file:', reuseErr);
+        showToast('❌ Could not prepare your documents on file: ' + reuseErr.message, 'error');
+        return;
+      }
+
+      const failedMandatory = reuseSelections.find(sel => sel.mandatory && !(reuseResults[sel.category] && reuseResults[sel.category].success));
+      if (failedMandatory) {
+        const reason = (reuseResults[failedMandatory.category] && reuseResults[failedMandatory.category].error) || 'Unknown error';
+        showToast(`❌ Couldn't use your document on file for "${failedMandatory.documentName}" (${reason}). Please choose "Upload a different one" for that document and try again.`, 'error');
+        return;
+      }
     }
 
     showToast('Submitting...', 'success');
@@ -2671,6 +2800,33 @@ async function submitContractorForm(token) {
         } catch (fileErr) {
           console.warn('⚠️ Error uploading file:', fileErr.message);
         }
+      }
+    }
+
+    // Record each successfully-reused document too — same table, same shape
+    // as a freshly-uploaded one, just pointed at the copy the Edge Function
+    // made and flagged so Review Submissions can badge it as reused rather
+    // than something the contractor uploaded fresh. A doc the applicant
+    // picked "reuse" for but that failed to copy would have already aborted
+    // the whole submission above if it was mandatory; a non-mandatory one
+    // that failed is simply skipped here, same as any other optional
+    // document that never made it in.
+    for (const sel of reuseSelections) {
+      const result = reuseResults[sel.category];
+      if (!result || !result.success) continue;
+      try {
+        await client.from('rfq_submission_documents').insert([{
+          submission_id: submissionId,
+          file_name: result.fileName,
+          file_path: result.filePath,
+          file_size: result.fileSize,
+          document_type: sel.documentName,
+          expiry_date: null,
+          reused_from_supplier_profile: true
+        }]);
+        filesUploaded++;
+      } catch (reusedInsertErr) {
+        console.warn('⚠️ Error recording reused document:', reusedInsertErr.message);
       }
     }
 
@@ -2980,11 +3136,20 @@ function collectRFQFormValues() {
       if (!docName) return null;
       const mandatoryInput = row.querySelector('.doc-mandatory-field');
       const expiryInput = row.querySelector('.doc-expiry-field');
-      return {
+      const categoryInput = row.querySelector('.doc-supplier-category-field');
+      const requiresExpiry = !!(expiryInput && expiryInput.checked);
+      // Mutually exclusive with requires_expiry (enforced in the form UI
+      // too — see addDocumentField()): a reused Supplier Database document
+      // never carries its own expiry date, so it can never satisfy a
+      // required-document row that demands one.
+      const supplierDocCategory = (!requiresExpiry && categoryInput && categoryInput.value) ? categoryInput.value : null;
+      const doc = {
         name: docName,
         mandatory: !!(mandatoryInput && mandatoryInput.checked),
-        requires_expiry: !!(expiryInput && expiryInput.checked)
+        requires_expiry: requiresExpiry
       };
+      if (supplierDocCategory) doc.supplier_doc_category = supplierDocCategory;
+      return doc;
     })
     .filter(Boolean);
 
@@ -3025,7 +3190,39 @@ function addDocumentField() {
         <input type="checkbox" class="doc-expiry-field"> Requires an expiry date (e.g. COIDA, insurance)
       </label>
     </div>
+    <div style="margin-top:8px;">
+      <label style="display:block; font-size:12px; color:var(--border); margin-bottom:4px;">Matches a Supplier Database document?</label>
+      <select class="doc-supplier-category-field" style="width:100%; max-width:320px; padding:6px; border:1px solid var(--border); border-radius:4px; font-size:13px;">
+        <option value="">— Not linked (contractor always uploads fresh) —</option>
+        <option value="cipc">CIPC Registration / ID</option>
+        <option value="proof_of_address">Proof of Address</option>
+        <option value="sars">SARS Information (Tax Clearance / VAT)</option>
+      </select>
+      <p style="margin:4px 0 0 0; font-size:11px; color:var(--border);">If linked, a registered supplier who already has this document on file can reuse it instead of uploading again — they can still choose to upload a different file. Only offered when this document doesn't also require an expiry date, since documents on file don't carry one.</p>
+    </div>
   `;
+  const expiryCheckbox = field.querySelector('.doc-expiry-field');
+  const categorySelect = field.querySelector('.doc-supplier-category-field');
+  // A document can't both require an expiry date (which a reused profile
+  // document can never supply) and be linked for reuse — keep the two
+  // mutually exclusive right in the form so it's impossible to save an
+  // inconsistent combination.
+  expiryCheckbox.addEventListener('change', () => {
+    if (expiryCheckbox.checked) {
+      categorySelect.value = '';
+      categorySelect.disabled = true;
+    } else {
+      categorySelect.disabled = false;
+    }
+  });
+  categorySelect.addEventListener('change', () => {
+    if (categorySelect.value) {
+      expiryCheckbox.checked = false;
+      expiryCheckbox.disabled = true;
+    } else {
+      expiryCheckbox.disabled = false;
+    }
+  });
   builder.appendChild(field);
 }
 
@@ -3559,6 +3756,13 @@ async function loadRFQIntoCreateForm(rfqId) {
     docRow.querySelector('.doc-field').value = doc.name || '';
     docRow.querySelector('.doc-mandatory-field').checked = !!doc.mandatory;
     docRow.querySelector('.doc-expiry-field').checked = !!doc.requires_expiry;
+    const categorySelect = docRow.querySelector('.doc-supplier-category-field');
+    if (categorySelect) {
+      categorySelect.value = doc.supplier_doc_category || '';
+      // Keep the mutual-exclusivity in sync when repopulating, same as the
+      // live change handlers in addDocumentField().
+      categorySelect.disabled = !!doc.requires_expiry;
+    }
   });
 
   return row;
@@ -4035,6 +4239,7 @@ async function openSubmissionDetail(id) {
               </button>
             </div>
             ${doc.document_type ? `<p style="margin:6px 0 0 0; font-size:12px; color:var(--border);">Type: ${escapeHtmlClient(doc.document_type)}</p>` : ''}
+            ${doc.reused_from_supplier_profile ? `<p style="margin:2px 0 0 0; font-size:12px; color:var(--border);">↩️ Reused from Supplier Database</p>` : ''}
             ${doc.expiry_date ? `<p style="margin:2px 0 0 0; font-size:12px; ${isExpired ? 'color:var(--closing-today, #D8452B); font-weight:bold;' : 'color:var(--border);'}">
               Expiry: ${new Date(doc.expiry_date).toLocaleDateString()}${isExpired ? ' — 🚩 Already expired at time of submission' : ''}
             </p>` : ''}
