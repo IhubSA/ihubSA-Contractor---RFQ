@@ -2174,6 +2174,17 @@ let currentInfoRequestRfqId = null;
 // trust model as the info-request/invite-link tokens above.
 let currentPrefsToken = null;
 
+// The same preferences page also lets a supplier upload/replace any of
+// their own Supplier Database documents (all 8 categories, not just the
+// 3 mandatory ones) without logging in — see renderPrefsDocumentsList()
+// and uploadOrReplacePrefsDocument() below. currentPrefsApplicantId comes
+// back from get_my_documents() (get_applicant_preferences() doesn't
+// return it) and is needed to build the same applicant-<id>/... storage
+// path used at original registration time.
+let currentPrefsApplicantId = null;
+let currentPrefsDocuments = null; // full get_my_documents() row for the current token
+let pendingPrefsDocUpload = null; // { category, keyPrefix, label }
+
 async function loadInfoRequestView(token) {
   try {
     hideAllTopLevelViews();
@@ -2328,6 +2339,111 @@ const PROVINCE_OPTIONS = [
   'Mpumalanga', 'Northern Cape', 'North West', 'Western Cape'
 ];
 
+// The 7 single-value Supplier Database document categories a registered
+// supplier can upload/replace from their own no-login preferences page
+// (?prefs=TOKEN). "Other Documents" (an unbounded list, not a single
+// value) is handled separately in renderPrefsDocumentsList() below.
+// `category` matches update_applicant_document()'s category argument;
+// `keyPrefix` matches the prefix uploadSupplierDocument() already uses
+// at original registration time, so get_my_documents()'s filename
+// stripping recognizes a freshly-replaced file the same way.
+const SUPPLIER_DOC_CATEGORIES = [
+  { category: 'cipc', keyPrefix: 'cipc', label: 'CIPC Registration / ID', mandatory: true },
+  { category: 'proof_of_address', keyPrefix: 'proof-of-address', label: 'Proof of Address', mandatory: true },
+  { category: 'sars', keyPrefix: 'sars', label: 'SARS Information', mandatory: true },
+  { category: 'proof_of_banking', keyPrefix: 'banking', label: 'Proof of Banking', mandatory: false },
+  { category: 'bbbee', keyPrefix: 'bbbee', label: 'B-BBEE Affidavit/Certificate', mandatory: false },
+  { category: 'health_safety', keyPrefix: 'health-safety', label: 'Health & Safety Certificate', mandatory: false },
+  { category: 'special_permits', keyPrefix: 'permits', label: 'Special Permits/Registrations', mandatory: false }
+];
+
+// Renders the "Your Documents" card body on the preferences page from
+// currentPrefsDocuments (a get_my_documents() row). Kept as its own
+// function so a single upload/replace can refresh just this section in
+// place afterward, without re-rendering the whole page.
+function renderPrefsDocumentsList() {
+  if (!currentPrefsDocuments) {
+    return '<p style="color:var(--border); font-size:13px;">Could not load your documents right now — you can still update your province above, or try reloading this page.</p>';
+  }
+  const docs = currentPrefsDocuments;
+
+  const rows = SUPPLIER_DOC_CATEGORIES.map(({ category, keyPrefix, label, mandatory }) => {
+    const has = !!docs['has_' + category];
+    const fileName = docs[category + '_file_name'];
+    return `
+      <div style="display:flex; justify-content:space-between; align-items:center; gap:10px; padding:10px 0; border-bottom:1px solid var(--bg-2);">
+        <div>
+          <p style="margin:0; font-size:14px;">${escapeHtmlClient(label)}${mandatory ? ' <span style="color:var(--accent); font-size:12px;">(required)</span>' : ''}</p>
+          <p style="margin:2px 0 0 0; font-size:12px; color:var(--border);">${has ? '📄 ' + escapeHtmlClient(fileName || 'On file') : 'Not uploaded yet'}</p>
+        </div>
+        <button type="button" class="btn secondary" style="padding:6px 12px; font-size:12px; white-space:nowrap;" onclick="uploadOrReplacePrefsDocument('${category}', '${keyPrefix}', '${label.replace(/'/g, "\\'")}')">${has ? '🔄 Replace' : '⬆️ Upload'}</button>
+      </div>
+    `;
+  }).join('');
+
+  const otherDocs = docs.other_documents || [];
+  const otherRows = otherDocs.length > 0
+    ? otherDocs.map(d => `<div style="padding:6px 0; font-size:13px; color:var(--ink);">📄 ${escapeHtmlClient(d.name || 'Document')}</div>`).join('')
+    : '<p style="margin:0 0 6px 0; font-size:12px; color:var(--border);">None on file yet.</p>';
+
+  return `
+    ${rows}
+    <div style="margin-top:15px;">
+      <p style="margin:0 0 6px 0; font-size:14px;">Other Documents</p>
+      ${otherRows}
+      <button type="button" class="btn secondary" style="padding:6px 12px; font-size:12px;" onclick="uploadOrReplacePrefsDocument('other', 'other', 'Other Document')">➕ Add a Document</button>
+    </div>
+  `;
+}
+
+// Opens the shared hidden file input for a given document category; the
+// actual upload happens in handlePrefsDocFileSelected() once a file is
+// chosen. Mirrors uploadOrReplaceSupplierDocument()'s admin-side pattern.
+function uploadOrReplacePrefsDocument(category, keyPrefix, label) {
+  pendingPrefsDocUpload = { category, keyPrefix, label };
+  const input = document.getElementById('prefs-doc-upload-input');
+  if (!input) return;
+  input.value = '';
+  input.click();
+}
+
+async function handlePrefsDocFileSelected(e) {
+  const file = e.target.files[0];
+  const pending = pendingPrefsDocUpload;
+  pendingPrefsDocUpload = null;
+  if (!file || !pending || !currentPrefsToken || !currentPrefsApplicantId) return;
+
+  try {
+    // Same applicant-<id>/... path convention uploadSupplierDocument()
+    // uses at original registration time — the bucket allows anonymous
+    // insert (no login), same trust model as the rest of this page.
+    const filePath = `applicant-${currentPrefsApplicantId}/${pending.keyPrefix}-${Date.now()}-${file.name}`;
+    const { error: uploadError } = await client.storage.from('supplier-documents').upload(filePath, file);
+    if (uploadError) throw uploadError;
+
+    const { error: rpcError } = await client.rpc('update_applicant_document', {
+      p_token: currentPrefsToken,
+      p_category: pending.category,
+      p_file_path: filePath,
+      p_file_name: file.name
+    });
+    if (rpcError) throw rpcError;
+
+    showToast(`✅ ${pending.label} updated.`, 'success');
+
+    // Refresh just the documents section in place, not the whole page —
+    // avoids interrupting the province form if the applicant is mid-way
+    // through changing that too.
+    const { data } = await client.rpc('get_my_documents', { p_token: currentPrefsToken });
+    currentPrefsDocuments = (data && data[0]) || currentPrefsDocuments;
+    const listEl = document.getElementById('prefs-documents-list');
+    if (listEl) listEl.innerHTML = renderPrefsDocumentsList();
+  } catch (err) {
+    console.error('Error updating document:', err);
+    showToast('❌ Error updating document: ' + err.message, 'error');
+  }
+}
+
 async function loadSupplierPreferencesView(token) {
   try {
     hideAllTopLevelViews();
@@ -2346,6 +2462,18 @@ async function loadSupplierPreferencesView(token) {
     }
 
     currentPrefsToken = token;
+
+    // Best-effort — a failure here just means the Documents card shows a
+    // fallback message; it never blocks the province form above it.
+    currentPrefsApplicantId = null;
+    currentPrefsDocuments = null;
+    try {
+      const { data: docRows } = await client.rpc('get_my_documents', { p_token: token });
+      currentPrefsDocuments = (docRows && docRows[0]) || null;
+      currentPrefsApplicantId = currentPrefsDocuments ? currentPrefsDocuments.id : null;
+    } catch (docsErr) {
+      console.warn('Could not load documents:', docsErr.message);
+    }
 
     const optionsHtml = [
       `<option value="ALL"${row.province === 'ALL' ? ' selected' : ''}>All Provinces</option>`,
@@ -2368,6 +2496,12 @@ async function loadSupplierPreferencesView(token) {
           </div>
           <button type="submit" class="btn gold" style="width: 100%; padding: 12px;">Save Preferences</button>
         </form>
+      </div>
+
+      <div class="card" style="max-width:480px; margin:20px auto 0 auto;">
+        <h2 style="margin-top:0;">Your Documents</h2>
+        <p style="color: var(--border); margin-bottom: 5px; font-size:13px;">If any of your documents are out of date, upload a new copy below — it replaces what's currently on file.</p>
+        <div id="prefs-documents-list">${renderPrefsDocumentsList()}</div>
       </div>
     `;
 
