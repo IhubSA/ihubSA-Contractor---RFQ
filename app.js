@@ -1003,13 +1003,30 @@ async function handleGateEmailSubmit(e) {
   }
 }
 
+// Supabase Storage's S3-compatible backend rejects object keys built
+// from a raw, uncontrolled file.name — accented/non-ASCII characters
+// (e.g. "é") in particular come back as "Invalid key: ...". Strips
+// diacritics down to their base ASCII letter (é -> e) and replaces
+// anything else outside [A-Za-z0-9._-] with a dash, so the human-
+// readable name stays recognizable (still needed by get_my_documents()/
+// get_my_supplier_documents(), which recover it by stripping the known
+// "<prefix>-<timestamp>-" header back off the stored path) while the
+// key itself is guaranteed storage-safe.
+function sanitizeStorageFileName(name) {
+  const diacriticRange = String.fromCharCode(0x0300) + '-' + String.fromCharCode(0x036f);
+  const diacriticPattern = new RegExp('[' + diacriticRange + ']', 'g');
+  const base = String(name || '').normalize('NFKD').replace(diacriticPattern, '');
+  const safe = base.replace(/[^A-Za-z0-9._-]+/g, '-').replace(/-+/g, '-').replace(/^[.-]+|[.-]+$/g, '');
+  return safe || 'file';
+}
+
 // Uploads one supplier registration document to the private
 // 'supplier-documents' bucket, folder-scoped by the client-generated
 // applicant id so files from different registrants never collide. Returns
 // the storage path (not a public URL — the bucket is private and only
 // readable by the super admin, same trust model as the table itself).
 async function uploadSupplierDocument(applicantId, keyPrefix, file) {
-  const filePath = `applicant-${applicantId}/${keyPrefix}-${Date.now()}-${file.name}`;
+  const filePath = `applicant-${applicantId}/${keyPrefix}-${Date.now()}-${sanitizeStorageFileName(file.name)}`;
   const { error } = await client.storage.from('supplier-documents').upload(filePath, file);
   if (error) throw error;
   return filePath;
@@ -2437,7 +2454,7 @@ async function submitAdditionalInfoForm() {
     if (fileInput && fileInput.files && fileInput.files.length > 0) {
       for (const file of fileInput.files) {
         try {
-          const filePath = `rfq-${currentInfoRequestRfqId}/sub-${resolvedSubmissionId}/${Date.now()}-${file.name}`;
+          const filePath = `rfq-${currentInfoRequestRfqId}/sub-${resolvedSubmissionId}/${Date.now()}-${sanitizeStorageFileName(file.name)}`;
           const { error: uploadError } = await client.storage
             .from('rfq-documents')
             .upload(filePath, file);
@@ -2555,7 +2572,7 @@ async function handlePrefsDocFileSelected(e) {
     // Same applicant-<id>/... path convention uploadSupplierDocument()
     // uses at original registration time — the bucket allows anonymous
     // insert (no login), same trust model as the rest of this page.
-    const filePath = `applicant-${currentPrefsApplicantId}/${pending.keyPrefix}-${Date.now()}-${file.name}`;
+    const filePath = `applicant-${currentPrefsApplicantId}/${pending.keyPrefix}-${Date.now()}-${sanitizeStorageFileName(file.name)}`;
     const { error: uploadError } = await client.storage.from('supplier-documents').upload(filePath, file);
     if (uploadError) throw uploadError;
 
@@ -3041,7 +3058,7 @@ async function submitContractorForm(token) {
       if (input.files[0]) {
         try {
           const file = input.files[0];
-          const filePath = `rfq-${currentRFQId}/sub-${submissionId}/${Date.now()}-${file.name}`;
+          const filePath = `rfq-${currentRFQId}/sub-${submissionId}/${Date.now()}-${sanitizeStorageFileName(file.name)}`;
 
           const { error: uploadError } = await client.storage
             .from('rfq-documents')
@@ -3885,7 +3902,7 @@ async function uploadRFQAttachments(rfqId) {
 
   for (const file of files) {
     try {
-      const path = `rfq-${rfqId}/${Date.now()}-${file.name}`;
+      const path = `rfq-${rfqId}/${Date.now()}-${sanitizeStorageFileName(file.name)}`;
       const { error: uploadError } = await client.storage
         .from('rfq-attachments')
         .upload(path, file);
@@ -5035,25 +5052,30 @@ function renderSupplierList() {
   // The 3 documents an admin can upload/replace directly (see
   // uploadOrReplaceSupplierDocument below) — kept separate from the
   // remaining optional documents below, which stay download-only.
+  // keyPrefix must match SUPPLIER_DOC_CATEGORIES' keyPrefix for the same
+  // category (see comment there) — it's a short tag embedded in the
+  // storage object key, NOT the DB column name, so that
+  // get_my_documents()/get_my_supplier_documents() can strip it back off
+  // to recover the original filename for the self-service prefs page.
   const MANAGED_DOC_FIELDS = [
-    ['cipc_document_path', 'CIPC/ID'],
-    ['proof_of_address_document_path', 'Proof of Address'],
-    ['sars_document_path', 'SARS Info']
+    ['cipc_document_path', 'CIPC/ID', 'cipc'],
+    ['proof_of_address_document_path', 'Proof of Address', 'proof-of-address'],
+    ['sars_document_path', 'SARS Info', 'sars']
   ];
 
-  const managedDocButtons = (a) => MANAGED_DOC_FIELDS.map(([col, label]) => {
+  const managedDocButtons = (a) => MANAGED_DOC_FIELDS.map(([col, label, keyPrefix]) => {
     const path = a[col];
     const canEditApplicants = canEditSection('applicants');
     if (path) {
       return `
         <span style="display:inline-flex; gap:4px;">
           <button type="button" class="btn secondary" style="padding:6px 10px; font-size:12px;" onclick="downloadSupplierDocument('${path}', '${label.replace(/'/g, "\\'")}')">📄 ${label}</button>
-          ${canEditApplicants ? `<button type="button" class="btn secondary" style="padding:6px 10px; font-size:12px;" onclick="uploadOrReplaceSupplierDocument('${a.id}', '${col}', '${label.replace(/'/g, "\\'")}')">🔄 Replace</button>` : ''}
+          ${canEditApplicants ? `<button type="button" class="btn secondary" style="padding:6px 10px; font-size:12px;" onclick="uploadOrReplaceSupplierDocument('${a.id}', '${col}', '${keyPrefix}', '${label.replace(/'/g, "\\'")}')">🔄 Replace</button>` : ''}
         </span>
       `;
     }
     if (!canEditApplicants) return '';
-    return `<button type="button" class="btn secondary" style="padding:6px 10px; font-size:12px; border-color:var(--warning); color:var(--warning);" onclick="uploadOrReplaceSupplierDocument('${a.id}', '${col}', '${label.replace(/'/g, "\\'")}')">⬆️ Upload ${label}</button>`;
+    return `<button type="button" class="btn secondary" style="padding:6px 10px; font-size:12px; border-color:var(--warning); color:var(--warning);" onclick="uploadOrReplaceSupplierDocument('${a.id}', '${col}', '${keyPrefix}', '${label.replace(/'/g, "\\'")}')">⬆️ Upload ${label}</button>`;
   }).join('');
 
   // Remaining optional documents stay download-only, same as before.
@@ -5190,10 +5212,10 @@ async function loadSuperAdminApplicants() {
 // after a bulk import) and to replace an existing one. The old file (if
 // any) is left in storage rather than deleted, same tradeoff already
 // accepted elsewhere in this app for superseded links/tokens.
-let pendingSupplierDocUpload = null; // { applicantId, column, label }
+let pendingSupplierDocUpload = null; // { applicantId, column, keyPrefix, label }
 
-function uploadOrReplaceSupplierDocument(applicantId, column, label) {
-  pendingSupplierDocUpload = { applicantId, column, label };
+function uploadOrReplaceSupplierDocument(applicantId, column, keyPrefix, label) {
+  pendingSupplierDocUpload = { applicantId, column, keyPrefix, label };
   const input = document.getElementById('supplier-doc-upload-input');
   if (!input) return;
   input.value = '';
@@ -5207,7 +5229,7 @@ async function handleSupplierDocFileSelected(e) {
   if (!file || !pending) return;
 
   try {
-    const path = await uploadSupplierDocument(pending.applicantId, pending.column, file);
+    const path = await uploadSupplierDocument(pending.applicantId, pending.keyPrefix, file);
     const { error } = await client
       .from('applicant_registrations')
       .update({ [pending.column]: path })
