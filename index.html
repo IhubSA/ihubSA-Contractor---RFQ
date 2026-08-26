@@ -466,6 +466,7 @@
         <div id="submissions-tab" class="admin-tab" style="display:none;">
           <div class="card">
             <h2 style="margin-top:0;">RFQ Submissions</h2>
+            <p id="submissions-limited-access-note" style="display:none; margin:0 0 14px 0; font-size:13px; color:var(--border);">🔒 Your team permissions limit which submission stages you can see and act on here. Ask your company owner to adjust your access from the Team tab if you're missing something you expect to see.</p>
             <div class="filter-bar">
               <select id="rfq-filter" onchange="filterSubmissions()" style="padding:10px; border:1px solid var(--border); border-radius:4px;">
                 <option value="">All RFQs</option>
@@ -859,6 +860,7 @@
         <label style="font-weight:bold; font-size:12px; text-transform:uppercase; color:var(--ink);">What information do you need from the contractor?</label>
         <textarea id="submission-info-request-message" rows="3" style="width:100%; margin-top:6px; padding:10px; border:1px solid var(--border); border-radius:4px; font-family:inherit;" placeholder="e.g. Please upload your latest B-BBEE certificate and confirm your VAT number."></textarea>
       </div>
+      <p id="submission-status-no-access-note" style="display:none; margin:0 24px 12px 24px; font-size:12px; color:var(--border); text-align:right;">🔒 You don't have permission to change this submission's status. Ask your company owner to grant you access from the Team tab.</p>
       <div class="modal-foot">
         <button type="button" class="btn secondary" onclick="closeModal('submission-detail-modal')">Close</button>
         <select id="submission-status-update" onchange="onSubmissionStatusSelectChange()" style="padding:8px 12px; border:1px solid var(--border); border-radius:4px;">
@@ -870,6 +872,23 @@
           <option value="rejected">Rejected</option>
         </select>
         <button type="button" id="submission-status-action-btn" class="btn gold" onclick="handleSubmissionStatusAction()">Update Status</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- TEAM MEMBER SUBMISSION-STAGE PERMISSIONS MODAL -->
+  <div id="team-permissions-modal" class="modal" style="display:none;">
+    <div class="modal-content" style="max-width:480px;">
+      <div class="modal-head">
+        <h3>Review Submissions Permissions</h3>
+        <button class="drawer-close" onclick="closeModal('team-permissions-modal')">✕</button>
+      </div>
+      <div class="modal-body">
+        <p id="team-permissions-member-label" style="margin:0 0 14px 0; font-size:13px; color:var(--border);"></p>
+        <p style="margin:0 0 14px 0; font-size:13px; color:var(--border);">Control which submission stages this teammate can see and act on. "Edit" automatically includes "View".</p>
+        <div id="team-permissions-grid"></div>
+        <p style="margin:12px 0 18px 0; font-size:11px; color:var(--border);">A teammate you've never restricted has full access to every stage by default.</p>
+        <button type="button" class="btn gold" style="padding:10px 20px;" onclick="handleTeamPermissionsSave()">Save Permissions</button>
       </div>
     </div>
   </div>
