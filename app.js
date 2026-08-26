@@ -120,11 +120,14 @@ async function initApp() {
   if (openRfqId) {
     // Direct links (e.g. bookmarked/shared) must go through the same
     // registration gate as clicking "View & Apply" — show the normal
-    // landing page underneath and open the gate on top of it.
+    // landing page underneath and open the gate on top of it. Unless this
+    // RFQ actually belongs to CNWE, in which case it redirects instead —
+    // see openApplicantGateOrRedirect.
     console.log('Loading public RFQ (gated):', openRfqId);
     applyDefaultBranding();
     showLandingView();
-    openApplicantGate(openRfqId);
+    const { data: rfqCheck } = await client.from('rfqs').select('company_id, external_source_rfq_id').eq('id', openRfqId).maybeSingle();
+    openApplicantGateOrRedirect(openRfqId, rfqCheck && rfqCheck.company_id, rfqCheck && rfqCheck.external_source_rfq_id);
     return;
   }
 
@@ -662,7 +665,7 @@ async function loadPublicRFQList() {
   try {
     let query = client
       .from('rfqs')
-      .select('id, rfq_name, project_name, description, deadline, budget, company_id, provinces, location_area')
+      .select('id, rfq_name, project_name, description, deadline, budget, company_id, provinces, location_area, external_source_rfq_id')
       .eq('is_public', true)
       .eq('is_withdrawn', false)
       .gt('deadline', new Date().toISOString());
@@ -740,7 +743,7 @@ async function loadPublicRFQList() {
       const urgency = computeUrgency(rfq.deadline);
       const refCode = `RFQ-${rfq.id.replace(/-/g, '').slice(0, 8).toUpperCase()}`;
       return `
-        <div class="opportunity-card status-${urgency.status}" onclick="openApplicantGate('${rfq.id}')">
+        <div class="opportunity-card status-${urgency.status}" onclick="openApplicantGateOrRedirect('${rfq.id}', '${rfq.company_id || ''}', '${rfq.external_source_rfq_id || ''}')">
           <div class="opportunity-card-grid">
             <div class="opportunity-col-info">
               <span class="opportunity-status-badge ${urgency.badgeClass}">${urgency.label}</span>
@@ -765,7 +768,7 @@ async function loadPublicRFQList() {
                   <div><div class="countdown-unit-num cd-hrs">--</div><div class="countdown-unit-label">Hrs</div></div>
                   <div><div class="countdown-unit-num cd-mins">--</div><div class="countdown-unit-label">Mins</div></div>
                 </div>
-                <button type="button" class="btn navy" style="width:100%; padding:10px; margin-top:14px;" onclick="event.stopPropagation(); openApplicantGate('${rfq.id}')">View Opportunity →</button>
+                <button type="button" class="btn navy" style="width:100%; padding:10px; margin-top:14px;" onclick="event.stopPropagation(); openApplicantGateOrRedirect('${rfq.id}', '${rfq.company_id || ''}', '${rfq.external_source_rfq_id || ''}')">View Opportunity →</button>
                 <button type="button" class="btn secondary" style="width:100%; padding:10px; margin-top:8px;" onclick="event.stopPropagation(); openAskQuestionModal('${rfq.id}', '${escapeHtmlClient(rfq.rfq_name).replace(/'/g, "\\'")}')">❓ Ask a Question</button>
               </div>
             </div>
@@ -861,6 +864,20 @@ let currentApplicantStatus = null;
 // has_proof_of_address, proof_of_address_file_name, has_sars, sars_file_name }.
 let currentApplicantEmail = null;
 let currentApplicantDocuments = null;
+
+// RFQs pushed here from the CNWE Energy RFQ Hub keep their own applicant
+// pipeline entirely on that system — an application submitted through this
+// site's own registration flow would never reach CNWE's staff. So instead
+// of opening the normal gate for these specific RFQs, send the visitor
+// straight to the matching application form on CNWE's own public portal.
+const CNWE_COMPANY_ID = '3a8d98c5-7c7d-43e3-b073-2c861900e9d7';
+function openApplicantGateOrRedirect(rfqId, companyId, externalSourceRfqId) {
+  if (companyId === CNWE_COMPANY_ID && externalSourceRfqId) {
+    window.location.href = `https://ihubsa.github.io/Public-RFQ-Hub/?apply=${encodeURIComponent(externalSourceRfqId)}`;
+    return;
+  }
+  openApplicantGate(rfqId);
+}
 
 function openApplicantGate(rfqId) {
   pendingGateRfqId = rfqId;
