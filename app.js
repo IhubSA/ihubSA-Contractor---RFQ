@@ -18,6 +18,18 @@ let isSuperAdmin = false;
 let isAdminManager = false; // can this super admin invite/remove other super admins? (see super_admins.can_manage_admins)
 let currentAdminPermissions = {}; // this super admin's per-section {view,edit} grants (see super_admins.permissions) — ignored entirely for the admin-manager, who always has full access
 const ADMIN_PERMISSION_SECTIONS = ['invite_company', 'platform_branding', 'companies', 'applicants'];
+let currentMemberRole = null; // this user's own company_members.role ('owner'/'staff') — the owner always has full access to every Review Submissions stage regardless of currentMemberPermissions
+let currentMemberPermissions = null; // this user's own company_members.permissions — null means full access to every stage (the default, until the owner explicitly restricts them); see company_members.permissions
+// The 6 statuses a submission can be in, in the same order the status dropdown shows them.
+const SUBMISSION_STAGES = [
+  { key: 'submitted', label: 'Submitted' },
+  { key: 'under_review', label: 'Under Review' },
+  { key: 'info_requested', label: 'Request More Information' },
+  { key: 'response_received', label: 'Response Received' },
+  { key: 'approved', label: 'Approved' },
+  { key: 'rejected', label: 'Rejected' }
+];
+let teamMembersById = {}; // populated by loadTeamMembers so the Permissions modal can look up a member's current role/permissions by id
 let currentRFQId = null;
 let currentRFQData = null; // full RFQ row for the RFQ currently loaded in the contractor form, so submitContractorForm can read required_documents (name/mandatory/requires_expiry) without a second fetch
 let isSubmittingRFQ = false;
@@ -2031,11 +2043,14 @@ async function loadTeamMembers() {
   try {
     const { data: members, error: membersError } = await client
       .from('company_members')
-      .select('id, role, email, user_id')
+      .select('id, role, email, user_id, permissions')
       .eq('company_id', currentCompany.id)
       .order('created_at', { ascending: true });
 
     if (membersError) throw membersError;
+
+    teamMembersById = {};
+    (members || []).forEach(m => { teamMembersById[m.id] = m; });
 
     const { data: invites } = await client
       .from('company_invitations')
@@ -2047,12 +2062,27 @@ async function loadTeamMembers() {
     let html = '';
 
     if (members && members.length > 0) {
-      html += members.map(m => `
-        <div style="display:flex; justify-content:space-between; align-items:center; padding:10px; border:1px solid var(--border); border-radius:4px; margin-bottom:8px;">
-          <span>${m.email || m.user_id}${currentUser && m.user_id === currentUser.id ? ' <span style="color:var(--border); font-size:12px;">(you)</span>' : ''}</span>
-          <span class="submission-status approved" style="text-transform:capitalize;">${m.role}</span>
+      html += members.map(m => {
+        const permittedCount = SUBMISSION_STAGES.filter(s => m.permissions && m.permissions[s.key] && (m.permissions[s.key].view || m.permissions[s.key].edit)).length;
+        const accessSummary = m.role === 'owner'
+          ? 'Full access (owner)'
+          : (m.permissions === null || m.permissions === undefined)
+            ? 'Full access to submissions'
+            : `Limited access (${permittedCount}/${SUBMISSION_STAGES.length} stages)`;
+        const showPermissionsBtn = currentMemberRole === 'owner' && m.role !== 'owner';
+        return `
+        <div style="display:flex; justify-content:space-between; align-items:center; padding:10px; border:1px solid var(--border); border-radius:4px; margin-bottom:8px; flex-wrap:wrap; gap:8px;">
+          <div>
+            <span>${m.email || m.user_id}${currentUser && m.user_id === currentUser.id ? ' <span style="color:var(--border); font-size:12px;">(you)</span>' : ''}</span>
+            <div style="font-size:12px; color:var(--border); margin-top:2px;">${accessSummary}</div>
+          </div>
+          <div style="display:flex; align-items:center; gap:10px;">
+            <span class="submission-status approved" style="text-transform:capitalize;">${m.role}</span>
+            ${showPermissionsBtn ? `<button type="button" class="btn secondary" style="padding:6px 12px; font-size:12px;" onclick="openTeamPermissionsModal('${m.id}')">⚙️ Permissions</button>` : ''}
+          </div>
         </div>
-      `).join('');
+      `;
+      }).join('');
     } else {
       html += '<p style="color:var(--border); font-style:italic;">No team members found.</p>';
     }
@@ -2075,6 +2105,95 @@ async function loadTeamMembers() {
   }
 }
 
+let pendingTeamPermissionsMemberId = null; // which company_members row the open Permissions modal is editing
+
+// Opens the per-stage View/Edit permissions grid for one teammate. Only the
+// company owner can reach this (loadTeamMembers only renders the button for
+// them) — enforced client-side here too as a second check, since the real
+// enforcement is the company_members_update_owner RLS policy on save.
+// Prefills every checkbox checked (full access) when the member's
+// permissions column is still null — matches the "full access until
+// restricted" default, so the owner sees exactly what the member currently
+// has before narrowing anything.
+function openTeamPermissionsModal(memberId) {
+  const member = teamMembersById[memberId];
+  if (!member) {
+    showToast('Error: team member not found', 'error');
+    return;
+  }
+  if (currentMemberRole !== 'owner') {
+    showToast("Only the company owner can manage a teammate's permissions.", 'error');
+    return;
+  }
+
+  pendingTeamPermissionsMemberId = memberId;
+  document.getElementById('team-permissions-member-label').textContent = member.email || member.user_id;
+
+  const grid = document.getElementById('team-permissions-grid');
+  grid.innerHTML = SUBMISSION_STAGES.map(stage => {
+    const perm = member.permissions && member.permissions[stage.key];
+    // permissions IS NULL entirely -> full access -> every box starts checked
+    const checkedView = member.permissions === null || member.permissions === undefined ? true : !!(perm && perm.view);
+    const checkedEdit = member.permissions === null || member.permissions === undefined ? true : !!(perm && perm.edit);
+    return `
+      <div style="display:flex; justify-content:space-between; align-items:center; padding:8px 0; border-bottom:1px solid var(--border);">
+        <span>${stage.label}</span>
+        <div style="display:flex; gap:16px;">
+          <label style="font-weight:normal; display:flex; align-items:center; gap:6px; cursor:pointer; font-size:13px;">
+            <input type="checkbox" data-stage="${stage.key}" data-level="view" ${checkedView ? 'checked' : ''} onchange="syncTeamPermissionCheckbox('${stage.key}')"> View
+          </label>
+          <label style="font-weight:normal; display:flex; align-items:center; gap:6px; cursor:pointer; font-size:13px;">
+            <input type="checkbox" data-stage="${stage.key}" data-level="edit" ${checkedEdit ? 'checked' : ''} onchange="syncTeamPermissionCheckbox('${stage.key}')"> Edit
+          </label>
+        </div>
+      </div>
+    `;
+  }).join('');
+
+  openModal('team-permissions-modal');
+}
+
+// "Edit" always implies "View" — checking Edit auto-checks View for the same
+// stage, and unchecking View auto-unchecks Edit, so the two can never end up
+// in an inconsistent state (same rule as the Super Admin Permissions grid).
+function syncTeamPermissionCheckbox(stageKey) {
+  const grid = document.getElementById('team-permissions-grid');
+  const viewBox = grid.querySelector(`input[data-stage="${stageKey}"][data-level="view"]`);
+  const editBox = grid.querySelector(`input[data-stage="${stageKey}"][data-level="edit"]`);
+  if (!viewBox || !editBox) return;
+  if (editBox.checked) viewBox.checked = true;
+  if (!viewBox.checked) editBox.checked = false;
+}
+
+// Saves a fully-explicit permissions object (every stage's view/edit set
+// true/false, never a partial object) — this is what turns a still-null
+// (full access) member into an explicitly-restricted one going forward.
+async function handleTeamPermissionsSave() {
+  if (!pendingTeamPermissionsMemberId) return;
+  const grid = document.getElementById('team-permissions-grid');
+  const permissions = {};
+  SUBMISSION_STAGES.forEach(stage => {
+    const viewBox = grid.querySelector(`input[data-stage="${stage.key}"][data-level="view"]`);
+    const editBox = grid.querySelector(`input[data-stage="${stage.key}"][data-level="edit"]`);
+    permissions[stage.key] = { view: !!(viewBox && viewBox.checked), edit: !!(editBox && editBox.checked) };
+  });
+
+  try {
+    const { error } = await client
+      .from('company_members')
+      .update({ permissions })
+      .eq('id', pendingTeamPermissionsMemberId);
+    if (error) throw error;
+    showToast('✅ Permissions updated', 'success');
+    closeModal('team-permissions-modal');
+    pendingTeamPermissionsMemberId = null;
+    loadTeamMembers();
+  } catch (err) {
+    console.error('Error saving team permissions:', err);
+    showToast('Error: ' + err.message, 'error');
+  }
+}
+
 async function loadCurrentCompanyAndRoute(wantsAdmin) {
   try {
     // Check super-admin status first — a super-admin should be able to log in
@@ -2090,7 +2209,7 @@ async function loadCurrentCompanyAndRoute(wantsAdmin) {
 
     const { data: membership, error } = await client
       .from('company_members')
-      .select('company_id, role, companies(*)')
+      .select('company_id, role, permissions, companies(*)')
       .eq('user_id', currentUser.id)
       .limit(1)
       .maybeSingle();
@@ -2100,6 +2219,8 @@ async function loadCurrentCompanyAndRoute(wantsAdmin) {
     }
 
     currentCompany = (membership && membership.companies) ? membership.companies : null;
+    currentMemberRole = membership ? membership.role : null;
+    currentMemberPermissions = membership ? membership.permissions : null;
 
     if (currentCompany && currentCompany.status === 'suspended') {
       showToast('This account has been suspended. Contact the platform admin.', 'error');
@@ -4231,6 +4352,16 @@ async function loadSubmissions() {
     if (!currentCompany) return;
     console.log('Loading submissions...');
 
+    // Only informational — a restricted (non-owner, explicitly-permissioned)
+    // team member's list below is already narrowed by the DB itself (the
+    // rfq_submissions SELECT policy hides any stage they don't have "view"
+    // access to), so this just explains why the list may look shorter than
+    // expected rather than looking like a bug.
+    const limitedNote = document.getElementById('submissions-limited-access-note');
+    if (limitedNote) {
+      limitedNote.style.display = (currentMemberRole !== 'owner' && currentMemberPermissions !== null && currentMemberPermissions !== undefined) ? 'block' : 'none';
+    }
+
     const { data: allSubmissions, error } = await client
       .from('rfq_submissions')
       .select(`*, rfqs!inner(rfq_name, company_id)`)
@@ -4278,6 +4409,21 @@ async function loadSubmissions() {
       rfqFilterEl.innerHTML = '<option value="">All RFQs</option>' +
         Array.from(rfqOptionsById.entries()).map(([id, name]) => `<option value="${id}">${name}</option>`).join('');
       rfqFilterEl.value = previousSelection && rfqOptionsById.has(previousSelection) ? previousSelection : '';
+    }
+
+    // Disable (don't remove — keeps "All Statuses" behavior intact) any
+    // status-filter option this team member has no view access to, so they
+    // can't pick a filter that would always show "no submissions match this
+    // filter" for a stage they're not permitted to see at all.
+    const statusFilterEl = document.getElementById('status-filter');
+    if (statusFilterEl) {
+      Array.from(statusFilterEl.options).forEach(opt => {
+        if (!opt.value) return; // "All Statuses"
+        opt.disabled = !canViewSubmissionStage(opt.value);
+      });
+      if (statusFilterEl.selectedOptions[0] && statusFilterEl.selectedOptions[0].disabled) {
+        statusFilterEl.value = '';
+      }
     }
 
     const rfqFilterValue = rfqFilterEl ? rfqFilterEl.value : '';
@@ -4438,6 +4584,7 @@ async function openSubmissionDetail(id) {
     }
     const messageBox = document.getElementById('submission-info-request-message');
     if (messageBox) messageBox.value = '';
+    applySubmissionStagePermissionsToStatusSelect();
     onSubmissionStatusSelectChange();
 
     const title = document.getElementById('submission-title');
@@ -4464,6 +4611,32 @@ function onSubmissionStatusSelectChange() {
   const isInfoRequest = statusSelect.value === 'info_requested';
   formBox.style.display = isInfoRequest ? 'block' : 'none';
   actionBtn.textContent = isInfoRequest ? 'Send Request' : 'Update Status';
+}
+
+// Disables any status option this team member doesn't have "edit" access to
+// (per SUBMISSION_STAGES / company_members.permissions), so the dropdown
+// only ever lets them pick a stage they're actually allowed to move a
+// submission into. If they have edit access to nothing at all, the whole
+// control is disabled with an explanatory note. This is UX only — the real
+// enforcement is the rfq_submissions UPDATE policy's
+// can_act_on_submission_status(..., 'edit') check, which blocks the write
+// server-side regardless of what the dropdown lets them click.
+function applySubmissionStagePermissionsToStatusSelect() {
+  const statusSelect = document.getElementById('submission-status-update');
+  const actionBtn = document.getElementById('submission-status-action-btn');
+  const noAccessNote = document.getElementById('submission-status-no-access-note');
+  if (!statusSelect) return;
+
+  let anyEditable = false;
+  Array.from(statusSelect.options).forEach(opt => {
+    const editable = canEditSubmissionStage(opt.value);
+    opt.disabled = !editable;
+    if (editable) anyEditable = true;
+  });
+
+  statusSelect.disabled = !anyEditable;
+  if (actionBtn) actionBtn.disabled = !anyEditable;
+  if (noAccessNote) noAccessNote.style.display = anyEditable ? 'none' : 'block';
 }
 
 async function handleSubmissionStatusAction() {
@@ -4526,6 +4699,29 @@ async function sendSubmissionInfoRequest(submissionId) {
 
 function filterSubmissions() {
   loadSubmissions();
+}
+
+// Per-team-member permission helpers for the Review Submissions stages
+// (Submitted / Under Review / Request More Information / Response Received /
+// Approved / Rejected). The company owner always has full access regardless
+// of currentMemberPermissions; a non-owner with currentMemberPermissions
+// still null (never restricted by the owner) also gets full access — that's
+// the "full access until restricted" default. Once the owner has saved an
+// explicit permissions object for someone, only what's actually set to true
+// in it applies. This client-side check is UX only (which options/rows show);
+// the real enforcement is the RLS policies that call
+// can_act_on_submission_status() directly — see the project notes.
+function canViewSubmissionStage(status) {
+  if (currentMemberRole === 'owner') return true;
+  if (currentMemberPermissions === null || currentMemberPermissions === undefined) return true;
+  const perm = currentMemberPermissions[status];
+  return !!(perm && perm.view);
+}
+function canEditSubmissionStage(status) {
+  if (currentMemberRole === 'owner') return true;
+  if (currentMemberPermissions === null || currentMemberPermissions === undefined) return true;
+  const perm = currentMemberPermissions[status];
+  return !!(perm && perm.edit);
 }
 
 // ===== SUPER ADMIN =====
