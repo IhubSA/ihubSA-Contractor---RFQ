@@ -63,7 +63,37 @@ async function initApp() {
   const infoToken = params.get('info');
   const prefsToken = params.get('prefs');
   const wantsAdmin = params.has('admin');
-  const authType = getUrlHashParams().get('type'); // 'invite' or 'recovery' when landing from an invite/reset link
+  const hashParams = getUrlHashParams();
+  const authType = hashParams.get('type'); // 'invite' or 'recovery' when landing from an invite/reset link
+  // Supabase's admin.inviteUserByEmail (invite-member/invite-super-admin)
+  // is NOT one of the flows that support PKCE — per Supabase's own docs,
+  // only Magic Link, OAuth, Sign Up, and Password Recovery do. An invite
+  // link therefore always comes back as the classic implicit-flow
+  // #access_token=...&refresh_token=...&type=invite hash, never a PKCE
+  // ?code=. With this client configured flowType:'pkce' (added for the
+  // recovery-link email-scanner problem below), relying on supabase-js's
+  // automatic detectSessionInUrl to also pick up that hash turned out to
+  // be unreliable in practice — confirmed via Supabase auth logs showing
+  // the server minting a valid implicit-flow session on /verify, but the
+  // client never following up with a session-backed request afterward
+  // (an invited team member's "Accept invitation" link was landing on
+  // the public Open Opportunities page instead of the set-password
+  // screen). Reading the tokens straight out of the hash ourselves and
+  // handing them to setSession() below doesn't depend on that automatic
+  // detection working, so it fixes invite links without touching the
+  // (working) recovery-link path.
+  const hashAccessToken = hashParams.get('access_token');
+  const hashRefreshToken = hashParams.get('refresh_token');
+  // A scanner or a stale/already-used link lands here with #error=...
+  // instead of tokens (this is the exact "email security scanner
+  // pre-fetches and burns the one-time link" failure mode already traced
+  // to angelsinc.co.za's Microsoft 365 Safe Links for recovery links —
+  // invite links were never actually protected against it, since invite
+  // doesn't support the PKCE fix that protects recovery). Previously this
+  // fell straight through to the public landing page with no explanation;
+  // surfacing it means whoever's testing/using an invite link finds out
+  // why it didn't work instead of just landing somewhere unexpected.
+  const hashError = hashParams.get('error_description') || hashParams.get('error');
   currentAuthType = authType;
 
   // Wire up static form/UI listeners before touching the Supabase client —
@@ -74,15 +104,16 @@ async function initApp() {
   setupStaticForms();
   setupWhatsappFabSync();
 
-  // PKCE flow: invite/recovery links now require both the emailed link AND
-  // a secret held only by the browser that originally requested it, so an
-  // email security scanner pre-fetching the link (which is what was
-  // silently burning invite/reset links before a real person ever clicked
-  // them — confirmed via Supabase logs, and traced to angelsinc.co.za
-  // running Microsoft 365, whose Safe Links feature does exactly this)
-  // can no longer consume the one-time login on its own. supabase-js
-  // handles the code exchange automatically (same detectSessionInUrl
-  // mechanism already relied on for the old hash-based tokens below).
+  // PKCE flow: SELF-INITIATED recovery links (resetPasswordForEmail, used
+  // by the "Forgot your password?" flow) require both the emailed link
+  // AND a secret held only by the browser that originally requested it,
+  // so an email security scanner pre-fetching the link (which is what was
+  // silently burning those links before a real person ever clicked them —
+  // confirmed via Supabase logs, and traced to angelsinc.co.za running
+  // Microsoft 365, whose Safe Links feature does exactly this) can no
+  // longer consume the one-time login on its own. supabase-js handles the
+  // code exchange automatically (via detectSessionInUrl) for THIS flow.
+  // Invite links are a different story — see the comment above authType.
   client = supabase.createClient(SUPABASE_URL, SUPABASE_KEY, { auth: { flowType: 'pkce' } });
   console.log('✅ Supabase connected');
 
@@ -102,6 +133,31 @@ async function initApp() {
       showSetPasswordView();
     }
   });
+
+  if (hashAccessToken && hashRefreshToken) {
+    // See the big comment above authType: this is what actually makes an
+    // invite link's implicit-flow hash result in a logged-in session —
+    // don't rely on detectSessionInUrl alone to have picked it up already.
+    try {
+      const { error: setSessionError } = await client.auth.setSession({
+        access_token: hashAccessToken,
+        refresh_token: hashRefreshToken,
+      });
+      if (setSessionError) console.error('setSession from hash tokens failed:', setSessionError.message);
+    } catch (err) {
+      console.error('setSession from hash tokens threw:', err);
+    }
+    // The tokens have done their job — drop them from the address bar so
+    // they're not left sitting there (visible in browser history, and
+    // liable to cause a stale re-processing attempt on a manual refresh).
+    history.replaceState(null, '', window.location.pathname + window.location.search);
+  } else if (hashError) {
+    history.replaceState(null, '', window.location.pathname + window.location.search);
+    applyDefaultBranding();
+    showLoginForm();
+    showToast('❌ This invite/reset link has already been used or has expired. Ask whoever sent it to send a new one.', 'error');
+    return;
+  }
 
   await loadPlatformSettings();
 
@@ -148,16 +204,18 @@ async function initApp() {
     if (session && session.user) {
       currentUser = session.user;
 
-      // Under PKCE, invite/recovery links redirect back with a ?code=
-      // query param instead of the old #access_token=...&type=... hash, so
-      // authType (read from the hash, above) is normally null now — kept
-      // only as a fallback for any already-sent email still using the old
-      // format. The real, PKCE-proof signal for "just invited, hasn't set
-      // a password yet" is needs_password_setup in the user's own
-      // metadata, which we set ourselves when the invite was sent (see
-      // invite-super-admin/invite-member) and clear once they've set a
-      // password (see handleSetPasswordSubmit) — this doesn't depend on
-      // guessing exactly how Supabase's redirect happens to be shaped.
+      // A PKCE-flow recovery link redirects back with a ?code= query
+      // param rather than a hash, so authType (read from the hash, above)
+      // is null in that case — the PASSWORD_RECOVERY listener above is
+      // what catches those instead. authType IS reliably set for an
+      // invite link, which always comes back as a hash (see the big
+      // comment above authType near the top of this function).
+      // needs_password_setup in the user's own metadata is a second,
+      // independent signal — set ourselves when the invite was sent (see
+      // invite-super-admin/invite-member) and cleared once they've set a
+      // password (see handleSetPasswordSubmit) — kept as a belt-and-
+      // suspenders check that doesn't depend on any particular redirect
+      // shape at all.
       const stillNeedsPasswordSetup = !!(session.user.user_metadata && session.user.user_metadata.needs_password_setup);
 
       if (authType === 'invite' || authType === 'recovery' || stillNeedsPasswordSetup) {
