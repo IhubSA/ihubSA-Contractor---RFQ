@@ -2974,6 +2974,21 @@ async function loadRFQDetails(rfqId, isOpenAccess = false) {
             }).join('')}
           </div>
 
+          <div style="margin-top: 30px; padding: 15px; background: var(--bg-2); border-radius: 4px;">
+            <h4 style="margin-top: 0;">Additional Supporting Documents (Optional)</h4>
+            <p style="color: var(--border); font-size: 14px; margin-bottom: 15px;">Upload any additional documents that support your application (certificates, portfolios, references, etc.)</p>
+            <div id="additional-docs-container">
+              <div class="additional-doc-row" style="margin-bottom: 12px;">
+                <div style="display: flex; gap: 10px; align-items: flex-end;">
+                  <div style="flex: 1;">
+                    <input type="file" class="additional-doc-input" accept=".pdf,.doc,.docx,.xls,.xlsx,.jpg,.jpeg,.png,.zip" style="width: 100%;">
+                  </div>
+                  <button type="button" class="btn secondary" onclick="addAdditionalDocField()" style="padding: 8px 14px; white-space: nowrap;">+ Add More</button>
+                </div>
+              </div>
+            </div>
+          </div>
+
           <button type="submit" class="btn gold" id="contractor-submit-btn" style="width: 100%; padding: 15px; margin-top: 20px;"${isApplicationBlocked ? ' disabled' : ''}>${isApplicationBlocked ? 'Application Unavailable' : 'Submit Application'}</button>
         </form>
       </div>
@@ -3046,6 +3061,34 @@ function toggleDocReuse(idx) {
     fileInput.style.display = 'none';
     fileInput.value = '';
     fileInput.removeAttribute('required');
+  }
+}
+
+// Add a new additional document upload field
+function addAdditionalDocField() {
+  const container = document.getElementById('additional-docs-container');
+  if (!container) return;
+
+  const rowCount = container.querySelectorAll('.additional-doc-row').length;
+  const newRow = document.createElement('div');
+  newRow.className = 'additional-doc-row';
+  newRow.style.marginBottom = '12px';
+  newRow.innerHTML = `
+    <div style="display: flex; gap: 10px; align-items: flex-end;">
+      <div style="flex: 1;">
+        <input type="file" class="additional-doc-input" accept=".pdf,.doc,.docx,.xls,.xlsx,.jpg,.jpeg,.png,.zip" style="width: 100%;">
+      </div>
+      <button type="button" class="btn secondary" onclick="removeAdditionalDocField(this)" style="padding: 8px 14px; white-space: nowrap; background: var(--bg); color: var(--warning);">✕ Remove</button>
+    </div>
+  `;
+  container.appendChild(newRow);
+}
+
+// Remove an additional document upload field
+function removeAdditionalDocField(btn) {
+  const row = btn.closest('.additional-doc-row');
+  if (row) {
+    row.remove();
   }
 }
 
@@ -3200,6 +3243,38 @@ async function submitContractorForm(token) {
         filesUploaded++;
       } catch (reusedInsertErr) {
         console.warn('⚠️ Error recording reused document:', reusedInsertErr.message);
+      }
+    }
+
+    // Upload additional supporting documents (optional)
+    const additionalFileInputs = document.querySelectorAll('input[type="file"].additional-doc-input');
+    for (let input of additionalFileInputs) {
+      if (input.files[0]) {
+        try {
+          const file = input.files[0];
+          const filePath = `rfq-${currentRFQId}/sub-${submissionId}/supporting-${Date.now()}-${sanitizeStorageFileName(file.name)}`;
+
+          const { error: uploadError } = await client.storage
+            .from('rfq-documents')
+            .upload(filePath, file);
+
+          if (uploadError) {
+            console.warn('⚠️ Additional file upload failed:', uploadError.message);
+            continue;
+          }
+
+          await client.from('rfq_submission_documents').insert([{
+            submission_id: submissionId,
+            file_name: file.name,
+            file_path: filePath,
+            file_size: file.size,
+            document_type: 'Additional Supporting Document'
+          }]);
+
+          filesUploaded++;
+        } catch (fileErr) {
+          console.warn('⚠️ Error uploading additional file:', fileErr.message);
+        }
       }
     }
 
