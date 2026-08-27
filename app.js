@@ -3385,6 +3385,7 @@ function setupCreateRFQForm() {
     radio.addEventListener('change', updateVisibilityHint);
   });
   updateVisibilityHint();
+  renderStandardDocPicker();
 }
 
 // Reads the Create RFQ form's current values without validating or saving
@@ -3461,6 +3462,110 @@ function updateVisibilityHint() {
   }
 }
 
+// Categories already used by a required-document row in the builder —
+// whether added via the standard picker (data-standard-category on the
+// row) or manually linked on a custom row's doc-supplier-category-field.
+// Used to keep the same Supplier Database document from being wired up
+// to two different required-document rows on one RFQ, which would make
+// the "document on file" reuse offer ambiguous.
+function getUsedSupplierDocCategories() {
+  const used = new Set();
+  document.querySelectorAll('#required-docs-builder .doc-row').forEach(row => {
+    if (row.dataset.standardCategory) {
+      used.add(row.dataset.standardCategory);
+      return;
+    }
+    const categoryInput = row.querySelector('.doc-supplier-category-field');
+    if (categoryInput && categoryInput.value) used.add(categoryInput.value);
+  });
+  return used;
+}
+
+// Refreshes the "+ Add Standard Document" dropdown to list only the
+// standard Supplier Database categories not already added to this RFQ's
+// required-documents list, and any custom row's own linking dropdown
+// (skipping its own currently-selected value, so re-rendering doesn't
+// knock out what that row already has picked).
+function renderStandardDocPicker() {
+  const picker = document.getElementById('standard-doc-picker');
+  if (!picker) return;
+  const used = getUsedSupplierDocCategories();
+  const available = SUPPLIER_DOC_CATEGORIES.filter(c => !used.has(c.category));
+  picker.innerHTML = available.map(c => `<option value="${c.category}">${c.label}${c.mandatory ? ' (Mandatory)' : ''}</option>`).join('');
+  picker.disabled = available.length === 0;
+  const addBtn = picker.nextElementSibling;
+  if (addBtn && addBtn.tagName === 'BUTTON') addBtn.disabled = available.length === 0;
+
+  document.querySelectorAll('#required-docs-builder .doc-row:not([data-standard-category]) .doc-supplier-category-field').forEach(select => {
+    const current = select.value;
+    const options = ['<option value="">— Not linked (contractor always uploads fresh) —</option>']
+      .concat(SUPPLIER_DOC_CATEGORIES
+        .filter(c => c.category === current || !used.has(c.category))
+        .map(c => `<option value="${c.category}">${c.label}</option>`));
+    select.innerHTML = options.join('');
+    select.value = current;
+  });
+}
+
+// Adds a required-document row for one of the 7 standard Supplier
+// Database categories (see SUPPLIER_DOC_CATEGORIES). The document's
+// heading always matches that category's label verbatim — kept
+// non-editable here so it stays in sync with the Supplier Database
+// screen and the self-service preferences page, instead of drifting
+// into ad-hoc per-RFQ wording. Mandatory defaults from the category but
+// stays editable per-RFQ; Requires Expiry Date is off by default and,
+// same as a custom row, clears the reuse link when turned on (a document
+// already on file never carries a per-RFQ expiry date).
+function addStandardDocumentField(category, overrides) {
+  const entry = SUPPLIER_DOC_CATEGORIES.find(c => c.category === category);
+  if (!entry) return;
+  const builder = document.getElementById('required-docs-builder');
+  const field = document.createElement('div');
+  field.className = 'doc-row';
+  field.dataset.standardCategory = category;
+  field.style.cssText = 'border:1px solid var(--border); border-radius:6px; padding:10px; margin-bottom:10px; background:var(--bg-2);';
+  field.innerHTML = `
+    <div style="display:flex; gap:10px; margin-bottom:8px; align-items:center;">
+      <span style="background:var(--primary); color:#fff; font-size:11px; font-weight:bold; padding:2px 8px; border-radius:10px;">STANDARD</span>
+      <span style="flex:1; font-weight:600;">${entry.label}</span>
+      <input type="hidden" class="doc-field" value="${entry.label}">
+      <input type="hidden" class="doc-supplier-category-field" value="${category}">
+      <button type="button" onclick="this.closest('.doc-row').remove(); renderStandardDocPicker();" class="btn secondary" style="padding:8px 12px;">Remove</button>
+    </div>
+    <div style="display:flex; gap:20px; flex-wrap:wrap; font-size:13px; color:var(--ink);">
+      <label style="display:flex; align-items:center; gap:6px; font-weight:normal; cursor:pointer;">
+        <input type="checkbox" class="doc-mandatory-field"${entry.mandatory ? ' checked' : ''}> Mandatory for submission
+      </label>
+      <label style="display:flex; align-items:center; gap:6px; font-weight:normal; cursor:pointer;">
+        <input type="checkbox" class="doc-expiry-field"> Requires an expiry date (e.g. COIDA, insurance)
+      </label>
+    </div>
+    <p style="margin:6px 0 0 0; font-size:11px; color:var(--border);">A registered supplier who already has this document on file can reuse it instead of uploading again. Turning on "Requires an expiry date" turns this off, since documents on file don't carry one.</p>
+  `;
+  const expiryCheckbox = field.querySelector('.doc-expiry-field');
+  const categoryField = field.querySelector('.doc-supplier-category-field');
+  expiryCheckbox.addEventListener('change', () => {
+    categoryField.value = expiryCheckbox.checked ? '' : category;
+  });
+  builder.appendChild(field);
+
+  if (overrides) {
+    if (typeof overrides.mandatory === 'boolean') field.querySelector('.doc-mandatory-field').checked = overrides.mandatory;
+    if (typeof overrides.requires_expiry === 'boolean') {
+      expiryCheckbox.checked = overrides.requires_expiry;
+      categoryField.value = overrides.requires_expiry ? '' : category;
+    }
+  }
+
+  renderStandardDocPicker();
+}
+
+function addStandardDocumentFieldFromPicker() {
+  const picker = document.getElementById('standard-doc-picker');
+  if (!picker || !picker.value) return;
+  addStandardDocumentField(picker.value);
+}
+
 function addDocumentField() {
   const builder = document.getElementById('required-docs-builder');
   const field = document.createElement('div');
@@ -3483,9 +3588,6 @@ function addDocumentField() {
       <label style="display:block; font-size:12px; color:var(--border); margin-bottom:4px;">Matches a Supplier Database document?</label>
       <select class="doc-supplier-category-field" style="width:100%; max-width:320px; padding:6px; border:1px solid var(--border); border-radius:4px; font-size:13px;">
         <option value="">— Not linked (contractor always uploads fresh) —</option>
-        <option value="cipc">CIPC Registration / ID</option>
-        <option value="proof_of_address">Proof of Address</option>
-        <option value="sars">SARS Information (Tax Clearance / VAT)</option>
       </select>
       <p style="margin:4px 0 0 0; font-size:11px; color:var(--border);">If linked, a registered supplier who already has this document on file can reuse it instead of uploading again — they can still choose to upload a different file. Only offered when this document doesn't also require an expiry date, since documents on file don't carry one.</p>
     </div>
@@ -3503,6 +3605,7 @@ function addDocumentField() {
     } else {
       categorySelect.disabled = false;
     }
+    renderStandardDocPicker();
   });
   categorySelect.addEventListener('change', () => {
     if (categorySelect.value) {
@@ -3511,13 +3614,16 @@ function addDocumentField() {
     } else {
       expiryCheckbox.disabled = false;
     }
+    renderStandardDocPicker();
   });
   builder.appendChild(field);
+  renderStandardDocPicker();
 }
 
 function resetCreateForm() {
   document.getElementById('create-rfq-form').reset();
   document.getElementById('required-docs-builder').innerHTML = '';
+  renderStandardDocPicker();
   currentDraftId = null;
   currentEditingIsDraft = true;
   currentEditingIsReleased = false;
@@ -4039,6 +4145,18 @@ async function loadRFQIntoCreateForm(rfqId) {
   });
 
   (row.required_documents || []).forEach(doc => {
+    // A row saved against one of the 7 standard Supplier Database
+    // categories re-renders as a standard row regardless of what name it
+    // was saved under (older RFQs may have a custom-typed heading from
+    // before the standard picker existed) — re-saving this RFQ then
+    // normalizes its heading to match the Supplier Database, same as any
+    // newly-added standard row. Anything not linked to a standard
+    // category still renders as a plain custom row, unchanged.
+    const isStandard = doc.supplier_doc_category && SUPPLIER_DOC_CATEGORIES.some(c => c.category === doc.supplier_doc_category);
+    if (isStandard) {
+      addStandardDocumentField(doc.supplier_doc_category, { mandatory: !!doc.mandatory, requires_expiry: !!doc.requires_expiry });
+      return;
+    }
     addDocumentField();
     const rows = document.querySelectorAll('#required-docs-builder .doc-row');
     const docRow = rows[rows.length - 1];
