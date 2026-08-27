@@ -420,9 +420,13 @@
 
               <div>
                 <label style="font-weight:bold; display:block; margin-bottom:8px;">Required Documents *</label>
-                <p style="font-size:14px; color:var(--border); margin:0 0 10px 0;">Click the button below to add document types contractors must submit</p>
+                <p style="font-size:14px; color:var(--border); margin:0 0 10px 0;">Pick from the standard Supplier Database documents below, or add a one-off custom requirement. A registered supplier who already has a standard document on file gets it applied automatically — no re-upload needed.</p>
                 <div id="required-docs-builder" style="margin-bottom:10px;"></div>
-                <button type="button" onclick="addDocumentField()" class="btn secondary" style="padding:8px 16px;">+ Add Document Type</button>
+                <div style="display:flex; gap:10px; align-items:center; flex-wrap:wrap; margin-bottom:8px;">
+                  <select id="standard-doc-picker" style="padding:8px; border:1px solid var(--border); border-radius:4px; min-width:260px;"></select>
+                  <button type="button" onclick="addStandardDocumentFieldFromPicker()" class="btn secondary" style="padding:8px 16px;">+ Add Standard Document</button>
+                </div>
+                <button type="button" onclick="addDocumentField()" class="btn secondary" style="padding:8px 16px;">+ Add Custom Document Type</button>
               </div>
 
               <div>
