@@ -974,6 +974,42 @@
     </div>
   </div>
 
+  <!-- SUPPLIER REGISTRATION PRIVACY POPUP -->
+  <div id="registration-privacy-modal" class="modal" style="display:none;">
+    <div class="modal-content">
+      <div class="modal-head">
+        <h3>Your information is protected</h3>
+        <button class="drawer-close" onclick="closeModal('registration-privacy-modal')">✕</button>
+      </div>
+      <div class="modal-body" style="padding: 24px; line-height: 1.6; color: #495057;">
+        <p style="margin: 0 0 16px 0;">Before you register, please note: the personal and business information you submit — including your contact details, company registration number, and any documents you upload — is collected by <strong id="privacy-company-name">the Company</strong> to evaluate your business and process your supplier registration.</p>
+        <p style="margin: 0 0 16px 0;">Your information is handled in accordance with South Africa's <strong>Protection of Personal Information Act (POPIA)</strong>. It is used only for supplier qualification purposes and is not shared with unauthorised third parties.</p>
+        <p style="margin: 0;">By proceeding, you acknowledge and accept these terms.</p>
+      </div>
+      <div class="modal-foot">
+        <button type="button" class="btn gold" onclick="acceptRegistrationPrivacy()">I understand — continue</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- RFQ APPLICATION PRIVACY POPUP -->
+  <div id="application-privacy-modal" class="modal" style="display:none;">
+    <div class="modal-content">
+      <div class="modal-head">
+        <h3>Your information is protected</h3>
+        <button class="drawer-close" onclick="closeModal('application-privacy-modal')">✕</button>
+      </div>
+      <div class="modal-body" style="padding: 24px; line-height: 1.6; color: #495057;">
+        <p style="margin: 0 0 16px 0;">Before you submit your application, please note: the personal and business information you submit — including your proposal, pricing, contact details, and any documents you upload — will be shared with <strong id="privacy-rfq-company-name">the Company</strong> to evaluate your quotation and proposal.</p>
+        <p style="margin: 0 0 16px 0;">Your information is handled in accordance with South Africa's <strong>Protection of Personal Information Act (POPIA)</strong>. It is used only for procurement evaluation purposes and is not shared with unauthorised third parties.</p>
+        <p style="margin: 0;">By proceeding, you acknowledge and accept these terms.</p>
+      </div>
+      <div class="modal-foot">
+        <button type="button" class="btn gold" onclick="acceptApplicationPrivacy()">I understand — continue</button>
+      </div>
+    </div>
+  </div>
+
   <!-- TERMS & CONDITIONS MODAL -->
   <div id="terms-modal" class="modal" style="display:none;">
     <div class="modal-content" style="max-width:760px;">
