@@ -367,6 +367,7 @@ function setupStaticForms() {
   }
 
   renderRFQProvinceCheckboxes();
+  setupLocalPreferenceToggle();
 }
 
 // Populates the "Province(s)" checkbox group on the Create RFQ form from
@@ -397,6 +398,29 @@ function renderRFQProvinceCheckboxes() {
     const checkedCount = container.querySelectorAll('.rfq-province-checkbox:checked').length;
     if (selectAll) selectAll.checked = checkedCount === all.length;
   });
+}
+
+// Setup event listener for Local/Non-Local preference radio buttons to show/hide the reason field
+function setupLocalPreferenceToggle() {
+  const radios = document.querySelectorAll('input[name="rfq_local_preference"]');
+  const reasonContainer = document.getElementById('non-local-reason-container');
+  if (!radios.length || !reasonContainer) return;
+
+  const updateVisibility = () => {
+    const selected = document.querySelector('input[name="rfq_local_preference"]:checked');
+    if (selected && selected.value === 'non-local') {
+      reasonContainer.style.display = 'block';
+    } else {
+      reasonContainer.style.display = 'none';
+    }
+  };
+
+  radios.forEach(radio => {
+    radio.addEventListener('change', updateVisibility);
+  });
+
+  // Initialize on page load
+  updateVisibility();
 }
 
 function renderPlatformLogoPreview() {
@@ -2850,6 +2874,8 @@ async function loadRFQDetails(rfqId, isOpenAccess = false) {
         ${rfq.budget ? `<p><strong>Budget:</strong> R${rfq.budget.toLocaleString()}</p>` : ''}
         ${rfq.deadline ? `<p><strong>Deadline:</strong> ${new Date(rfq.deadline).toLocaleDateString()}</p>` : ''}
 
+        ${rfq.is_local_preference ? `<p style="color:var(--success); font-weight:500;">✓ <strong>Local Preference</strong> — This RFQ prioritizes local labour and contractors.</p>` : `<p style="color:var(--border); font-weight:500;">🌐 <strong>Non-Local</strong> — This RFQ is open to suppliers from other areas.</p>`}
+
         ${rfq.required_documents && rfq.required_documents.length > 0 ? `
           <div style="margin: 20px 0;">
             <h4>Required Documents:</h4>
@@ -3471,6 +3497,12 @@ function collectRFQFormValues() {
   const provinces = Array.from(document.querySelectorAll('.rfq-province-checkbox:checked')).map(cb => cb.value);
   const locationArea = locationAreaInput?.value?.trim() || '';
 
+  // Local preference
+  const localPreferenceInput = document.querySelector('input[name="rfq_local_preference"]:checked');
+  const isLocalPreference = (localPreferenceInput?.value || 'local') === 'local';
+  const nonLocalReasonInput = document.querySelector('textarea[name="rfq_non_local_reason"]');
+  const nonLocalReason = nonLocalReasonInput?.value?.trim() || null;
+
   const contractorEmails = emailsText
     .split('\n')
     .map(e => e.trim())
@@ -3501,7 +3533,7 @@ function collectRFQFormValues() {
     })
     .filter(Boolean);
 
-  return { name, project, description, deadline, budget, contractorEmails, isPublic, provinces, locationArea, requiredDocs };
+  return { name, project, description, deadline, budget, contractorEmails, isPublic, provinces, locationArea, requiredDocs, isLocalPreference, nonLocalReason };
 }
 
 function updateVisibilityHint() {
@@ -3824,6 +3856,11 @@ async function createNewRFQ(eventOrRelease) {
       isSubmittingRFQ = false;
       return;
     }
+    if (!isLocalPreference && !nonLocalReason) {
+      showToast('❌ Please provide a reason for expanding beyond the local area', 'error');
+      isSubmittingRFQ = false;
+      return;
+    }
     if (!isPublic && contractorEmails.length === 0 && existingInvitationCount === 0) {
       showToast('❌ Please enter at least one Contractor Email (required for Closed RFQs)', 'error');
       isSubmittingRFQ = false;
@@ -3853,6 +3890,8 @@ async function createNewRFQ(eventOrRelease) {
       provinces: provinces,
       province: provinces[0] || null,
       location_area: locationArea || null,
+      is_local_preference: isLocalPreference,
+      non_local_reason: nonLocalReason,
       updated_at: new Date().toISOString()
       // Deliberately no `is_released` here, on either insert or update.
       // Saving (first time or any later edit) must never by itself make an
@@ -4005,6 +4044,8 @@ async function saveRFQDraft() {
       provinces: provinces,
       province: provinces[0] || null,
       location_area: locationArea || null,
+      is_local_preference: isLocalPreference,
+      non_local_reason: nonLocalReason,
       updated_at: new Date().toISOString()
     };
 
@@ -4113,7 +4154,7 @@ async function uploadRFQAttachments(rfqId) {
 // never collide with a real contractor page if both were somehow present in
 // the same DOM, and so nothing here is mistaken for a live, submittable form.
 function buildRFQPreviewCardHtml(values) {
-  const { name, description, deadline, budget, provinces, locationArea, requiredDocs } = values;
+  const { name, description, deadline, budget, provinces, locationArea, requiredDocs, isLocalPreference, nonLocalReason } = values;
 
   const companyName = (currentCompany && currentCompany.name) || 'Your Company';
   const logoUrl = currentCompany && currentCompany.logo_url;
@@ -4137,6 +4178,7 @@ function buildRFQPreviewCardHtml(values) {
       ${(locationArea || (provinces && provinces.length > 0)) ? `<p><strong>Location:</strong> ${[locationArea, ...(provinces || [])].filter(Boolean).map(escapeHtmlClient).join(', ')}</p>` : ''}
       ${budget ? `<p><strong>Budget:</strong> R${escapeHtmlClient(String(budget))}</p>` : ''}
       ${deadline ? `<p><strong>Deadline:</strong> ${new Date(deadline).toLocaleDateString()}</p>` : '<p style="color:var(--border); font-style:italic;">(No deadline selected yet)</p>'}
+      ${isLocalPreference ? `<p style="color:var(--success); font-weight:500;">✓ <strong>Local Preference</strong> — This RFQ prioritizes local labour and contractors.</p>` : `<p style="color:var(--border); font-weight:500;">🌐 <strong>Non-Local</strong> — This RFQ is open to suppliers from other areas. <span style="font-size:12px; display:block; margin-top:4px; font-weight:normal; font-style:italic;">Reason: ${escapeHtmlClient(nonLocalReason || 'No reason provided')}</span></p>`}
 
       ${requiredDocs && requiredDocs.length > 0 ? `
         <div style="margin: 20px 0;">
@@ -4201,6 +4243,17 @@ async function loadRFQIntoCreateForm(rfqId) {
     const cb = document.querySelector(`.rfq-province-checkbox[value="${p}"]`);
     if (cb) cb.checked = true;
   });
+
+  // Populate local preference
+  const localPrefValue = row.is_local_preference ? 'local' : 'non-local';
+  const localPrefRadio = document.querySelector(`input[name="rfq_local_preference"][value="${localPrefValue}"]`);
+  if (localPrefRadio) localPrefRadio.checked = true;
+  const reasonInput = document.querySelector('textarea[name="rfq_non_local_reason"]');
+  if (reasonInput && row.non_local_reason) {
+    reasonInput.value = row.non_local_reason;
+  }
+  // Update the visibility of the reason field
+  setupLocalPreferenceToggle();
 
   (row.required_documents || []).forEach(doc => {
     // A row saved against one of the 7 standard Supplier Database
@@ -4404,6 +4457,7 @@ async function loadRFQConsole() {
               </h3>
               <p style="margin: 0 0 8px 0; font-size: 14px; color: var(--border);">Project: <strong>${rfq.project_name}</strong></p>
               ${(rfq.location_area || (rfq.provinces && rfq.provinces.length > 0)) ? `<p style="margin: 0 0 8px 0; font-size: 14px; color: var(--border);">📍 ${[rfq.location_area, ...(rfq.provinces || [])].filter(Boolean).join(', ')}</p>` : ''}
+              ${rfq.is_local_preference ? `<p style="margin: 0 0 8px 0; font-size: 13px; color: var(--success); font-weight: 500;">✓ Local Preference</p>` : `<p style="margin: 0 0 8px 0; font-size: 13px; color: var(--border);">🌐 Non-Local (${rfq.non_local_reason ? 'reason provided' : 'no reason'})</p>`}
               ${!rfq.is_released ? `<p style="margin: 0 0 8px 0; font-size: 13px; color: var(--border);">Saved, not yet public — nothing has been sent to suppliers or contractors. Click <strong>Publish RFQ</strong> below when ready.</p>` : ''}
               ${(rfq.is_public && rfq.notified_provinces && rfq.notified_provinces.length > 0) ? `<p style="margin: 0 0 8px 0; font-size: 13px; color: var(--border);">📢 Suppliers notified in: ${rfq.notified_provinces.map(p => escapeHtmlClient(p)).join(', ')}</p>` : ''}
               <p style="margin: 0; font-size: 14px; color: var(--border);">
