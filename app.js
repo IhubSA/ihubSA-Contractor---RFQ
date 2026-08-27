@@ -3824,7 +3824,7 @@ async function createNewRFQ(eventOrRelease) {
       existingInvitationCount = count || 0;
     }
 
-    const { name, project, description, deadline, budget, contractorEmails, isPublic, provinces, locationArea, requiredDocs } = collectRFQFormValues();
+    const { name, project, description, deadline, budget, contractorEmails, isPublic, provinces, locationArea, requiredDocs, isLocalPreference, nonLocalReason } = collectRFQFormValues();
 
     if (!name) {
       showToast('❌ Please enter RFQ Name', 'error');
