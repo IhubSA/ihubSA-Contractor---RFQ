@@ -45,6 +45,11 @@ let currentDraftId = null; // id of the RFQ currently loaded into the Create RFQ
 let currentEditingIsDraft = true; // only meaningful when currentDraftId is set — true while editing a not-yet-published draft (Save Draft is safe), false while editing an already-created RFQ via editRFQ() (Save Draft is hidden, since it would wrongly flip a live/closed RFQ's is_draft back to true)
 let currentEditingIsReleased = false; // only meaningful when currentDraftId is set and currentEditingIsDraft is false — true when editRFQ() loaded a row that's already been released, in which case the "🚀 Publish RFQ" button is hidden (nothing left to publish) and only Save Changes shows
 
+// Privacy popup tracking for supplier registration and RFQ application
+let registrationPrivacyAccepted = false;
+let applicationPrivacyAccepted = false;
+let pendingGateRfqIdAfterPrivacy = null; // stores the RFQ ID to apply to after privacy acceptance
+
 const DEFAULT_HERO_SUBTITLE = "Open requests for quotation. Apply directly online — you'll get a reference number and a confirmation the moment your application is received.";
 
 // ===== INITIALIZATION =====
@@ -974,6 +979,18 @@ function openApplicantGateOrRedirect(rfqId, companyId, externalSourceRfqId) {
 }
 
 function openApplicantGate(rfqId) {
+  // If registration privacy hasn't been accepted yet, show it first
+  if (!registrationPrivacyAccepted) {
+    pendingGateRfqIdAfterPrivacy = rfqId;
+    // Update company name in privacy modal (or default to "the Company" if not applicable)
+    const companyNameEl = document.getElementById('privacy-company-name');
+    if (companyNameEl && currentCompany && currentCompany.company_name) {
+      companyNameEl.textContent = currentCompany.company_name;
+    }
+    openModal('registration-privacy-modal');
+    return;
+  }
+
   pendingGateRfqId = rfqId;
 
   // Reset every field on the gate — both the quick email step and the full
@@ -1023,6 +1040,22 @@ function openApplicantGate(rfqId) {
 function gateBackToEmail() {
   document.getElementById('gate-email-section').style.display = 'block';
   document.getElementById('gate-register-section').style.display = 'none';
+}
+
+function acceptRegistrationPrivacy() {
+  registrationPrivacyAccepted = true;
+  const rfqId = pendingGateRfqIdAfterPrivacy;
+  closeModal('registration-privacy-modal');
+  openApplicantGate(rfqId);
+}
+
+function acceptApplicationPrivacy() {
+  applicationPrivacyAccepted = true;
+  const token = window.pendingSubmitToken;
+  closeModal('application-privacy-modal');
+  if (token) {
+    submitContractorForm(token);
+  }
 }
 
 async function handleGateEmailSubmit(e) {
@@ -2974,21 +3007,6 @@ async function loadRFQDetails(rfqId, isOpenAccess = false) {
             }).join('')}
           </div>
 
-          <div style="margin-top: 30px; padding: 15px; background: var(--bg-2); border-radius: 4px;">
-            <h4 style="margin-top: 0;">Additional Supporting Documents (Optional)</h4>
-            <p style="color: var(--border); font-size: 14px; margin-bottom: 15px;">Upload any additional documents that support your application (certificates, portfolios, references, etc.)</p>
-            <div id="additional-docs-container">
-              <div class="additional-doc-row" style="margin-bottom: 12px;">
-                <div style="display: flex; gap: 10px; align-items: flex-end;">
-                  <div style="flex: 1;">
-                    <input type="file" class="additional-doc-input" accept=".pdf,.doc,.docx,.xls,.xlsx,.jpg,.jpeg,.png,.zip" style="width: 100%;">
-                  </div>
-                  <button type="button" class="btn secondary" onclick="addAdditionalDocField()" style="padding: 8px 14px; white-space: nowrap;">+ Add More</button>
-                </div>
-              </div>
-            </div>
-          </div>
-
           <button type="submit" class="btn gold" id="contractor-submit-btn" style="width: 100%; padding: 15px; margin-top: 20px;"${isApplicationBlocked ? ' disabled' : ''}>${isApplicationBlocked ? 'Application Unavailable' : 'Submit Application'}</button>
         </form>
       </div>
@@ -3003,6 +3021,16 @@ async function loadRFQDetails(rfqId, isOpenAccess = false) {
         return;
       }
       const token = new URLSearchParams(window.location.search).get('rfq');
+
+      // Show application privacy popup if not already accepted
+      if (!applicationPrivacyAccepted) {
+        window.pendingSubmitToken = token;
+        window.pendingRfqCompanyName = rfq.company_name;
+        document.getElementById('privacy-rfq-company-name').textContent = rfq.company_name;
+        openModal('application-privacy-modal');
+        return;
+      }
+
       submitContractorForm(token);
     });
 
@@ -3061,34 +3089,6 @@ function toggleDocReuse(idx) {
     fileInput.style.display = 'none';
     fileInput.value = '';
     fileInput.removeAttribute('required');
-  }
-}
-
-// Add a new additional document upload field
-function addAdditionalDocField() {
-  const container = document.getElementById('additional-docs-container');
-  if (!container) return;
-
-  const rowCount = container.querySelectorAll('.additional-doc-row').length;
-  const newRow = document.createElement('div');
-  newRow.className = 'additional-doc-row';
-  newRow.style.marginBottom = '12px';
-  newRow.innerHTML = `
-    <div style="display: flex; gap: 10px; align-items: flex-end;">
-      <div style="flex: 1;">
-        <input type="file" class="additional-doc-input" accept=".pdf,.doc,.docx,.xls,.xlsx,.jpg,.jpeg,.png,.zip" style="width: 100%;">
-      </div>
-      <button type="button" class="btn secondary" onclick="removeAdditionalDocField(this)" style="padding: 8px 14px; white-space: nowrap; background: var(--bg); color: var(--warning);">✕ Remove</button>
-    </div>
-  `;
-  container.appendChild(newRow);
-}
-
-// Remove an additional document upload field
-function removeAdditionalDocField(btn) {
-  const row = btn.closest('.additional-doc-row');
-  if (row) {
-    row.remove();
   }
 }
 
@@ -3243,38 +3243,6 @@ async function submitContractorForm(token) {
         filesUploaded++;
       } catch (reusedInsertErr) {
         console.warn('⚠️ Error recording reused document:', reusedInsertErr.message);
-      }
-    }
-
-    // Upload additional supporting documents (optional)
-    const additionalFileInputs = document.querySelectorAll('input[type="file"].additional-doc-input');
-    for (let input of additionalFileInputs) {
-      if (input.files[0]) {
-        try {
-          const file = input.files[0];
-          const filePath = `rfq-${currentRFQId}/sub-${submissionId}/supporting-${Date.now()}-${sanitizeStorageFileName(file.name)}`;
-
-          const { error: uploadError } = await client.storage
-            .from('rfq-documents')
-            .upload(filePath, file);
-
-          if (uploadError) {
-            console.warn('⚠️ Additional file upload failed:', uploadError.message);
-            continue;
-          }
-
-          await client.from('rfq_submission_documents').insert([{
-            submission_id: submissionId,
-            file_name: file.name,
-            file_path: filePath,
-            file_size: file.size,
-            document_type: 'Additional Supporting Document'
-          }]);
-
-          filesUploaded++;
-        } catch (fileErr) {
-          console.warn('⚠️ Error uploading additional file:', fileErr.message);
-        }
       }
     }
 
@@ -3899,7 +3867,7 @@ async function createNewRFQ(eventOrRelease) {
       existingInvitationCount = count || 0;
     }
 
-    const { name, project, description, deadline, budget, contractorEmails, isPublic, provinces, locationArea, requiredDocs, isLocalPreference, nonLocalReason } = collectRFQFormValues();
+    const { name, project, description, deadline, budget, contractorEmails, isPublic, provinces, locationArea, requiredDocs } = collectRFQFormValues();
 
     if (!name) {
       showToast('❌ Please enter RFQ Name', 'error');
@@ -4097,7 +4065,7 @@ async function saveRFQDraft() {
     return;
   }
 
-  const { name, project, description, deadline, budget, isPublic, provinces, locationArea, requiredDocs, isLocalPreference, nonLocalReason } = collectRFQFormValues();
+  const { name, project, description, deadline, budget, isPublic, provinces, locationArea, requiredDocs } = collectRFQFormValues();
 
   if (!name || !project || !description || !deadline) {
     showToast('❌ RFQ Name, Project Name, Description, and Deadline are needed to save a draft', 'error');
