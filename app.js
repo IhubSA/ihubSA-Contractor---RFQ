@@ -4065,7 +4065,7 @@ async function saveRFQDraft() {
     return;
   }
 
-  const { name, project, description, deadline, budget, isPublic, provinces, locationArea, requiredDocs } = collectRFQFormValues();
+  const { name, project, description, deadline, budget, isPublic, provinces, locationArea, requiredDocs, isLocalPreference, nonLocalReason } = collectRFQFormValues();
 
   if (!name || !project || !description || !deadline) {
     showToast('❌ RFQ Name, Project Name, Description, and Deadline are needed to save a draft', 'error');
