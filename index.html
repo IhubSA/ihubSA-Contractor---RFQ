@@ -1392,6 +1392,9 @@
             </div>
             <button type="submit" class="btn gold" id="gate-email-submit" style="width:100%; padding:12px;">Continue</button>
           </form>
+          <p style="text-align:center; margin-top:15px; font-size:13px;">
+            <a href="#" onclick="showSupplierForgotPasswordView(); return false;" style="color:var(--primary); font-weight:600;">Forgot Password?</a>
+          </p>
         </div>
 
         <div id="gate-register-section" style="display:none;">
@@ -1535,6 +1538,51 @@
             <button type="button" class="btn secondary" style="width:100%; padding:12px; margin-top:10px;" onclick="gateBackToEmail()">← Use a different email</button>
           </form>
         </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- SUPPLIER FORGOT PASSWORD MODAL -->
+  <div id="supplier-forgot-password-modal" class="modal" style="display:none;">
+    <div class="modal-content" style="max-width:480px;">
+      <div class="modal-head">
+        <h3>Reset Your Password</h3>
+        <button class="drawer-close" onclick="closeModal('supplier-forgot-password-modal')">✕</button>
+      </div>
+      <div class="modal-body">
+        <p style="color:var(--border); font-size:14px; margin-bottom:15px;">Enter the email address on your account and we'll send you a 6-digit code to set a new password.</p>
+
+        <form id="supplier-forgot-password-form" style="display:flex; flex-direction:column; gap:15px;">
+          <div>
+            <label>Email</label>
+            <input type="email" id="supplier-forgot-password-email" required style="width:100%;">
+          </div>
+          <button type="submit" class="btn gold" style="padding:12px; margin-top:5px;">Send Code</button>
+        </form>
+
+        <p id="supplier-forgot-password-sent-note" style="display:none; margin-top:5px; margin-bottom:15px; padding:12px; background:#E1F0FF; border-radius:4px; font-size:14px;">
+          If an account exists for that email, a 6-digit code is on its way. KEEP THIS SITE OPEN and check your inbox (and spam folder) — the code is valid for a limited time and can only be used once.
+        </p>
+
+        <form id="supplier-reset-code-form" style="display:none; flex-direction:column; gap:15px;">
+          <div>
+            <label>6-Digit Code</label>
+            <input type="text" id="supplier-reset-code-token" required inputmode="numeric" pattern="[0-9]*" maxlength="6" autocomplete="one-time-code" style="width:100%; letter-spacing:4px; font-size:18px; text-align:center;">
+          </div>
+          <div>
+            <label>New Password *</label>
+            <input type="password" id="supplier-reset-code-new-password" required minlength="6" style="width:100%;">
+          </div>
+          <div>
+            <label>Confirm New Password *</label>
+            <input type="password" id="supplier-reset-code-confirm-password" required minlength="6" style="width:100%;">
+          </div>
+          <button type="submit" class="btn gold" style="padding:12px; margin-top:5px;">Reset Password</button>
+        </form>
+
+        <p style="text-align:center; margin-top:15px; font-size:13px;">
+          <a href="#" onclick="showSupplierForgotPasswordView(); return false;" style="color:var(--primary); font-weight:600;">← Back to Password Reset</a>
+        </p>
       </div>
     </div>
   </div>
