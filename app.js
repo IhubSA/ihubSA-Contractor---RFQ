@@ -3895,6 +3895,7 @@ function addDocumentField() {
 function resetCreateForm() {
   document.getElementById('create-rfq-form').reset();
   document.getElementById('required-docs-builder').innerHTML = '';
+  document.getElementById('existing-attachments-section').style.display = 'none';
   renderStandardDocPicker();
   currentDraftId = null;
   currentEditingIsDraft = true;
@@ -4328,6 +4329,155 @@ async function uploadRFQAttachments(rfqId) {
   }
 }
 
+// Displays existing attachments in the RFQ form when editing an RFQ.
+// Shows each attachment with delete and replace buttons.
+function displayRFQAttachments(rfqId, attachments) {
+  const section = document.getElementById('existing-attachments-section');
+  const list = document.getElementById('existing-attachments-list');
+
+  if (!attachments || attachments.length === 0) {
+    section.style.display = 'none';
+    return;
+  }
+
+  section.style.display = 'block';
+  list.innerHTML = attachments.map((att, idx) => `
+    <div style="display:flex; align-items:center; justify-content:space-between; padding:10px; background:var(--bg-2); border:1px solid var(--border); border-radius:4px;">
+      <div style="flex:1; min-width:0;">
+        <a href="${att.url}" target="_blank" rel="noopener" style="color:var(--primary); text-decoration:none; word-break:break-word;">
+          📄 ${escapeHtmlClient(att.name)}
+        </a>
+      </div>
+      <div style="display:flex; gap:6px; flex-shrink:0; margin-left:10px;">
+        <button type="button" onclick="replaceRFQAttachment('${rfqId}', ${idx}, '${escapeHtmlClient(att.name)}')" class="btn secondary" style="padding:6px 12px; font-size:12px;">↻ Replace</button>
+        <button type="button" onclick="deleteRFQAttachment('${rfqId}', ${idx})" class="btn secondary" style="padding:6px 12px; font-size:12px; color:var(--accent);">✕ Delete</button>
+      </div>
+    </div>
+  `).join('');
+}
+
+// Deletes a specific attachment from an RFQ by index.
+async function deleteRFQAttachment(rfqId, attachmentIdx) {
+  if (!confirm('Delete this attachment? This cannot be undone.')) {
+    return;
+  }
+
+  try {
+    const { data: rfq } = await client
+      .from('rfqs')
+      .select('attachments')
+      .eq('id', rfqId)
+      .single();
+
+    if (!rfq || !rfq.attachments || !rfq.attachments[attachmentIdx]) {
+      showToast('❌ Attachment not found', 'error');
+      return;
+    }
+
+    const attachment = rfq.attachments[attachmentIdx];
+
+    // Delete the file from storage
+    try {
+      // Extract storage path from the public URL
+      const urlParts = attachment.url.split('/object/public/rfq-attachments/');
+      if (urlParts.length === 2) {
+        const storagePath = decodeURIComponent(urlParts[1]);
+        await client.storage
+          .from('rfq-attachments')
+          .remove([storagePath]);
+      }
+    } catch (err) {
+      console.warn('⚠️ Storage cleanup error:', err.message);
+      // Continue anyway — the DB entry is what matters most
+    }
+
+    // Remove from attachments array and update DB
+    const updated = rfq.attachments.filter((_, i) => i !== attachmentIdx);
+    await client
+      .from('rfqs')
+      .update({ attachments: updated })
+      .eq('id', rfqId);
+
+    showToast('✓ Attachment deleted', 'success');
+    displayRFQAttachments(rfqId, updated);
+  } catch (err) {
+    console.error('Error deleting attachment:', err);
+    showToast('❌ Error deleting attachment: ' + err.message, 'error');
+  }
+}
+
+// Opens a file picker to replace a specific attachment.
+async function replaceRFQAttachment(rfqId, attachmentIdx, oldName) {
+  const input = document.createElement('input');
+  input.type = 'file';
+  input.onchange = async () => {
+    if (!input.files || input.files.length === 0) return;
+
+    try {
+      const file = input.files[0];
+
+      // Get current attachments
+      const { data: rfq } = await client
+        .from('rfqs')
+        .select('attachments')
+        .eq('id', rfqId)
+        .single();
+
+      if (!rfq || !rfq.attachments || !rfq.attachments[attachmentIdx]) {
+        showToast('❌ Attachment not found', 'error');
+        return;
+      }
+
+      const oldAttachment = rfq.attachments[attachmentIdx];
+
+      // Delete old file from storage
+      try {
+        const urlParts = oldAttachment.url.split('/object/public/rfq-attachments/');
+        if (urlParts.length === 2) {
+          const storagePath = decodeURIComponent(urlParts[1]);
+          await client.storage
+            .from('rfq-attachments')
+            .remove([storagePath]);
+        }
+      } catch (err) {
+        console.warn('⚠️ Storage cleanup error:', err.message);
+      }
+
+      // Upload new file
+      showToast('Uploading replacement file...', 'info');
+      const path = `rfq-${rfqId}/${Date.now()}-${sanitizeStorageFileName(file.name)}`;
+      const { error: uploadError } = await client.storage
+        .from('rfq-attachments')
+        .upload(path, file);
+
+      if (uploadError) {
+        showToast('❌ Upload failed: ' + uploadError.message, 'error');
+        return;
+      }
+
+      // Get public URL for new file
+      const { data: urlData } = client.storage.from('rfq-attachments').getPublicUrl(path);
+
+      // Update attachments array
+      const updated = [...rfq.attachments];
+      updated[attachmentIdx] = { name: file.name, url: urlData.publicUrl };
+
+      // Save to DB
+      await client
+        .from('rfqs')
+        .update({ attachments: updated })
+        .eq('id', rfqId);
+
+      showToast('✓ Attachment replaced', 'success');
+      displayRFQAttachments(rfqId, updated);
+    } catch (err) {
+      console.error('Error replacing attachment:', err);
+      showToast('❌ Error replacing attachment: ' + err.message, 'error');
+    }
+  };
+  input.click();
+}
+
 // Renders a read-only preview of the RFQ exactly as a contractor would see
 // it on the public/invite RFQ detail page (see loadRFQDetails()), but built
 // entirely from whatever's currently typed into the Create RFQ form — no
@@ -4464,6 +4614,9 @@ async function loadRFQIntoCreateForm(rfqId) {
       categorySelect.disabled = !!doc.requires_expiry;
     }
   });
+
+  // Display any existing attachments with delete/replace options
+  displayRFQAttachments(row.id, row.attachments);
 
   return row;
 }
