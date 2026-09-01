@@ -461,15 +461,14 @@
                 <label style="font-weight:bold; display:block; margin-bottom:8px;">Attach RFQ Document(s) (optional)</label>
                 <p style="font-size:14px; color:var(--border); margin:0 0 10px 0;">Upload the RFQ spec, drawings, or any files contractors should review before applying. They'll appear as downloads on the contractor's page.</p>
 
-                <!-- Existing attachments list (shown when editing) -->
-                <div id="existing-attachments-section" style="margin-bottom:15px; display:none;">
-                  <h4 style="margin:0 0 10px 0; color:var(--ink);">Current Attachments:</h4>
-                  <div id="existing-attachments-list" style="display:flex; flex-direction:column; gap:8px;"></div>
+                <!-- Documents list (both existing and newly selected) -->
+                <div id="documents-list-section" style="margin-bottom:15px; display:none;">
+                  <div id="documents-list" style="display:flex; flex-direction:column; gap:8px;"></div>
                 </div>
 
                 <!-- File input for new attachments -->
                 <input type="file" id="rfq-attachments-input" multiple style="width:100%; padding:8px; border:1px solid var(--border); border-radius:4px; box-sizing:border-box; margin-bottom:8px;">
-                <p id="file-input-hint" style="font-size:13px; color:var(--border); margin:0;">Selected files will be added when you save.</p>
+                <p id="file-input-hint" style="font-size:13px; color:var(--border); margin:0;">Select files above to add them. You can remove or replace them before saving.</p>
               </div>
 
               <div>
