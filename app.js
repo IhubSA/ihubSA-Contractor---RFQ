@@ -50,6 +50,9 @@ let registrationPrivacyAccepted = false;
 let applicationPrivacyAccepted = false;
 let pendingGateRfqIdAfterPrivacy = null; // stores the RFQ ID to apply to after privacy acceptance
 
+// Supplier password reset tracking
+let supplierPasswordResetEmail = null; // email address for supplier password reset flow
+
 const DEFAULT_HERO_SUBTITLE = "Open requests for quotation. Apply directly online — you'll get a reference number and a confirmation the moment your application is received.";
 
 // ===== INITIALIZATION =====
@@ -269,6 +272,18 @@ function setupStaticForms() {
   if (resetCodeForm && !resetCodeForm.dataset.wired) {
     resetCodeForm.addEventListener('submit', handleResetCodeSubmit);
     resetCodeForm.dataset.wired = 'true';
+  }
+
+  const supplierForgotPasswordForm = document.getElementById('supplier-forgot-password-form');
+  if (supplierForgotPasswordForm && !supplierForgotPasswordForm.dataset.wired) {
+    supplierForgotPasswordForm.addEventListener('submit', handleSupplierForgotPasswordSubmit);
+    supplierForgotPasswordForm.dataset.wired = 'true';
+  }
+
+  const supplierResetCodeForm = document.getElementById('supplier-reset-code-form');
+  if (supplierResetCodeForm && !supplierResetCodeForm.dataset.wired) {
+    supplierResetCodeForm.addEventListener('submit', handleSupplierResetCodeSubmit);
+    supplierResetCodeForm.dataset.wired = 'true';
   }
 
   const settingsForm = document.getElementById('settings-form');
@@ -1626,6 +1641,17 @@ function showForgotPasswordView() {
   applyDefaultBranding();
 }
 
+function showSupplierForgotPasswordView() {
+  openModal('supplier-forgot-password-modal');
+  document.getElementById('supplier-forgot-password-form').style.display = 'flex';
+  document.getElementById('supplier-forgot-password-sent-note').style.display = 'none';
+  const codeForm = document.getElementById('supplier-reset-code-form');
+  if (codeForm) {
+    codeForm.style.display = 'none';
+    codeForm.reset();
+  }
+}
+
 // ===== BRANDING =====
 async function loadPlatformSettings() {
   try {
@@ -1800,6 +1826,86 @@ async function handleResetCodeSubmit(e) {
     showLoginForm();
   } catch (err) {
     console.error('Reset code error:', err);
+    showToast('Error: ' + err.message, 'error');
+  } finally {
+    if (submitBtn) submitBtn.disabled = false;
+  }
+}
+
+// ===== SUPPLIER PASSWORD RESET =====
+async function handleSupplierForgotPasswordSubmit(e) {
+  e.preventDefault();
+  const email = document.getElementById('supplier-forgot-password-email').value.trim();
+  if (!email) return;
+
+  const submitBtn = e.target.querySelector('button[type="submit"]');
+  if (submitBtn) submitBtn.disabled = true;
+
+  try {
+    const { error } = await client.auth.resetPasswordForEmail(email, { redirectTo: SITE_URL });
+    if (error) throw error;
+  } catch (err) {
+    console.error('Supplier reset password error:', err);
+    showToast('Error: ' + err.message, 'error');
+    if (submitBtn) submitBtn.disabled = false;
+    return;
+  }
+
+  supplierPasswordResetEmail = email;
+  document.getElementById('supplier-forgot-password-form').style.display = 'none';
+  document.getElementById('supplier-forgot-password-sent-note').style.display = 'block';
+  const codeForm = document.getElementById('supplier-reset-code-form');
+  if (codeForm) codeForm.style.display = 'flex';
+  if (submitBtn) submitBtn.disabled = false;
+}
+
+async function handleSupplierResetCodeSubmit(e) {
+  e.preventDefault();
+
+  if (!supplierPasswordResetEmail) {
+    showToast('Please request a new code first.', 'error');
+    showSupplierForgotPasswordView();
+    return;
+  }
+
+  const code = document.getElementById('supplier-reset-code-token').value.trim();
+  const password = document.getElementById('supplier-reset-code-new-password').value;
+  const confirmPassword = document.getElementById('supplier-reset-code-confirm-password').value;
+
+  if (!/^\d{6}$/.test(code)) {
+    showToast('Enter the 6-digit code from your email', 'error');
+    return;
+  }
+  if (password.length < 6) {
+    showToast('Password must be at least 6 characters', 'error');
+    return;
+  }
+  if (password !== confirmPassword) {
+    showToast('Passwords do not match', 'error');
+    return;
+  }
+
+  const submitBtn = e.target.querySelector('button[type="submit"]');
+  if (submitBtn) submitBtn.disabled = true;
+
+  try {
+    const { error: verifyError } = await client.auth.verifyOtp({
+      email: supplierPasswordResetEmail,
+      token: code,
+      type: 'recovery',
+    });
+    if (verifyError) throw verifyError;
+
+    const { error: updateError } = await client.auth.updateUser({ password });
+    if (updateError) throw updateError;
+
+    supplierPasswordResetEmail = null;
+    showToast('✅ Password reset! You can now log in with your new password.', 'success');
+    closeModal('supplier-forgot-password-modal');
+    // Show the applicant gate to let them log in with their new password
+    openApplicantGate(null);
+  } catch (err) {
+    console.error('Supplier reset code error:', err);
     showToast('Error: ' + err.message, 'error');
   } finally {
     if (submitBtn) submitBtn.disabled = false;
