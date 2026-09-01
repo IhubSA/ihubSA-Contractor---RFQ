@@ -6176,6 +6176,98 @@ function acceptPOPIA() {
   closeModal('popia-modal');
 }
 
+// ===== SUPPLIER DATABASE EXPORT FUNCTIONS =====
+
+function exportSuppliersAsCSV() {
+  const allApplicants = allSupplierApplicants;
+  if (!allApplicants || allApplicants.length === 0) {
+    showToast('❌ No suppliers to export', 'error');
+    return;
+  }
+
+  // CSV headers
+  const headers = ['Company Name', 'Contact Person', 'Email', 'Phone', 'Additional Phone', 'Address', 'Province', 'Years in Business', 'Services', 'Status', 'Registered Date'];
+
+  // CSV rows
+  const rows = allApplicants.map(supplier => [
+    `"${(supplier.company_name || '').replace(/"/g, '""')}"`,
+    `"${(supplier.full_name || '').replace(/"/g, '""')}"`,
+    `"${(supplier.email || '').replace(/"/g, '""')}"`,
+    `"${(supplier.phone || '').replace(/"/g, '""')}"`,
+    `"${(supplier.additional_phone || '').replace(/"/g, '""')}"`,
+    `"${(supplier.address || '').replace(/"/g, '""')}"`,
+    `"${(supplier.province || '').replace(/"/g, '""')}"`,
+    supplier.years_in_business || '',
+    `"${(supplier.services_description || '').replace(/"/g, '""')}"`,
+    supplier.status || 'active',
+    supplier.created_at ? new Date(supplier.created_at).toLocaleDateString() : ''
+  ]);
+
+  // Combine headers and rows
+  const csv = [headers.join(','), ...rows.map(row => row.join(','))].join('\n');
+
+  // Download
+  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+  const link = document.createElement('a');
+  const url = URL.createObjectURL(blob);
+  link.setAttribute('href', url);
+  link.setAttribute('download', `IhubSA_Suppliers_${new Date().toISOString().split('T')[0]}.csv`);
+  link.style.visibility = 'hidden';
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+
+  showToast('✅ Suppliers exported as CSV', 'success');
+}
+
+function exportSuppliersAsExcel() {
+  const allApplicants = allSupplierApplicants;
+  if (!allApplicants || allApplicants.length === 0) {
+    showToast('❌ No suppliers to export', 'error');
+    return;
+  }
+
+  // For Excel, we'll use a simple approach: create an HTML table and let the browser handle it
+  // Or we can use SheetJS if available, otherwise fall back to CSV-like format
+
+  // Create HTML table
+  let html = '<table border="1" cellpadding="10">';
+  html += '<tr style="background-color:#0F3557; color:white;"><th>Company Name</th><th>Contact Person</th><th>Email</th><th>Phone</th><th>Additional Phone</th><th>Address</th><th>Province</th><th>Years in Business</th><th>Services</th><th>Status</th><th>Registered Date</th></tr>';
+
+  allApplicants.forEach(supplier => {
+    const statusColor = supplier.status === 'suspended' ? '#FFC107' : supplier.status === 'removed' ? '#DC3545' : '#28A745';
+    html += `<tr>
+      <td>${supplier.company_name || ''}</td>
+      <td>${supplier.full_name || ''}</td>
+      <td>${supplier.email || ''}</td>
+      <td>${supplier.phone || ''}</td>
+      <td>${supplier.additional_phone || ''}</td>
+      <td>${supplier.address || ''}</td>
+      <td>${supplier.province || ''}</td>
+      <td>${supplier.years_in_business || ''}</td>
+      <td>${supplier.services_description || ''}</td>
+      <td><span style="background-color:${statusColor}; color:white; padding:4px 8px; border-radius:4px;">${supplier.status || 'active'}</span></td>
+      <td>${supplier.created_at ? new Date(supplier.created_at).toLocaleDateString() : ''}</td>
+    </tr>`;
+  });
+
+  html += '</table>';
+
+  // Create and download Excel-like file (xlsx format using a simple approach)
+  // We'll create a blob with HTML that Excel can read
+  const blob = new Blob(['<html><head><meta charset="UTF-8"></head><body>' + html + '</body></html>'], { type: 'application/vnd.ms-excel;charset=utf-8;' });
+  const link = document.createElement('a');
+  const url = URL.createObjectURL(blob);
+  link.setAttribute('href', url);
+  link.setAttribute('download', `IhubSA_Suppliers_${new Date().toISOString().split('T')[0]}.xls`);
+  link.style.visibility = 'hidden';
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+
+  showToast('✅ Suppliers exported as Excel', 'success');
+}
+
 // Initialize on page load
 window.addEventListener('DOMContentLoaded', () => {
   console.log('Page loaded, initializing...');
