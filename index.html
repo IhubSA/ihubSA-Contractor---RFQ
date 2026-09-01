@@ -689,7 +689,11 @@
                 <h2 style="margin-top:0; margin-bottom:4px;">Supplier Database</h2>
                 <p style="color:var(--border); font-size:14px; margin-bottom:0;">Everyone who has registered on the IhubSA PRFQ Hub Supplier Database in order to view and apply to open RFQs, with their full registration details and uploaded documents.</p>
               </div>
-              <button type="button" id="import-suppliers-btn" class="btn secondary" style="padding:10px 16px; white-space:nowrap;" onclick="openImportSuppliersModal()">⬆️ Import Suppliers</button>
+              <div style="display:flex; gap:8px; flex-wrap:wrap;">
+                <button type="button" id="import-suppliers-btn" class="btn secondary" style="padding:10px 16px; white-space:nowrap;" onclick="openImportSuppliersModal()">⬆️ Import Suppliers</button>
+                <button type="button" class="btn secondary" style="padding:10px 16px; white-space:nowrap;" onclick="exportSuppliersAsCSV()">⬇️ Download as CSV</button>
+                <button type="button" class="btn secondary" style="padding:10px 16px; white-space:nowrap;" onclick="exportSuppliersAsExcel()">📊 Download as Excel</button>
+              </div>
             </div>
             <div style="display:flex; flex-wrap:wrap; gap:10px; margin:20px 0 16px 0;">
               <input type="text" id="supplier-search-input" placeholder="Search by name, company, email, or phone..." oninput="filterSupplierDatabase()" style="flex:1; min-width:220px; padding:10px; border:1px solid var(--border); border-radius:4px;">
