@@ -1532,6 +1532,26 @@ async function handleExpandSearchSubmit(e) {
     if (result.smsSent > 0) parts.push(`${result.smsSent} texted`);
     if (parts.length > 0) {
       showToast(`✅ Notified suppliers in ${additionalProvinces.join(', ')} (${parts.join(', ')})`, 'success');
+
+      // Update the supplier count in the database by adding the new notified suppliers
+      const newSuppliersCount = result.sent || 0;
+      const { data: currentRfq } = await client
+        .from('rfqs')
+        .select('supplier_count_notified')
+        .eq('id', pendingExpandSearchRfqId)
+        .single();
+
+      const currentCount = currentRfq?.supplier_count_notified || 0;
+      const updatedCount = currentCount + newSuppliersCount;
+
+      const { error: updateError } = await client
+        .from('rfqs')
+        .update({ supplier_count_notified: updatedCount })
+        .eq('id', pendingExpandSearchRfqId);
+
+      if (updateError) {
+        console.warn('Could not update supplier count:', updateError);
+      }
     } else if (result.alreadyNotified) {
       showToast('Those provinces were already notified for this RFQ.', 'info');
     } else {
@@ -1929,6 +1949,19 @@ async function notifySuppliersNewRFQ(rfqId) {
     if (parts.length > 0) {
       showToast(`✅ Notified registered suppliers in this province (${parts.join(', ')})`, 'success');
     }
+
+    // Store the supplier count in the database for accurate response rate calculation
+    const supplierCount = result.sent || 0;
+    if (supplierCount > 0) {
+      const { error: updateError } = await client
+        .from('rfqs')
+        .update({ supplier_count_notified: supplierCount })
+        .eq('id', rfqId);
+      if (updateError) {
+        console.warn('Could not store supplier count:', updateError);
+      }
+    }
+
     if (result.smsError) {
       // Best-effort second channel — email above may still have gone out fine,
       // so this is a soft warning rather than blocking anything.
@@ -4490,14 +4523,9 @@ async function loadRFQConsole() {
 
       // Calculate invitation count based on RFQ type
       let invitationCount = 0;
-      if (rfq.is_public && (rfq.notified_provinces || rfq.provinces)) {
-        // For public/broadcast RFQs, count all suppliers in the target provinces
-        const targetProvinces = rfq.notified_provinces || rfq.provinces || [];
-        const { data: suppliersInProvince } = await client
-          .from('suppliers')
-          .select('id', { count: 'exact' })
-          .in('province', targetProvinces);
-        invitationCount = suppliersInProvince ? suppliersInProvince.length : 0;
+      if (rfq.is_public) {
+        // For public/broadcast RFQs, use the stored supplier count from when it was published
+        invitationCount = rfq.supplier_count_notified || 0;
       } else {
         // For invite-only RFQs, count individual invitations
         invitationCount = invitations ? invitations.length : 0;
