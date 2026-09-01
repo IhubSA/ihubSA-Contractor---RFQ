@@ -386,6 +386,12 @@ function setupStaticForms() {
     editSupplierForm.dataset.wired = 'true';
   }
 
+  const rfqAttachmentsInput = document.getElementById('rfq-attachments-input');
+  if (rfqAttachmentsInput && !rfqAttachmentsInput.dataset.wired) {
+    rfqAttachmentsInput.addEventListener('change', handleRFQFileInputChange);
+    rfqAttachmentsInput.dataset.wired = 'true';
+  }
+
   renderRFQProvinceCheckboxes();
   setupLocalPreferenceToggle();
 }
@@ -3895,7 +3901,8 @@ function addDocumentField() {
 function resetCreateForm() {
   document.getElementById('create-rfq-form').reset();
   document.getElementById('required-docs-builder').innerHTML = '';
-  document.getElementById('existing-attachments-section').style.display = 'none';
+  document.getElementById('documents-list-section').style.display = 'none';
+  rfqFilesToUpload = [];
   renderStandardDocPicker();
   currentDraftId = null;
   currentEditingIsDraft = true;
@@ -4271,25 +4278,17 @@ async function saveRFQDraft() {
   }
 }
 
-// Uploads any files picked in the "Attach RFQ Document(s)" input to the
-// public rfq-attachments bucket and records them on the rfq row so the
-// contractor portal can show download links. Best-effort: a failed file
-// doesn't stop the RFQ from being created.
-//
-// Merges onto whatever's already on the row (rather than replacing it) and
-// clears the file input once the upload succeeds — a draft can go through
-// Save Draft more than once, and without this a second save with no new
-// files picked would be a no-op (fine), but a second save *with* new files
-// picked would silently drop whatever was attached the first time.
+// Uploads any files queued in rfqFilesToUpload to the public rfq-attachments
+// bucket and records them on the rfq row. Best-effort: a failed file doesn't
+// stop the RFQ from being created. Merges onto whatever's already on the row.
 async function uploadRFQAttachments(rfqId) {
-  const input = document.getElementById('rfq-attachments-input');
-  const files = input && input.files ? Array.from(input.files) : [];
-  if (files.length === 0) return;
+  if (rfqFilesToUpload.length === 0) return;
 
   const uploaded = [];
 
-  for (const file of files) {
+  for (const fileInfo of rfqFilesToUpload) {
     try {
+      const file = fileInfo.file;
       const path = `rfq-${rfqId}/${Date.now()}-${sanitizeStorageFileName(file.name)}`;
       const { error: uploadError } = await client.storage
         .from('rfq-attachments')
@@ -4303,7 +4302,7 @@ async function uploadRFQAttachments(rfqId) {
       const { data: urlData } = client.storage.from('rfq-attachments').getPublicUrl(path);
       uploaded.push({ name: file.name, url: urlData.publicUrl });
     } catch (err) {
-      console.warn('⚠️ Attachment upload error:', file.name, err.message);
+      console.warn('⚠️ Attachment upload error:', fileInfo.name, err.message);
     }
   }
 
@@ -4325,39 +4324,80 @@ async function uploadRFQAttachments(rfqId) {
     console.error('Error saving attachment list:', updateError);
     showToast('RFQ created, but attaching documents failed', 'warning');
   } else {
-    input.value = '';
+    // Clear the queued files after successful upload
+    rfqFilesToUpload = [];
   }
 }
 
-// Displays existing attachments in the RFQ form when editing an RFQ.
-// Shows each attachment with delete and replace buttons.
-function displayRFQAttachments(rfqId, attachments) {
-  const section = document.getElementById('existing-attachments-section');
-  const list = document.getElementById('existing-attachments-list');
+// Tracks files being added to the current RFQ (both newly selected and existing)
+let rfqFilesToUpload = []; // Array of {name, file, isNew, isExisting, url}
 
-  if (!attachments || attachments.length === 0) {
+// Displays all attachments (existing and newly selected) in the RFQ form.
+// Shows each attachment with delete and replace buttons.
+function displayRFQAttachments(rfqId, existingAttachments) {
+  const section = document.getElementById('documents-list-section');
+  const list = document.getElementById('documents-list');
+
+  // Combine existing attachments with newly selected files
+  const allAttachments = [];
+
+  // Add existing attachments
+  if (existingAttachments && existingAttachments.length > 0) {
+    existingAttachments.forEach((att, idx) => {
+      allAttachments.push({
+        name: att.name,
+        url: att.url,
+        isExisting: true,
+        isNew: false,
+        existingIdx: idx
+      });
+    });
+  }
+
+  // Add newly selected files
+  rfqFilesToUpload.forEach((file, idx) => {
+    allAttachments.push({
+      name: file.name,
+      isExisting: false,
+      isNew: true,
+      newIdx: idx
+    });
+  });
+
+  if (allAttachments.length === 0) {
     section.style.display = 'none';
     return;
   }
 
   section.style.display = 'block';
-  list.innerHTML = attachments.map((att, idx) => `
+  list.innerHTML = allAttachments.map((att) => `
     <div style="display:flex; align-items:center; justify-content:space-between; padding:10px; background:var(--bg-2); border:1px solid var(--border); border-radius:4px;">
       <div style="flex:1; min-width:0;">
-        <a href="${att.url}" target="_blank" rel="noopener" style="color:var(--primary); text-decoration:none; word-break:break-word;">
+        <span style="color:var(--ink); word-break:break-word;">
           📄 ${escapeHtmlClient(att.name)}
-        </a>
+          ${att.isNew ? '<span style="font-size:12px; color:var(--accent); margin-left:8px;">(new)</span>' : '<span style="font-size:12px; color:var(--border); margin-left:8px;">(existing)</span>'}
+        </span>
       </div>
       <div style="display:flex; gap:6px; flex-shrink:0; margin-left:10px;">
-        <button type="button" onclick="replaceRFQAttachment('${rfqId}', ${idx}, '${escapeHtmlClient(att.name)}')" class="btn secondary" style="padding:6px 12px; font-size:12px;">↻ Replace</button>
-        <button type="button" onclick="deleteRFQAttachment('${rfqId}', ${idx})" class="btn secondary" style="padding:6px 12px; font-size:12px; color:var(--accent);">✕ Delete</button>
+        ${att.isNew ? `
+          <button type="button" onclick="removeNewRFQFile(${att.newIdx})" class="btn secondary" style="padding:6px 12px; font-size:12px; color:var(--accent);">✕ Remove</button>
+        ` : `
+          <button type="button" onclick="deleteExistingRFQAttachment('${rfqId}', ${att.existingIdx})" class="btn secondary" style="padding:6px 12px; font-size:12px; color:var(--accent);">✕ Delete</button>
+        `}
       </div>
     </div>
   `).join('');
 }
 
-// Deletes a specific attachment from an RFQ by index.
-async function deleteRFQAttachment(rfqId, attachmentIdx) {
+// Remove a newly selected file from the upload list
+function removeNewRFQFile(idx) {
+  rfqFilesToUpload.splice(idx, 1);
+  const rfqId = currentDraftId || 'new';
+  displayRFQAttachments(rfqId, currentRFQData?.attachments || []);
+}
+
+// Deletes an existing attachment from the database.
+async function deleteExistingRFQAttachment(rfqId, attachmentIdx) {
   if (!confirm('Delete this attachment? This cannot be undone.')) {
     return;
   }
@@ -4378,7 +4418,6 @@ async function deleteRFQAttachment(rfqId, attachmentIdx) {
 
     // Delete the file from storage
     try {
-      // Extract storage path from the public URL
       const urlParts = attachment.url.split('/object/public/rfq-attachments/');
       if (urlParts.length === 2) {
         const storagePath = decodeURIComponent(urlParts[1]);
@@ -4388,7 +4427,6 @@ async function deleteRFQAttachment(rfqId, attachmentIdx) {
       }
     } catch (err) {
       console.warn('⚠️ Storage cleanup error:', err.message);
-      // Continue anyway — the DB entry is what matters most
     }
 
     // Remove from attachments array and update DB
@@ -4406,76 +4444,20 @@ async function deleteRFQAttachment(rfqId, attachmentIdx) {
   }
 }
 
-// Opens a file picker to replace a specific attachment.
-async function replaceRFQAttachment(rfqId, attachmentIdx, oldName) {
-  const input = document.createElement('input');
-  input.type = 'file';
-  input.onchange = async () => {
-    if (!input.files || input.files.length === 0) return;
+// Handle file selection in the file input - add files to upload list
+function handleRFQFileInputChange(e) {
+  const input = e.target;
+  const files = input.files ? Array.from(input.files) : [];
 
-    try {
-      const file = input.files[0];
+  files.forEach(file => {
+    rfqFilesToUpload.push({ name: file.name, file: file });
+  });
 
-      // Get current attachments
-      const { data: rfq } = await client
-        .from('rfqs')
-        .select('attachments')
-        .eq('id', rfqId)
-        .single();
+  const rfqId = currentDraftId || 'new';
+  displayRFQAttachments(rfqId, currentRFQData?.attachments || []);
 
-      if (!rfq || !rfq.attachments || !rfq.attachments[attachmentIdx]) {
-        showToast('❌ Attachment not found', 'error');
-        return;
-      }
-
-      const oldAttachment = rfq.attachments[attachmentIdx];
-
-      // Delete old file from storage
-      try {
-        const urlParts = oldAttachment.url.split('/object/public/rfq-attachments/');
-        if (urlParts.length === 2) {
-          const storagePath = decodeURIComponent(urlParts[1]);
-          await client.storage
-            .from('rfq-attachments')
-            .remove([storagePath]);
-        }
-      } catch (err) {
-        console.warn('⚠️ Storage cleanup error:', err.message);
-      }
-
-      // Upload new file
-      showToast('Uploading replacement file...', 'info');
-      const path = `rfq-${rfqId}/${Date.now()}-${sanitizeStorageFileName(file.name)}`;
-      const { error: uploadError } = await client.storage
-        .from('rfq-attachments')
-        .upload(path, file);
-
-      if (uploadError) {
-        showToast('❌ Upload failed: ' + uploadError.message, 'error');
-        return;
-      }
-
-      // Get public URL for new file
-      const { data: urlData } = client.storage.from('rfq-attachments').getPublicUrl(path);
-
-      // Update attachments array
-      const updated = [...rfq.attachments];
-      updated[attachmentIdx] = { name: file.name, url: urlData.publicUrl };
-
-      // Save to DB
-      await client
-        .from('rfqs')
-        .update({ attachments: updated })
-        .eq('id', rfqId);
-
-      showToast('✓ Attachment replaced', 'success');
-      displayRFQAttachments(rfqId, updated);
-    } catch (err) {
-      console.error('Error replacing attachment:', err);
-      showToast('❌ Error replacing attachment: ' + err.message, 'error');
-    }
-  };
-  input.click();
+  // Clear the input so the same file can be selected again if needed
+  input.value = '';
 }
 
 // Renders a read-only preview of the RFQ exactly as a contractor would see
@@ -4615,8 +4597,12 @@ async function loadRFQIntoCreateForm(rfqId) {
     }
   });
 
-  // Display any existing attachments with delete/replace options
+  // Reset file upload tracking and display any existing attachments
+  rfqFilesToUpload = [];
   displayRFQAttachments(row.id, row.attachments);
+
+  // Store RFQ data for later reference
+  currentRFQData = row;
 
   return row;
 }
