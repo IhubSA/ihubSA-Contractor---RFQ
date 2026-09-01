@@ -4487,7 +4487,22 @@ async function loadRFQConsole() {
       const isExpired = deadlineDate < new Date();
       const daysLeft = Math.ceil((deadlineDate - new Date()) / (1000 * 60 * 60 * 24));
       const submissionCount = submissions ? submissions.length : 0;
-      const invitationCount = invitations ? invitations.length : 0;
+
+      // Calculate invitation count based on RFQ type
+      let invitationCount = 0;
+      if (rfq.is_public && (rfq.notified_provinces || rfq.provinces)) {
+        // For public/broadcast RFQs, count all suppliers in the target provinces
+        const targetProvinces = rfq.notified_provinces || rfq.provinces || [];
+        const { data: suppliersInProvince } = await client
+          .from('suppliers')
+          .select('id', { count: 'exact' })
+          .in('province', targetProvinces);
+        invitationCount = suppliersInProvince ? suppliersInProvince.length : 0;
+      } else {
+        // For invite-only RFQs, count individual invitations
+        invitationCount = invitations ? invitations.length : 0;
+      }
+
       const responseRate = invitationCount > 0 ? Math.round((submissionCount / invitationCount) * 100) : 0;
 
       consoleHtml += `
