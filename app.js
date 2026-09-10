@@ -32,6 +32,7 @@ const SUBMISSION_STAGES = [
 let teamMembersById = {}; // populated by loadTeamMembers so the Permissions modal can look up a member's current role/permissions by id
 let currentRFQId = null;
 let currentRFQData = null; // full RFQ row for the RFQ currently loaded in the contractor form, so submitContractorForm can read required_documents (name/mandatory/requires_expiry) without a second fetch
+let currentRFQCompanyName = null; // company name for the current RFQ, used in confirmation emails
 let isSubmittingRFQ = false;
 let platformSettings = { logo_url: null };
 window.lastInvitations = [];
@@ -3025,6 +3026,7 @@ async function loadRFQDetails(rfqId, isOpenAccess = false) {
     }
 
     if (company) {
+      currentRFQCompanyName = company.name;
       applyCompanyBranding(company, {
         subtitle: 'Request for Quotation Portal',
         heroTitle: company.name,
@@ -3033,6 +3035,7 @@ async function loadRFQDetails(rfqId, isOpenAccess = false) {
           : `You've been invited to submit a quotation to ${company.name}.`
       });
     } else {
+      currentRFQCompanyName = null;
       applyDefaultBranding();
     }
 
@@ -3414,7 +3417,7 @@ async function submitContractorForm(token) {
       refCode: refCode,
       contractorName: name,
       contractorEmail: email,
-      companyName: currentRFQData ? currentRFQData.company_name : 'the company'
+      companyName: currentRFQCompanyName || 'the company'
     }).catch(err => console.error('send-application-confirmation failed:', err));
 
     setTimeout(() => {
