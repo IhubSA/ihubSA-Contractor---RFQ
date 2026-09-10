@@ -3403,8 +3403,22 @@ async function submitContractorForm(token) {
     }
 
     showToast('✅ Submission successful!', 'success');
+
+    // Best-effort confirmation email — the submission is already saved either
+    // way, so a failure here (e.g. Resend hiccup) shouldn't interrupt the UX.
+    const refCode = `RFQ-${currentRFQId.replace(/-/g, '').slice(0, 8).toUpperCase()}`;
+    callPublicEdgeFunction('send-application-confirmation', {
+      submissionId: submissionId,
+      rfqId: currentRFQId,
+      rfqName: currentRFQData ? currentRFQData.rfq_name : 'RFQ',
+      refCode: refCode,
+      contractorName: name,
+      contractorEmail: email,
+      companyName: currentRFQData ? currentRFQData.company_name : 'the company'
+    }).catch(err => console.error('send-application-confirmation failed:', err));
+
     setTimeout(() => {
-      document.getElementById('rfq-portal').innerHTML = '<div class="card"><h2 style="margin-top:0; color:var(--success);">Thank You!</h2><p>Your submission has been received.</p></div>';
+      document.getElementById('rfq-portal').innerHTML = '<div class="card"><h2 style="margin-top:0; color:var(--success);">Thank You!</h2><p>Your submission has been received. A confirmation email has been sent to ' + email + '.</p></div>';
     }, 1000);
 
   } catch (err) {
