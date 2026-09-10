@@ -1310,7 +1310,21 @@ async function handleGateRegisterSubmit(e) {
       sars_file_name: sarsFile.name
     };
 
-    showToast(pendingGateRfqId ? '✅ Registered! Loading RFQ...' : '✅ You\'re registered! Browse open opportunities below.', 'success');
+    // Fetch the assigned supplier number
+    let supplierNumberMsg = '';
+    try {
+      const supplierRes = await fetch(`https://zilumoopwnrtrtnsmjhr.supabase.co/functions/v1/get-supplier-number?email=${encodeURIComponent(email)}`);
+      if (supplierRes.ok) {
+        const supplierData = await supplierRes.json();
+        if (supplierData.supplierNumber) {
+          supplierNumberMsg = ` Your supplier number is <strong>${supplierData.supplierNumber}</strong>.`;
+        }
+      }
+    } catch (err) {
+      console.warn('Could not fetch supplier number:', err);
+    }
+
+    showToast(pendingGateRfqId ? `✅ Registered! Loading RFQ...${supplierNumberMsg}` : `✅ You're registered! Browse open opportunities below.${supplierNumberMsg}`, 'success');
     proceedPastGate();
   } catch (err) {
     console.error('Error registering applicant:', err);
@@ -5604,7 +5618,7 @@ function renderSupplierList() {
     }
     if (provinceValue && a.province !== provinceValue) return false;
     if (searchTerm) {
-      const haystack = [a.company_name, a.full_name, a.email, a.phone, a.additional_phone]
+      const haystack = [a.company_name, a.full_name, a.email, a.phone, a.additional_phone, a.supplier_number]
         .filter(Boolean).join(' ').toLowerCase();
       if (!haystack.includes(searchTerm)) return false;
     }
@@ -5688,6 +5702,11 @@ function renderSupplierList() {
     ? ' <span class="submission-status" style="background:var(--bg-2); color:var(--border); border:1px solid var(--border);">Imported</span>'
     : '';
 
+  const supplierNumberBadge = (a) => {
+    if (!a.supplier_number) return '';
+    return ` <span class="submission-status" style="background:var(--bg-1); color:var(--accent); border:1px solid var(--accent); font-weight:600;">${a.supplier_number}</span>`;
+  };
+
   const statusActions = (a) => {
     const escapedName = (a.company_name || a.full_name || '').replace(/'/g, "\\'");
     if (a.status === 'active') {
@@ -5712,7 +5731,7 @@ function renderSupplierList() {
         <div style="padding:15px; border:1px solid var(--border); border-radius:4px; margin-bottom:10px; ${a.status !== 'active' ? 'background:var(--bg-2);' : ''}">
           <div style="display:flex; justify-content:space-between; align-items:flex-start; flex-wrap:wrap; gap:10px;">
             <div>
-              <p style="margin:0; font-weight:600;">${a.company_name}${statusBadge(a)}${docsPendingBadge(a)}${importedBadge(a)}</p>
+              <p style="margin:0; font-weight:600;">${a.company_name}${supplierNumberBadge(a)}${statusBadge(a)}${docsPendingBadge(a)}${importedBadge(a)}</p>
               <p style="margin:2px 0 0 0; font-size:13px; color:var(--ink);">${a.title ? a.title + ' ' : ''}${a.full_name}${a.designation ? ' · ' + a.designation : ''}</p>
               <p style="margin:2px 0 0 0; font-size:12px; color:var(--border);">${a.email}${a.phone ? ' · ' + a.phone : ''}${a.additional_phone ? ' · ' + a.additional_phone : ''}</p>
             </div>
