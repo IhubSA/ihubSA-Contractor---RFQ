@@ -1310,9 +1310,12 @@ async function handleGateRegisterSubmit(e) {
       sars_file_name: sarsFile.name
     };
 
-    // Fetch the assigned supplier number
+    // Fetch the assigned supplier number (with a small delay to ensure database commit)
     let supplierNumberMsg = '';
     try {
+      // Wait 500ms for the database to fully commit the registration
+      await new Promise(resolve => setTimeout(resolve, 500));
+
       const supplierRes = await fetch(`https://zilumoopwnrtrtnsmjhr.supabase.co/functions/v1/get-supplier-number?email=${encodeURIComponent(email)}`);
       if (supplierRes.ok) {
         const supplierData = await supplierRes.json();
