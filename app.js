@@ -784,12 +784,18 @@ async function loadPublicRFQList() {
   listEl.innerHTML = '<p style="color:var(--border);">Loading...</p>';
 
   try {
+    // Show RFQs that are either:
+    // 1. Still open (deadline > now), OR
+    // 2. Closed within the last 3 days (deadline <= now AND deadline > now - 3 days)
+    const now = new Date();
+    const threeDaysAgo = new Date(now.getTime() - 3 * 24 * 60 * 60 * 1000);
+
     let query = client
       .from('rfqs')
       .select('id, rfq_name, project_name, description, deadline, budget, company_id, provinces, location_area, external_source_rfq_id')
       .eq('is_public', true)
       .eq('is_withdrawn', false)
-      .gt('deadline', new Date().toISOString());
+      .gte('deadline', threeDaysAgo.toISOString());
 
     if (province) {
       // rfqs.provinces is a jsonb array — .contains() maps to Postgres' @>
@@ -863,11 +869,15 @@ async function loadPublicRFQList() {
       const cardLogoMaxWidth = Math.round(130 * cardLogoScale);
       const urgency = computeUrgency(rfq.deadline);
       const refCode = `RFQ-${rfq.id.replace(/-/g, '').slice(0, 8).toUpperCase()}`;
+      const inGracePeriod = isInGracePeriod(rfq.deadline);
+      const gracePeriodExpired = isGracePeriodExpired(rfq.deadline);
+
       return `
         <div class="opportunity-card status-${urgency.status}" onclick="openApplicantGateOrRedirect('${rfq.id}', '${rfq.company_id || ''}', '${rfq.external_source_rfq_id || ''}')">
           <div class="opportunity-card-grid">
             <div class="opportunity-col-info">
-              <span class="opportunity-status-badge ${urgency.badgeClass}">${urgency.label}</span>
+              <span class="opportunity-status-badge ${urgency.badgeClass}">${inGracePeriod ? '🔒 Closed' : urgency.label}</span>
+              ${inGracePeriod ? `<span style="font-size:11px; color:var(--warning); margin-left:8px; font-weight:500;">Questions Only</span>` : ''}
               <p class="opportunity-ref">${refCode}</p>
               <h3 style="margin:0 0 6px 0; color:var(--primary);">${rfq.rfq_name}</h3>
               <p style="margin:0 0 8px 0; font-size:12px; text-transform:uppercase; color:var(--border); font-weight:bold; display:flex; align-items:center; gap:8px;">
@@ -883,14 +893,18 @@ async function loadPublicRFQList() {
             </div>
             <div class="opportunity-col-countdown">
               <div class="countdown-box">
-                <p class="countdown-urgency-label ${urgency.status}">${urgency.status === 'closed' ? 'Closed' : 'Closing In'}</p>
+                <p class="countdown-urgency-label ${urgency.status}">${inGracePeriod ? 'Closed' : (urgency.status === 'closed' ? 'Closed' : 'Closing In')}</p>
                 <div class="countdown-units" data-deadline="${rfq.deadline}">
                   <div><div class="countdown-unit-num cd-days">--</div><div class="countdown-unit-label">Days</div></div>
                   <div><div class="countdown-unit-num cd-hrs">--</div><div class="countdown-unit-label">Hrs</div></div>
                   <div><div class="countdown-unit-num cd-mins">--</div><div class="countdown-unit-label">Mins</div></div>
                 </div>
-                <button type="button" class="btn navy" style="width:100%; padding:10px; margin-top:14px;" onclick="event.stopPropagation(); openApplicantGateOrRedirect('${rfq.id}', '${rfq.company_id || ''}', '${rfq.external_source_rfq_id || ''}')">View Opportunity →</button>
-                <button type="button" class="btn secondary" style="width:100%; padding:10px; margin-top:8px;" onclick="event.stopPropagation(); openAskQuestionModal('${rfq.id}', '${escapeHtmlClient(rfq.rfq_name).replace(/'/g, "\\'")}')">❓ Ask a Question</button>
+                ${inGracePeriod ? `
+                  <p style="font-size:11px; color:var(--border); margin:10px 0; text-align:center;">Applications closed. Questions accepted for 3 days.</p>
+                ` : `
+                  <button type="button" class="btn navy" style="width:100%; padding:10px; margin-top:14px;" onclick="event.stopPropagation(); openApplicantGateOrRedirect('${rfq.id}', '${rfq.company_id || ''}', '${rfq.external_source_rfq_id || ''}')">View Opportunity →</button>
+                `}
+                <button type="button" class="btn secondary" style="width:100%; padding:10px; margin-top:${inGracePeriod ? '8px' : '8px'};" ${gracePeriodExpired ? 'disabled' : ''} onclick="event.stopPropagation(); openAskQuestionModal('${rfq.id}', '${escapeHtmlClient(rfq.rfq_name).replace(/'/g, "\\'")}')">❓ Ask a Question</button>
               </div>
             </div>
           </div>
@@ -1184,6 +1198,24 @@ async function checkBruteForce(email, action) {
   }
 }
 
+// Check if an RFQ is in the 3-day grace period after closing
+function isInGracePeriod(deadline) {
+  const now = new Date();
+  const deadlineDate = new Date(deadline);
+  const threeDaysAgo = new Date(now.getTime() - 3 * 24 * 60 * 60 * 1000);
+
+  return deadlineDate <= now && deadlineDate > threeDaysAgo;
+}
+
+// Check if an RFQ has passed the 3-day grace period
+function isGracePeriodExpired(deadline) {
+  const now = new Date();
+  const deadlineDate = new Date(deadline);
+  const threeDaysAgo = new Date(now.getTime() - 3 * 24 * 60 * 60 * 1000);
+
+  return deadlineDate <= threeDaysAgo;
+}
+
 async function handleGateRegisterSubmit(e) {
   e.preventDefault();
   const email = document.getElementById('gate-email').value.trim();
@@ -1391,6 +1423,12 @@ function proceedPastGate() {
 // a quick question without registering, and this avoids any risk of
 // disturbing the already-working gate/registration logic above.
 function openAskQuestionModal(rfqId, rfqName) {
+  // Check if the grace period has expired for this RFQ
+  if (currentRFQData && isGracePeriodExpired(currentRFQData.deadline)) {
+    showToast('This RFQ closed more than 3 days ago. Questions are no longer accepted.', 'error');
+    return;
+  }
+
   pendingAskQuestionRfqId = rfqId;
   const nameEl = document.getElementById('ask-question-rfq-name');
   if (nameEl) nameEl.textContent = rfqName || '';
@@ -3139,8 +3177,16 @@ async function loadRFQDetails(rfqId, isOpenAccess = false) {
         <div style="margin: 20px 0; padding: 15px; background: var(--bg-2); border-radius: 4px;">
           <div style="display:flex; justify-content:space-between; align-items:center; gap:12px; flex-wrap:wrap;">
             <h4 style="margin:0;">Questions &amp; Answers</h4>
-            <button type="button" class="btn secondary" style="padding:8px 14px;" onclick="openAskQuestionModal('${rfq.id}', '${escapeHtmlClient(rfq.rfq_name).replace(/'/g, "\\'")}')">❓ Ask a Question</button>
+            ${isInGracePeriod(rfq.deadline) ? `
+              <span style="font-size:12px; color:var(--warning); font-weight:500; padding:6px 12px; background:rgba(255,193,7,0.1); border-radius:4px;">🔒 Closed - Questions Only</span>
+            ` : ''}
+            <button type="button" class="btn secondary" style="padding:8px 14px;" ${isGracePeriodExpired(rfq.deadline) ? 'disabled' : ''} onclick="openAskQuestionModal('${rfq.id}', '${escapeHtmlClient(rfq.rfq_name).replace(/'/g, "\\'")}')">❓ Ask a Question</button>
           </div>
+          ${isGracePeriodExpired(rfq.deadline) ? `
+            <p style="color:var(--border); font-size:12px; margin:12px 0 0 0; font-style:italic;">This RFQ closed more than 3 days ago. Questions are no longer accepted, but you can view published clarifications below.</p>
+          ` : isInGracePeriod(rfq.deadline) ? `
+            <p style="color:var(--border); font-size:12px; margin:12px 0 0 0; font-style:italic;">This RFQ has closed, but you can still ask questions for the next 3 days in case you missed including supporting documents.</p>
+          ` : ''}
           <div id="rfq-qa-list" style="margin-top:12px;"><p style="color: var(--border); font-size: 13px; margin:0;">Loading...</p></div>
         </div>
 
