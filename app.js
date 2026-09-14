@@ -1785,12 +1785,26 @@ async function handleLoginSubmit(e) {
   if (!email || !password) return;
 
   try {
+    // Check brute-force protection before attempting login
+    const bruteForceCheck = await checkBruteForce(email, 'check');
+    if (!bruteForceCheck.allowed) {
+      const timeRemaining = bruteForceCheck.timeRemainingSeconds || 3600;
+      const minutes = Math.ceil(timeRemaining / 60);
+      showToast(`Too many failed login attempts. Please try again in ${minutes} minute${minutes === 1 ? '' : 's'}.`, 'error');
+      return;
+    }
+
     const { data, error } = await client.auth.signInWithPassword({ email, password });
     if (error) throw error;
+
+    // Reset failed attempts on successful login
+    await checkBruteForce(email, 'success');
     currentUser = data.user;
     showToast('Welcome back!', 'success');
     await loadCurrentCompanyAndRoute(false);
   } catch (err) {
+    // Record failed login attempt
+    await checkBruteForce(email, 'fail');
     console.error('Login error:', err);
     showToast('Login failed: ' + err.message, 'error');
   }
