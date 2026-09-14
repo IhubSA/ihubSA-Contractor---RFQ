@@ -1169,9 +1169,31 @@ async function uploadSupplierDocument(applicantId, keyPrefix, file) {
   return filePath;
 }
 
+// Brute-force protection helper
+async function checkBruteForce(email, action) {
+  try {
+    const res = await fetch('https://zilumoopwnrtrtnsmjhr.supabase.co/functions/v1/check-brute-force', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email: email.toLowerCase(), action })
+    });
+    return await res.json();
+  } catch (err) {
+    console.warn('Brute-force check failed:', err);
+    return { allowed: true }; // Fail open
+  }
+}
+
 async function handleGateRegisterSubmit(e) {
   e.preventDefault();
   const email = document.getElementById('gate-email').value.trim();
+
+  // Check if account is locked due to failed registration attempts
+  const bruteForceCheck = await checkBruteForce(email, 'check');
+  if (!bruteForceCheck.allowed) {
+    showToast(`❌ ${bruteForceCheck.message}`, 'error');
+    return;
+  }
   const companyName = document.getElementById('gate-company-name').value.trim();
   const yearsInBusiness = document.getElementById('gate-years-business').value.trim();
   const fullName = document.getElementById('gate-full-name').value.trim();
@@ -1294,7 +1316,11 @@ async function handleGateRegisterSubmit(e) {
     // A duplicate email (e.g. a race with another tab, or someone
     // double-submitting) isn't a real problem here — they're registered
     // either way, so let them through rather than showing an error.
-    if (error && error.code !== '23505') throw error;
+    if (error && error.code !== '23505') {
+      // Record failed registration attempt for brute-force protection
+      await checkBruteForce(email, 'fail');
+      throw error;
+    }
 
     // The 3 mandatory documents were just uploaded above, so we already
     // know they're on file — no need for a round-trip to
@@ -1326,6 +1352,9 @@ async function handleGateRegisterSubmit(e) {
     } catch (err) {
       console.warn('Could not fetch supplier number:', err);
     }
+
+    // Reset brute-force attempts on successful registration
+    await checkBruteForce(email, 'success');
 
     showToast(pendingGateRfqId ? `✅ Registered! Loading RFQ...${supplierNumberMsg}` : `✅ You're registered! Browse open opportunities below.${supplierNumberMsg}`, 'success');
     proceedPastGate();
