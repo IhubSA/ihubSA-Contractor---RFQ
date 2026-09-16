@@ -3272,10 +3272,10 @@ async function loadRFQDetails(rfqId, isOpenAccess = false) {
           </div>
 
           <div style="margin-top: 30px; padding: 20px; background: var(--bg-2); border-radius: 4px;">
-            <h4 style="margin-top:0;">Your Quotation</h4>
-            <p style="color: var(--border); font-size: 14px; margin-bottom: 15px;">Enter your total quotation price below. This will be visible to the RFQ issuer alongside your application.</p>
+            <h4 style="margin-top:0;">Your Price Estimate</h4>
+            <p style="color: var(--border); font-size: 14px; margin-bottom: 15px;">Enter your price estimate below. This will be visible to the RFQ issuer alongside your application.</p>
             <div style="margin-bottom: 15px;">
-              <label>Total Price (ZAR) *</label>
+              <label>Price Estimate (ZAR) *</label>
               <div style="display:flex; align-items:center; gap:8px;">
                 <span style="font-size:16px; font-weight:bold;">R</span>
                 <input type="number" id="contractor-quotation" placeholder="0.00" step="0.01" min="0" required style="flex:1; padding:10px; border:1px solid var(--border); border-radius:4px; font-size:14px;">
