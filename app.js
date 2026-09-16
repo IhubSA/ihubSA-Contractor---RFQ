@@ -3261,6 +3261,16 @@ async function loadRFQDetails(rfqId, isOpenAccess = false) {
             }).join('')}
           </div>
 
+          <div style="margin-top: 30px;">
+            <h4>Additional Optional Documents</h4>
+            <p style="color: var(--border); font-size: 14px;">Upload any supplementary documents (e.g., technical specifications, references, case studies, certifications). You can select multiple files at once.</p>
+            <div style="margin-bottom: 15px;">
+              <label>Additional Documents</label>
+              <input type="file" id="contractor-optional-docs" multiple accept=".pdf,.doc,.docx,.xls,.xlsx,.jpg,.jpeg,.png" style="width:100%;">
+              <p style="color: var(--border); font-size: 12px; margin:6px 0 0 0;">Accepted formats: PDF, Word, Excel, Images (JPG, PNG)</p>
+            </div>
+          </div>
+
           <div style="margin-top: 30px; padding: 20px; background: var(--bg-2); border-radius: 4px;">
             <h4 style="margin-top:0;">Your Quotation</h4>
             <p style="color: var(--border); font-size: 14px; margin-bottom: 15px;">Enter your total quotation price below. This will be visible to the RFQ issuer alongside your application.</p>
@@ -3490,6 +3500,39 @@ async function submitContractorForm(token) {
           filesUploaded++;
         } catch (fileErr) {
           console.warn('⚠️ Error uploading file:', fileErr.message);
+        }
+      }
+    }
+
+    // Upload optional additional documents (multiple files allowed)
+    const optionalDocInput = document.getElementById('contractor-optional-docs');
+    if (optionalDocInput && optionalDocInput.files && optionalDocInput.files.length > 0) {
+      for (let file of optionalDocInput.files) {
+        try {
+          const timestamp = Date.now() + Math.random(); // Ensure unique names for multiple files
+          const filePath = `rfq-${currentRFQId}/sub-${submissionId}/${timestamp}-${sanitizeStorageFileName(file.name)}`;
+
+          const { error: uploadError } = await client.storage
+            .from('rfq-documents')
+            .upload(filePath, file);
+
+          if (uploadError) {
+            console.warn('⚠️ Optional document upload failed:', uploadError.message);
+            continue;
+          }
+
+          await client.from('rfq_submission_documents').insert([{
+            submission_id: submissionId,
+            file_name: file.name,
+            file_path: filePath,
+            file_size: file.size,
+            document_type: 'Supplementary Document',
+            is_optional: true
+          }]);
+
+          filesUploaded++;
+        } catch (optErr) {
+          console.warn('⚠️ Error uploading optional document:', optErr.message);
         }
       }
     }
