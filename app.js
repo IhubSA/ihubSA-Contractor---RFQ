@@ -3261,6 +3261,19 @@ async function loadRFQDetails(rfqId, isOpenAccess = false) {
             }).join('')}
           </div>
 
+          <div style="margin-top: 30px; padding: 20px; background: var(--bg-2); border-radius: 4px;">
+            <h4 style="margin-top:0;">Your Quotation</h4>
+            <p style="color: var(--border); font-size: 14px; margin-bottom: 15px;">Enter your total quotation price below. This will be visible to the RFQ issuer alongside your application.</p>
+            <div style="margin-bottom: 15px;">
+              <label>Total Price (ZAR) *</label>
+              <div style="display:flex; align-items:center; gap:8px;">
+                <span style="font-size:16px; font-weight:bold;">R</span>
+                <input type="number" id="contractor-quotation" placeholder="0.00" step="0.01" min="0" required style="flex:1; padding:10px; border:1px solid var(--border); border-radius:4px; font-size:14px;">
+              </div>
+              <p style="color: var(--border); font-size: 12px; margin:6px 0 0 0;">Enter numbers only, without commas or currency symbols</p>
+            </div>
+          </div>
+
           <button type="submit" class="btn gold" id="contractor-submit-btn" style="width: 100%; padding: 15px; margin-top: 20px;"${isApplicationBlocked ? ' disabled' : ''}>${isApplicationBlocked ? 'Application Unavailable' : 'Submit Application'}</button>
         </form>
       </div>
@@ -3352,9 +3365,16 @@ async function submitContractorForm(token) {
     const email = document.getElementById('contractor-email').value.trim();
     const phone = document.getElementById('contractor-phone').value.trim();
     const reg = document.getElementById('contractor-reg').value.trim();
+    const quotationStr = document.getElementById('contractor-quotation').value.trim();
+    const quotation = quotationStr ? parseFloat(quotationStr) : null;
 
     if (!name || !email) {
       showToast('Please fill in required fields', 'error');
+      return;
+    }
+
+    if (!quotation || quotation <= 0) {
+      showToast('Please enter a valid quotation price', 'error');
       return;
     }
 
@@ -3420,6 +3440,7 @@ async function submitContractorForm(token) {
         contractor_email: email,
         contractor_phone: phone,
         contractor_reg: reg,
+        quoted_price: quotation,
         status: 'submitted'
       }]);
 
