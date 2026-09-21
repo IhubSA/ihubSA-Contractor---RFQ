@@ -1388,7 +1388,18 @@ async function handleGateRegisterSubmit(e) {
     // Reset brute-force attempts on successful registration
     await checkBruteForce(email, 'success');
 
-    showToast(pendingGateRfqId ? `✅ Registered! Loading RFQ...${supplierNumberMsg}` : `✅ You're registered! Browse open opportunities below.${supplierNumberMsg}`, 'success');
+    // Best-effort registration confirmation — the supplier is registered
+    // either way, so a Resend hiccup shouldn't surface to them as a failure.
+    // Deliberately sends only the email address: the Edge Function looks the
+    // registration up itself and mails the address on that row, so nothing
+    // here can be used to send mail to an arbitrary recipient. It also sends
+    // at most once per registration, so a double-submit can't double-mail.
+    // This is what puts the supplier number in writing — until now it existed
+    // only in the toast below, which disappears after a few seconds.
+    callPublicEdgeFunction('send-registration-confirmation', { email })
+      .catch(err => console.error('send-registration-confirmation failed:', err));
+
+    showToast(pendingGateRfqId ? `✅ Registered! Check your email for your supplier number. Loading RFQ...` : `✅ You're registered!${supplierNumberMsg} We've emailed you a confirmation.`, 'success');
     proceedPastGate();
   } catch (err) {
     console.error('Error registering applicant:', err);
