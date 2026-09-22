@@ -9,19 +9,21 @@
 <body>
   <!-- DYNAMIC BRANDING HEADER -->
   <header id="site-header" class="site-header">
-    <div id="brand-logo-group" class="brand-logo-group">
-      <img id="brand-logo-img" src="" alt="Company logo" style="display:none; height:84px; width:auto; max-width:260px; object-fit:contain; flex-shrink:0;">
-      <svg id="brand-logo-default" width="84" height="84" viewBox="0 0 100 100" style="flex-shrink: 0;">
-        <circle cx="50" cy="50" r="46" fill="#FFFFFF"/>
-        <path d="M 50 15 C 65 20, 75 35, 72 50 C 70 60, 60 65, 50 62 C 45 45, 45 30, 50 15 Z" fill="#0F3557"/>
-        <path d="M 50 20 C 58 25, 63 35, 60 45 C 58 50, 52 52, 48 48 C 46 38, 47 28, 50 20 Z" fill="#F57C00"/>
-        <path d="M 25 45 A 25 25 0 1 1 30 65" fill="none" stroke="#0F3557" stroke-width="4" stroke-linecap="round"/>
-      </svg>
-      <div>
-        <h1 id="brand-title" style="margin: 0; font-size: 24px; font-weight: bold; color: white; font-family: 'IBM Plex Sans', sans-serif;">RFQ Hub</h1>
-        <p id="brand-subtitle" style="margin: 0; font-size: 12px; color: #AFC4DB; font-family: 'IBM Plex Sans', sans-serif;">Request for Quotation Management System</p>
+    <a href="https://ihubsa.github.io/iHubSA-Website/" style="text-decoration: none; color: inherit; display: flex; align-items: center; gap: 16px;">
+      <div id="brand-logo-group" class="brand-logo-group">
+        <img id="brand-logo-img" src="" alt="Company logo" style="display:none; height:84px; width:auto; max-width:260px; object-fit:contain; flex-shrink:0;">
+        <svg id="brand-logo-default" width="84" height="84" viewBox="0 0 100 100" style="flex-shrink: 0;">
+          <circle cx="50" cy="50" r="46" fill="#FFFFFF"/>
+          <path d="M 50 15 C 65 20, 75 35, 72 50 C 70 60, 60 65, 50 62 C 45 45, 45 30, 50 15 Z" fill="#0F3557"/>
+          <path d="M 50 20 C 58 25, 63 35, 60 45 C 58 50, 52 52, 48 48 C 46 38, 47 28, 50 20 Z" fill="#F57C00"/>
+          <path d="M 25 45 A 25 25 0 1 1 30 65" fill="none" stroke="#0F3557" stroke-width="4" stroke-linecap="round"/>
+        </svg>
+        <div>
+          <h1 id="brand-title" style="margin: 0; font-size: 24px; font-weight: bold; color: white; font-family: 'IBM Plex Sans', sans-serif;">RFQ Hub</h1>
+          <p id="brand-subtitle" style="margin: 0; font-size: 12px; color: #AFC4DB; font-family: 'IBM Plex Sans', sans-serif;">Request for Quotation Management System</p>
+        </div>
       </div>
-    </div>
+    </a>
 
     <button id="mobile-nav-toggle" class="mobile-nav-toggle" type="button" onclick="toggleMobileNav()" aria-label="Toggle menu" aria-expanded="false" aria-controls="site-nav-wrap">
       <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2" stroke-linecap="round"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
@@ -394,6 +396,32 @@
                 </div>
               </div>
 
+              <div style="border:2px solid var(--accent); border-radius:6px; padding:16px; background-color:rgba(245, 124, 0, 0.05); margin:16px 0;">
+                <fieldset style="border:none; margin:0; padding:0;">
+                  <legend style="font-weight:bold; margin-bottom:12px; display:block; font-size:14px;">Local Preference</legend>
+                  <p style="font-size:12px; color:var(--border); margin:0 0 12px 0;">We recommend using local labour and contractors before expanding your RFQ to other areas.</p>
+
+                  <label style="display:flex; align-items:flex-start; gap:8px; cursor:pointer; margin-bottom:16px; font-weight:normal;">
+                    <input type="radio" name="rfq_local_preference" value="local" checked style="margin-top:2px;">
+                    <div>
+                      <strong style="display:block; margin-bottom:4px;">Local</strong>
+                      <span style="font-size:12px; color:var(--border); line-height:1.4;">We agree to using local labour and contractors before expanding our RFQ if no suitable resources are found locally.</span>
+                    </div>
+                  </label>
+
+                  <label style="display:flex; align-items:flex-start; gap:8px; cursor:pointer; font-weight:normal;">
+                    <input type="radio" name="rfq_local_preference" value="non-local" style="margin-top:2px;">
+                    <div style="flex:1;">
+                      <strong style="display:block; margin-bottom:4px;">Non-Local</strong>
+                      <div id="non-local-reason-container" style="display:none; margin-top:8px;">
+                        <label style="font-weight:normal; display:block; margin-bottom:6px; font-size:12px;">Reason for expanding beyond local area *</label>
+                        <textarea name="rfq_non_local_reason" placeholder="Please explain why local resources are not suitable for this RFQ..." style="width:100%; padding:10px; border:1px solid var(--border); border-radius:4px; box-sizing:border-box; min-height:80px; font-family:inherit; font-size:14px; resize:vertical;"></textarea>
+                      </div>
+                    </div>
+                  </label>
+                </fieldset>
+              </div>
+
               <div class="form-grid-2">
                 <div>
                   <label style="font-weight:bold; display:block; margin-bottom:8px;">Submission Deadline *</label>
@@ -432,7 +460,15 @@
               <div>
                 <label style="font-weight:bold; display:block; margin-bottom:8px;">Attach RFQ Document(s) (optional)</label>
                 <p style="font-size:14px; color:var(--border); margin:0 0 10px 0;">Upload the RFQ spec, drawings, or any files contractors should review before applying. They'll appear as downloads on the contractor's page.</p>
-                <input type="file" id="rfq-attachments-input" multiple style="width:100%; padding:8px; border:1px solid var(--border); border-radius:4px; box-sizing:border-box;">
+
+                <!-- Documents list (both existing and newly selected) -->
+                <div id="documents-list-section" style="margin-bottom:15px; display:none;">
+                  <div id="documents-list" style="display:flex; flex-direction:column; gap:8px;"></div>
+                </div>
+
+                <!-- File input for new attachments -->
+                <input type="file" id="rfq-attachments-input" multiple style="width:100%; padding:8px; border:1px solid var(--border); border-radius:4px; box-sizing:border-box; margin-bottom:8px;">
+                <p id="file-input-hint" style="font-size:13px; color:var(--border); margin:0;">Select files above to add them. You can remove or replace them before saving.</p>
               </div>
 
               <div>
@@ -661,7 +697,11 @@
                 <h2 style="margin-top:0; margin-bottom:4px;">Supplier Database</h2>
                 <p style="color:var(--border); font-size:14px; margin-bottom:0;">Everyone who has registered on the IhubSA PRFQ Hub Supplier Database in order to view and apply to open RFQs, with their full registration details and uploaded documents.</p>
               </div>
-              <button type="button" id="import-suppliers-btn" class="btn secondary" style="padding:10px 16px; white-space:nowrap;" onclick="openImportSuppliersModal()">⬆️ Import Suppliers</button>
+              <div style="display:flex; gap:8px; flex-wrap:wrap;">
+                <button type="button" id="import-suppliers-btn" class="btn secondary" style="padding:10px 16px; white-space:nowrap;" onclick="openImportSuppliersModal()">⬆️ Import Suppliers</button>
+                <button type="button" class="btn secondary" style="padding:10px 16px; white-space:nowrap;" onclick="exportSuppliersAsCSV()">⬇️ Download as CSV</button>
+                <button type="button" class="btn secondary" style="padding:10px 16px; white-space:nowrap;" onclick="exportSuppliersAsExcel()">📊 Download as Excel</button>
+              </div>
             </div>
             <div style="display:flex; flex-wrap:wrap; gap:10px; margin:20px 0 16px 0;">
               <input type="text" id="supplier-search-input" placeholder="Search by name, company, email, or phone..." oninput="filterSupplierDatabase()" style="flex:1; min-width:220px; padding:10px; border:1px solid var(--border); border-radius:4px;">
@@ -944,6 +984,42 @@
       </div>
       <div class="modal-foot">
         <button type="button" class="btn gold" onclick="acceptPOPIA()">Accept & Continue</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- SUPPLIER REGISTRATION PRIVACY POPUP -->
+  <div id="registration-privacy-modal" class="modal" style="display:none;">
+    <div class="modal-content">
+      <div class="modal-head">
+        <h3>Your information is protected</h3>
+        <button class="drawer-close" onclick="closeModal('registration-privacy-modal')">✕</button>
+      </div>
+      <div class="modal-body" style="padding: 24px; line-height: 1.6; color: #495057;">
+        <p style="margin: 0 0 16px 0;">Before you register, please note: the personal and business information you submit — including your contact details, company registration number, and any documents you upload — is collected by <strong id="privacy-company-name">the Company</strong> to evaluate your business and process your supplier registration.</p>
+        <p style="margin: 0 0 16px 0;">Your information is handled in accordance with South Africa's <strong>Protection of Personal Information Act (POPIA)</strong>. It is used only for supplier qualification purposes and is not shared with unauthorised third parties.</p>
+        <p style="margin: 0;">By proceeding, you acknowledge and accept these terms.</p>
+      </div>
+      <div class="modal-foot">
+        <button type="button" class="btn gold" onclick="acceptRegistrationPrivacy()">I understand — continue</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- RFQ APPLICATION PRIVACY POPUP -->
+  <div id="application-privacy-modal" class="modal" style="display:none;">
+    <div class="modal-content">
+      <div class="modal-head">
+        <h3>Your information is protected</h3>
+        <button class="drawer-close" onclick="closeModal('application-privacy-modal')">✕</button>
+      </div>
+      <div class="modal-body" style="padding: 24px; line-height: 1.6; color: #495057;">
+        <p style="margin: 0 0 16px 0;">Before you submit your application, please note: the personal and business information you submit — including your proposal, pricing, contact details, and any documents you upload — will be shared with <strong id="privacy-rfq-company-name">the Company</strong> to evaluate your quotation and proposal.</p>
+        <p style="margin: 0 0 16px 0;">Your information is handled in accordance with South Africa's <strong>Protection of Personal Information Act (POPIA)</strong>. It is used only for procurement evaluation purposes and is not shared with unauthorised third parties.</p>
+        <p style="margin: 0;">By proceeding, you acknowledge and accept these terms.</p>
+      </div>
+      <div class="modal-foot">
+        <button type="button" class="btn gold" onclick="acceptApplicationPrivacy()">I understand — continue</button>
       </div>
     </div>
   </div>
@@ -1324,24 +1400,13 @@
             </div>
             <button type="submit" class="btn gold" id="gate-email-submit" style="width:100%; padding:12px;">Continue</button>
           </form>
+          <p style="text-align:center; margin-top:15px; font-size:13px;">
+            <a href="#" onclick="showSupplierForgotPasswordView(); return false;" style="color:var(--primary); font-weight:600;">Forgot Password?</a>
+          </p>
         </div>
 
         <div id="gate-register-section" style="display:none;">
           <p style="background:var(--bg-2); padding:12px; border-radius:4px; font-size:13px; color:var(--ink); margin-bottom:20px;">We don't have this email on file yet. Please complete registration on the IhubSA PRFQ Hub Supplier Database to continue.</p>
-
-          <!-- Shown the moment an unrecognised email reaches the registration
-               form, i.e. before anything has been filled in. Placed here on
-               purpose: the three mandatory documents are where people stall,
-               so knowing up front what to have ready is what gets them to the
-               end. Opens in a new tab so nothing already typed is lost. -->
-          <div style="border:1px solid var(--primary); border-radius:6px; padding:14px; margin-bottom:20px; display:flex; gap:14px; align-items:center; flex-wrap:wrap;">
-            <div style="flex:1; min-width:200px;">
-              <p style="margin:0 0 4px 0; font-weight:bold; color:var(--primary);">📘 New here? Read the Supplier Guide first</p>
-              <p style="margin:0; font-size:13px; color:var(--ink);">It walks through registering, what your supplier number is for, and how to apply. Have your <strong>CIPC registration (or ID)</strong>, <strong>proof of address</strong> and <strong>SARS information</strong> ready before you start — all three are required below.</p>
-            </div>
-            <a href="RFQ_Hub_Supplier_Guide.pdf" target="_blank" rel="noopener" class="btn gold" style="padding:10px 18px; text-decoration:none; white-space:nowrap; flex-shrink:0;">Download the Guide</a>
-          </div>
-
           <form id="gate-register-form">
 
             <h4 style="margin:0 0 12px 0; color:var(--primary);">Company Details</h4>
@@ -1481,6 +1546,51 @@
             <button type="button" class="btn secondary" style="width:100%; padding:12px; margin-top:10px;" onclick="gateBackToEmail()">← Use a different email</button>
           </form>
         </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- SUPPLIER FORGOT PASSWORD MODAL -->
+  <div id="supplier-forgot-password-modal" class="modal" style="display:none;">
+    <div class="modal-content" style="max-width:480px;">
+      <div class="modal-head">
+        <h3>Reset Your Password</h3>
+        <button class="drawer-close" onclick="closeModal('supplier-forgot-password-modal')">✕</button>
+      </div>
+      <div class="modal-body">
+        <p style="color:var(--border); font-size:14px; margin-bottom:15px;">Enter the email address on your account and we'll send you a 6-digit code to set a new password.</p>
+
+        <form id="supplier-forgot-password-form" style="display:flex; flex-direction:column; gap:15px;">
+          <div>
+            <label>Email</label>
+            <input type="email" id="supplier-forgot-password-email" required style="width:100%;">
+          </div>
+          <button type="submit" class="btn gold" style="padding:12px; margin-top:5px;">Send Code</button>
+        </form>
+
+        <p id="supplier-forgot-password-sent-note" style="display:none; margin-top:5px; margin-bottom:15px; padding:12px; background:#E1F0FF; border-radius:4px; font-size:14px;">
+          If an account exists for that email, a 6-digit code is on its way. KEEP THIS SITE OPEN and check your inbox (and spam folder) — the code is valid for a limited time and can only be used once.
+        </p>
+
+        <form id="supplier-reset-code-form" style="display:none; flex-direction:column; gap:15px;">
+          <div>
+            <label>6-Digit Code</label>
+            <input type="text" id="supplier-reset-code-token" required inputmode="numeric" pattern="[0-9]*" maxlength="6" autocomplete="one-time-code" style="width:100%; letter-spacing:4px; font-size:18px; text-align:center;">
+          </div>
+          <div>
+            <label>New Password *</label>
+            <input type="password" id="supplier-reset-code-new-password" required minlength="6" style="width:100%;">
+          </div>
+          <div>
+            <label>Confirm New Password *</label>
+            <input type="password" id="supplier-reset-code-confirm-password" required minlength="6" style="width:100%;">
+          </div>
+          <button type="submit" class="btn gold" style="padding:12px; margin-top:5px;">Reset Password</button>
+        </form>
+
+        <p style="text-align:center; margin-top:15px; font-size:13px;">
+          <a href="#" onclick="showSupplierForgotPasswordView(); return false;" style="color:var(--primary); font-weight:600;">← Back to Password Reset</a>
+        </p>
       </div>
     </div>
   </div>
