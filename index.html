@@ -631,6 +631,7 @@
             <button id="super-invite-tab-btn" class="sidebar-tab-btn super-tab-btn active" onclick="switchSuperAdminTab('super-invite', this)">Invite a Company</button>
             <button id="super-branding-tab-btn" class="sidebar-tab-btn super-tab-btn" onclick="switchSuperAdminTab('super-branding', this)">Platform Branding</button>
             <button id="super-companies-tab-btn" class="sidebar-tab-btn super-tab-btn" onclick="switchSuperAdminTab('super-companies', this)">All Companies</button>
+            <button id="super-rfqs-tab-btn" class="sidebar-tab-btn super-tab-btn" onclick="switchSuperAdminTab('super-rfqs', this)">All RFQs</button>
             <button id="super-applicants-tab-btn" class="sidebar-tab-btn super-tab-btn" onclick="switchSuperAdminTab('super-applicants', this)">Supplier Database</button>
             <button id="super-manage-admins-tab-btn" class="sidebar-tab-btn super-tab-btn" style="display:none;" onclick="switchSuperAdminTab('super-manage-admins', this)">Manage Admins</button>
             <button class="sidebar-tab-btn super-tab-btn" onclick="switchSuperAdminTab('super-password', this)">Change Password</button>
@@ -687,6 +688,41 @@
             <h2 style="margin-top:0;">All Companies</h2>
             <p style="color:var(--border); font-size:14px; margin-bottom:20px;">Companies set up on the platform.</p>
             <div id="super-admin-companies-list"></div>
+          </div>
+        </div>
+
+        <div id="super-rfqs-tab" class="super-tab" style="display:none;">
+          <div class="card">
+            <div style="display:flex; justify-content:space-between; align-items:flex-start; flex-wrap:wrap; gap:10px;">
+              <div>
+                <h2 style="margin-top:0; margin-bottom:4px;">All RFQs</h2>
+                <p style="color:var(--border); font-size:14px; margin-bottom:0;">Every RFQ listed on the platform &mdash; issued here or synced in from CNWE &mdash; with who put it out, when it went public and when it closes. For reference only; RFQs are still managed from the issuing company's own dashboard.</p>
+              </div>
+              <div style="display:flex; gap:8px; flex-wrap:wrap; align-items:center;">
+                <span id="rfq-register-count" style="font-size:13px; color:var(--border); white-space:nowrap;"></span>
+                <button type="button" class="btn secondary" style="padding:10px 16px; white-space:nowrap;" onclick="exportRFQRegisterAsCSV()">&#11015;&#65039; Download as CSV</button>
+              </div>
+            </div>
+            <div style="display:flex; flex-wrap:wrap; gap:10px; margin:20px 0 16px 0;">
+              <input type="text" id="rfq-register-search" placeholder="Search by RFQ name, project, issuer, town or reference..." oninput="filterSuperAdminRFQs()" style="flex:1; min-width:240px; padding:10px; border:1px solid var(--border); border-radius:4px;">
+              <select id="rfq-register-issuer-filter" onchange="filterSuperAdminRFQs()" style="padding:10px; border:1px solid var(--border); border-radius:4px;">
+                <option value="">All Issuers</option>
+              </select>
+              <select id="rfq-register-source-filter" onchange="filterSuperAdminRFQs()" style="padding:10px; border:1px solid var(--border); border-radius:4px;">
+                <option value="">All Sources</option>
+                <option value="RFQ Hub">RFQ Hub</option>
+                <option value="CNWE">CNWE</option>
+              </select>
+              <select id="rfq-register-status-filter" onchange="filterSuperAdminRFQs()" style="padding:10px; border:1px solid var(--border); border-radius:4px;">
+                <option value="">All Statuses</option>
+                <option value="Open">Open</option>
+                <option value="Closed">Closed</option>
+                <option value="Invite only">Invite only</option>
+                <option value="Draft">Draft</option>
+                <option value="Withdrawn">Withdrawn</option>
+              </select>
+            </div>
+            <div id="super-admin-rfqs-list"></div>
           </div>
         </div>
 
