@@ -904,7 +904,7 @@ async function loadPublicRFQList() {
                 ` : `
                   <button type="button" class="btn navy" style="width:100%; padding:10px; margin-top:14px;" onclick="event.stopPropagation(); openApplicantGateOrRedirect('${rfq.id}', '${rfq.company_id || ''}', '${rfq.external_source_rfq_id || ''}')">View Opportunity →</button>
                 `}
-                <button type="button" class="btn secondary" style="width:100%; padding:10px; margin-top:${inGracePeriod ? '8px' : '8px'};" ${gracePeriodExpired ? 'disabled' : ''} onclick="event.stopPropagation(); openAskQuestionModal('${rfq.id}', '${escapeHtmlClient(rfq.rfq_name).replace(/'/g, "\\'")}')">❓ Ask a Question</button>
+                <button type="button" class="btn secondary" style="width:100%; padding:10px; margin-top:${inGracePeriod ? '8px' : '8px'};" ${gracePeriodExpired ? 'disabled' : ''} onclick="event.stopPropagation(); openAskQuestionModal('${rfq.id}', '${escapeHtmlClient(rfq.rfq_name).replace(/'/g, "\\'")}')">❓ Ask for more information</button>
               </div>
             </div>
           </div>
@@ -3191,7 +3191,7 @@ async function loadRFQDetails(rfqId, isOpenAccess = false) {
             ${isInGracePeriod(rfq.deadline) ? `
               <span style="font-size:12px; color:var(--warning); font-weight:500; padding:6px 12px; background:rgba(255,193,7,0.1); border-radius:4px;">🔒 Closed - Questions Only</span>
             ` : ''}
-            <button type="button" class="btn secondary" style="padding:8px 14px;" ${isGracePeriodExpired(rfq.deadline) ? 'disabled' : ''} onclick="openAskQuestionModal('${rfq.id}', '${escapeHtmlClient(rfq.rfq_name).replace(/'/g, "\\'")}')">❓ Ask a Question</button>
+            <button type="button" class="btn secondary" style="padding:8px 14px;" ${isGracePeriodExpired(rfq.deadline) ? 'disabled' : ''} onclick="openAskQuestionModal('${rfq.id}', '${escapeHtmlClient(rfq.rfq_name).replace(/'/g, "\\'")}')">❓ Ask for more information</button>
           </div>
           ${isGracePeriodExpired(rfq.deadline) ? `
             <p style="color:var(--border); font-size:12px; margin:12px 0 0 0; font-style:italic;">This RFQ closed more than 3 days ago. Questions are no longer accepted, but you can view published clarifications below.</p>
