@@ -3718,6 +3718,215 @@ function switchAdminTab(tabName, button) {
 // .super-tab-btn) so switching a tab here never touches the company
 // admin dashboard's tab state, and vice versa — the two dashboards can
 // be left on different sections without clobbering each other.
+// ===== PLATFORM ADMIN — ALL RFQs =====
+// A read-only register of every RFQ on the platform: which company issued it,
+// whether it was created here or synced in from CNWE, when it went public and
+// when it closes. Exists so that when a supplier queries a tender, admin can
+// answer without opening each company's own dashboard. Nothing here edits an
+// RFQ — the owning company's console remains the only place to do that.
+let allSuperAdminRFQs = [];
+let filteredSuperAdminRFQs = [];
+
+// Derived, not stored: the table keeps four independent booleans plus a
+// deadline, and the label a human wants is the combination of them.
+function rfqListingStatus(rfq) {
+  if (rfq.is_withdrawn) return { label: 'Withdrawn', color: '#B23B2E', bg: '#FDECEA' };
+  if (rfq.is_draft || !rfq.is_released) return { label: 'Draft', color: '#6B7280', bg: '#F1F3F5' };
+  if (!rfq.is_public) return { label: 'Invite only', color: '#0F3557', bg: '#E8EEF5' };
+  const deadline = rfq.deadline ? new Date(rfq.deadline) : null;
+  if (deadline && !isNaN(deadline.getTime()) && deadline < new Date()) {
+    return { label: 'Closed', color: '#6B7280', bg: '#F1F3F5' };
+  }
+  return { label: 'Open', color: '#2E6B4F', bg: '#E8F3EC' };
+}
+
+function rfqSourceLabel(rfq) {
+  return rfq.external_source_rfq_id ? 'CNWE' : 'RFQ Hub';
+}
+
+// The date the RFQ actually went public. released_at is the real answer;
+// created_at is only a fallback for older rows released before that column
+// was being written, and is never shown for something still in draft.
+function rfqListedDate(rfq) {
+  return rfq.released_at || (rfq.is_released ? rfq.created_at : null);
+}
+
+function formatAdminDate(value) {
+  if (!value) return '—';
+  const d = new Date(value);
+  if (isNaN(d.getTime())) return '—';
+  return d.toLocaleDateString('en-ZA', { day: '2-digit', month: 'short', year: 'numeric' });
+}
+
+async function loadSuperAdminRFQs() {
+  const listEl = document.getElementById('super-admin-rfqs-list');
+  if (!listEl) return;
+  listEl.innerHTML = '<p style="color:var(--border); padding:20px 0;">Loading…</p>';
+
+  try {
+    // is_super_admin() short-circuits the rfqs_select_scoped policy, so this
+    // returns every company's RFQs including drafts and withdrawn ones.
+    const { data: rfqs, error } = await client
+      .from('rfqs')
+      .select('id, rfq_name, project_name, company_id, deadline, created_at, released_at, is_draft, is_released, is_public, is_withdrawn, external_source_rfq_id, provinces, location_area')
+      .order('released_at', { ascending: false, nullsFirst: false });
+    if (error) throw error;
+
+    const { data: companies } = await client.from('companies').select('id, name');
+    const companyById = new Map((companies || []).map(c => [c.id, c.name]));
+
+    // Application counts. A super admin can read every submission, so this is
+    // a complete tally — but if the query ever fails the column shows a dash
+    // rather than a zero, because a wrong zero reads as "nobody applied".
+    let countByRfq = null;
+    try {
+      const { data: subs, error: subErr } = await client.from('rfq_submissions').select('rfq_id');
+      if (subErr) throw subErr;
+      countByRfq = new Map();
+      (subs || []).forEach(s => countByRfq.set(s.rfq_id, (countByRfq.get(s.rfq_id) || 0) + 1));
+    } catch (countErr) {
+      console.warn('RFQ register: could not load application counts:', countErr.message);
+    }
+
+    allSuperAdminRFQs = (rfqs || []).map(r => ({
+      ...r,
+      company_name: companyById.get(r.company_id) || 'Unknown',
+      application_count: countByRfq ? (countByRfq.get(r.id) || 0) : null
+    }));
+
+    const issuerFilter = document.getElementById('rfq-register-issuer-filter');
+    if (issuerFilter) {
+      const previous = issuerFilter.value;
+      const names = Array.from(new Set(allSuperAdminRFQs.map(r => r.company_name))).sort();
+      issuerFilter.innerHTML = '<option value="">All Issuers</option>' +
+        names.map(n => `<option value="${escapeHtmlClient(n)}">${escapeHtmlClient(n)}</option>`).join('');
+      issuerFilter.value = names.indexOf(previous) !== -1 ? previous : '';
+    }
+
+    filterSuperAdminRFQs();
+  } catch (err) {
+    console.error('Error loading RFQ register:', err);
+    listEl.innerHTML = '<p style="color:#B23B2E; padding:20px 0;">Could not load the RFQ list: ' + escapeHtmlClient(err.message) + '</p>';
+  }
+}
+
+function filterSuperAdminRFQs() {
+  const searchEl = document.getElementById('rfq-register-search');
+  const issuerEl = document.getElementById('rfq-register-issuer-filter');
+  const statusEl = document.getElementById('rfq-register-status-filter');
+  const sourceEl = document.getElementById('rfq-register-source-filter');
+
+  const term = (searchEl ? searchEl.value : '').trim().toLowerCase();
+  const issuer = issuerEl ? issuerEl.value : '';
+  const status = statusEl ? statusEl.value : '';
+  const source = sourceEl ? sourceEl.value : '';
+
+  filteredSuperAdminRFQs = allSuperAdminRFQs.filter(r => {
+    if (issuer && r.company_name !== issuer) return false;
+    if (status && rfqListingStatus(r).label !== status) return false;
+    if (source && rfqSourceLabel(r) !== source) return false;
+    if (!term) return true;
+    return [r.rfq_name, r.project_name, r.company_name, r.location_area, r.external_source_rfq_id]
+      .filter(Boolean)
+      .some(v => String(v).toLowerCase().indexOf(term) !== -1);
+  });
+
+  renderSuperAdminRFQs(filteredSuperAdminRFQs);
+}
+
+function renderSuperAdminRFQs(list) {
+  const el = document.getElementById('super-admin-rfqs-list');
+  if (!el) return;
+
+  const countEl = document.getElementById('rfq-register-count');
+  if (countEl) {
+    countEl.textContent = list.length === allSuperAdminRFQs.length
+      ? `${allSuperAdminRFQs.length} RFQ${allSuperAdminRFQs.length === 1 ? '' : 's'}`
+      : `${list.length} of ${allSuperAdminRFQs.length} RFQs`;
+  }
+
+  if (!list.length) {
+    el.innerHTML = `<p style="text-align:center; color:var(--border); padding:40px 0;">${allSuperAdminRFQs.length ? 'No RFQs match this filter' : 'No RFQs have been listed yet'}</p>`;
+    return;
+  }
+
+  const rows = list.map(r => {
+    const s = rfqListingStatus(r);
+    return `
+        <tr style="border-bottom:1px solid var(--border);">
+          <td style="padding:10px 12px; vertical-align:top;">
+            <strong style="color:var(--ink);">${escapeHtmlClient(r.rfq_name || 'Untitled')}</strong>
+            ${r.project_name ? `<div style="font-size:12px; color:var(--border);">${escapeHtmlClient(r.project_name)}</div>` : ''}
+            ${r.external_source_rfq_id ? `<div style="font-size:11px; color:var(--border);">Ref: ${escapeHtmlClient(r.external_source_rfq_id)}</div>` : ''}
+          </td>
+          <td style="padding:10px 12px; vertical-align:top;">${escapeHtmlClient(r.company_name)}</td>
+          <td style="padding:10px 12px; vertical-align:top; white-space:nowrap;">${rfqSourceLabel(r)}</td>
+          <td style="padding:10px 12px; vertical-align:top; white-space:nowrap;">${formatAdminDate(rfqListedDate(r))}</td>
+          <td style="padding:10px 12px; vertical-align:top; white-space:nowrap;">${formatAdminDate(r.deadline)}</td>
+          <td style="padding:10px 12px; vertical-align:top; white-space:nowrap;">
+            <span style="display:inline-block; padding:2px 10px; border-radius:10px; font-size:12px; font-weight:bold; color:${s.color}; background:${s.bg};">${s.label}</span>
+          </td>
+          <td style="padding:10px 12px; vertical-align:top; text-align:right;">${r.application_count === null ? '—' : r.application_count}</td>
+        </tr>`;
+  }).join('');
+
+  el.innerHTML = `
+      <div style="overflow-x:auto;">
+        <table style="width:100%; border-collapse:collapse; font-size:14px;">
+          <thead>
+            <tr style="background:var(--bg-2); text-align:left;">
+              <th style="padding:10px 12px;">RFQ</th>
+              <th style="padding:10px 12px;">Issued by</th>
+              <th style="padding:10px 12px;">Source</th>
+              <th style="padding:10px 12px;">Listed</th>
+              <th style="padding:10px 12px;">Closes</th>
+              <th style="padding:10px 12px;">Status</th>
+              <th style="padding:10px 12px; text-align:right;">Apps</th>
+            </tr>
+          </thead>
+          <tbody>${rows}</tbody>
+        </table>
+      </div>`;
+}
+
+// Exports what's currently on screen rather than the whole register, so a
+// filtered view ("everything CNWE put out") downloads as exactly that.
+function exportRFQRegisterAsCSV() {
+  const list = filteredSuperAdminRFQs.length ? filteredSuperAdminRFQs : allSuperAdminRFQs;
+  if (!list.length) {
+    showToast('❌ No RFQs to export', 'error');
+    return;
+  }
+  const q = (v) => `"${String(v === null || v === undefined ? '' : v).replace(/"/g, '""')}"`;
+  const headers = ['RFQ Name', 'Project', 'Issued By', 'Source', 'CNWE Reference', 'Listed', 'Closes', 'Status', 'Applications', 'Location', 'Provinces'];
+  const rows = list.map(r => [
+    q(r.rfq_name),
+    q(r.project_name),
+    q(r.company_name),
+    q(rfqSourceLabel(r)),
+    q(r.external_source_rfq_id),
+    q(formatAdminDate(rfqListedDate(r))),
+    q(formatAdminDate(r.deadline)),
+    q(rfqListingStatus(r).label),
+    r.application_count === null ? '' : r.application_count,
+    q(r.location_area),
+    q(Array.isArray(r.provinces) ? r.provinces.join('; ') : '')
+  ].join(','));
+
+  const csv = [headers.join(','), ...rows].join('\n');
+  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+  const link = document.createElement('a');
+  const url = URL.createObjectURL(blob);
+  link.setAttribute('href', url);
+  link.setAttribute('download', `RFQ_Register_${new Date().toISOString().split('T')[0]}.csv`);
+  link.style.visibility = 'hidden';
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+
+  showToast('✅ RFQ list exported as CSV', 'success');
+}
+
 function switchSuperAdminTab(tabName, button) {
   document.querySelectorAll('.super-tab').forEach(tab => tab.style.display = 'none');
   document.querySelectorAll('.super-tab-btn').forEach(btn => btn.classList.remove('active'));
@@ -5705,6 +5914,7 @@ function showSuperAdminView() {
   // query would just come back empty and print a confusing "no one has
   // registered" message behind a tab that's hidden anyway.
   loadSuperAdminCompanies();
+  loadSuperAdminRFQs();
   if (canViewSection('applicants')) loadSuperAdminApplicants();
 
   // "Manage Admins" is only usable by the admin-manager (see
