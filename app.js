@@ -3768,7 +3768,7 @@ async function loadSuperAdminRFQs() {
     // returns every company's RFQs including drafts and withdrawn ones.
     const { data: rfqs, error } = await client
       .from('rfqs')
-      .select('id, rfq_name, project_name, company_id, deadline, created_at, released_at, is_draft, is_released, is_public, is_withdrawn, external_source_rfq_id, provinces, location_area')
+      .select('id, rfq_name, project_name, company_id, deadline, created_at, released_at, is_draft, is_released, is_public, is_withdrawn, external_source_rfq_id, external_application_count, provinces, location_area')
       .order('released_at', { ascending: false, nullsFirst: false });
     if (error) throw error;
 
@@ -3788,11 +3788,24 @@ async function loadSuperAdminRFQs() {
       console.warn('RFQ register: could not load application counts:', countErr.message);
     }
 
-    allSuperAdminRFQs = (rfqs || []).map(r => ({
-      ...r,
-      company_name: companyById.get(r.company_id) || 'Unknown',
-      application_count: countByRfq ? (countByRfq.get(r.id) || 0) : null
-    }));
+    // A CNWE listing's applications are made on CNWE's own portal, so this
+    // project's rfq_submissions is legitimately empty for them and counting it
+    // would report 0 for every one. Their real figure is pushed across by the
+    // trigger on CNWE's rfq_applicants table and lands in
+    // external_application_count; null there means never reported, which stays
+    // a dash rather than becoming a false zero.
+    allSuperAdminRFQs = (rfqs || []).map(r => {
+      const fromCNWE = !!r.external_source_rfq_id;
+      const external = r.external_application_count;
+      return {
+        ...r,
+        company_name: companyById.get(r.company_id) || 'Unknown',
+        application_count: fromCNWE
+          ? (external === null || external === undefined ? null : external)
+          : (countByRfq ? (countByRfq.get(r.id) || 0) : null),
+        application_source: fromCNWE ? 'CNWE' : 'RFQ Hub'
+      };
+    });
 
     const issuerFilter = document.getElementById('rfq-register-issuer-filter');
     if (issuerFilter) {
@@ -3866,7 +3879,10 @@ function renderSuperAdminRFQs(list) {
           <td style="padding:10px 12px; vertical-align:top; white-space:nowrap;">
             <span style="display:inline-block; padding:2px 10px; border-radius:10px; font-size:12px; font-weight:bold; color:${s.color}; background:${s.bg};">${s.label}</span>
           </td>
-          <td style="padding:10px 12px; vertical-align:top; text-align:right;">${r.application_count === null ? '—' : r.application_count}</td>
+          <td style="padding:10px 12px; vertical-align:top; text-align:right;" title="${r.application_source === 'CNWE' ? 'Applications are made on, and held by, CNWE\'s own portal' : 'Applications held on the RFQ Hub'}">
+            ${r.application_count === null ? '—' : r.application_count}
+            ${r.application_source === 'CNWE' ? `<div style="font-size:10px; color:var(--border); font-weight:normal; white-space:nowrap;">on CNWE</div>` : ''}
+          </td>
         </tr>`;
   }).join('');
 
@@ -3898,7 +3914,7 @@ function exportRFQRegisterAsCSV() {
     return;
   }
   const q = (v) => `"${String(v === null || v === undefined ? '' : v).replace(/"/g, '""')}"`;
-  const headers = ['RFQ Name', 'Project', 'Issued By', 'Source', 'CNWE Reference', 'Listed', 'Closes', 'Status', 'Applications', 'Location', 'Provinces'];
+  const headers = ['RFQ Name', 'Project', 'Issued By', 'Source', 'CNWE Reference', 'Listed', 'Closes', 'Status', 'Applications', 'Applications Held By', 'Location', 'Provinces'];
   const rows = list.map(r => [
     q(r.rfq_name),
     q(r.project_name),
@@ -3909,6 +3925,7 @@ function exportRFQRegisterAsCSV() {
     q(formatAdminDate(r.deadline)),
     q(rfqListingStatus(r).label),
     r.application_count === null ? '' : r.application_count,
+    q(r.application_source),
     q(r.location_area),
     q(Array.isArray(r.provinces) ? r.provinces.join('; ') : '')
   ].join(','));
