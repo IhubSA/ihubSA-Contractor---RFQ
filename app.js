@@ -3944,6 +3944,166 @@ function exportRFQRegisterAsCSV() {
   showToast('✅ RFQ list exported as CSV', 'success');
 }
 
+// ===== PLATFORM ADMIN — NOTIFICATIONS ONLY =====
+// Contacts who should hear about every RFQ published on the platform without
+// being suppliers: no documents, no login, no applications, no supplier number.
+// They live in their own table (notification_subscribers) rather than as
+// applicant_registrations rows, so they can never be mistaken for registered
+// suppliers — not in the Supplier Database, not in a supplier export, not in
+// the registered-supplier count.
+let allNotificationSubscribers = [];
+
+async function loadNotificationSubscribers() {
+  const el = document.getElementById('notification-subscribers-list');
+  if (!el) return;
+  el.innerHTML = '<p style="color:var(--border); padding:16px 0;">Loading…</p>';
+  try {
+    const { data, error } = await client
+      .from('notification_subscribers')
+      .select('*')
+      .order('full_name', { ascending: true });
+    if (error) throw error;
+    allNotificationSubscribers = data || [];
+    renderNotificationSubscribers();
+  } catch (err) {
+    console.error('Error loading notification contacts:', err);
+    el.innerHTML = '<p style="color:#B23B2E; padding:16px 0;">Could not load the list: ' + escapeHtmlClient(err.message) + '</p>';
+  }
+}
+
+function renderNotificationSubscribers() {
+  const el = document.getElementById('notification-subscribers-list');
+  if (!el) return;
+
+  const list = allNotificationSubscribers;
+  if (!list.length) {
+    el.innerHTML = '<p style="text-align:center; color:var(--border); padding:30px 0;">No notification contacts yet. Add one above.</p>';
+    return;
+  }
+
+  const rows = list.map(s => {
+    const paused = s.status === 'paused';
+    return `
+        <tr style="border-bottom:1px solid var(--border);${paused ? ' opacity:0.55;' : ''}">
+          <td style="padding:10px 12px;"><strong style="color:var(--ink);">${escapeHtmlClient(s.full_name)}</strong></td>
+          <td style="padding:10px 12px;">${escapeHtmlClient(s.email)}</td>
+          <td style="padding:10px 12px; white-space:nowrap;">${s.province === 'ALL' ? 'All provinces' : escapeHtmlClient(s.province)}</td>
+          <td style="padding:10px 12px; white-space:nowrap;">
+            <span style="display:inline-block; padding:2px 10px; border-radius:10px; font-size:12px; font-weight:bold; color:${paused ? '#6B7280' : '#2E6B4F'}; background:${paused ? '#F1F3F5' : '#E8F3EC'};">${paused ? 'Paused' : 'Active'}</span>
+          </td>
+          <td style="padding:10px 12px; text-align:right; white-space:nowrap;">
+            <button type="button" class="btn secondary" style="padding:4px 12px; font-size:12px;" onclick="toggleNotificationSubscriber('${s.id}')">${paused ? 'Resume' : 'Pause'}</button>
+            <button type="button" class="btn secondary" style="padding:4px 12px; font-size:12px; margin-left:6px;" onclick="removeNotificationSubscriber('${s.id}')">Remove</button>
+          </td>
+        </tr>`;
+  }).join('');
+
+  const activeCount = list.filter(s => s.status !== 'paused').length;
+
+  el.innerHTML = `
+      <p style="font-size:13px; color:var(--border); margin:0 0 10px 0;">${activeCount} active of ${list.length} contact${list.length === 1 ? '' : 's'}.</p>
+      <div style="overflow-x:auto;">
+        <table style="width:100%; border-collapse:collapse; font-size:14px;">
+          <thead>
+            <tr style="background:var(--bg-2); text-align:left;">
+              <th style="padding:10px 12px;">Name</th>
+              <th style="padding:10px 12px;">Email</th>
+              <th style="padding:10px 12px;">Provinces</th>
+              <th style="padding:10px 12px;">Status</th>
+              <th style="padding:10px 12px; text-align:right;">&nbsp;</th>
+            </tr>
+          </thead>
+          <tbody>${rows}</tbody>
+        </table>
+      </div>`;
+}
+
+async function handleAddSubscriberSubmit(e) {
+  if (e) e.preventDefault();
+
+  const nameEl = document.getElementById('subscriber-name');
+  const emailEl = document.getElementById('subscriber-email');
+  const provinceEl = document.getElementById('subscriber-province');
+  const submitBtn = document.getElementById('add-subscriber-btn');
+
+  const full_name = (nameEl ? nameEl.value : '').trim();
+  const email = (emailEl ? emailEl.value : '').trim().toLowerCase();
+  const province = provinceEl ? provinceEl.value : 'ALL';
+
+  if (!full_name || !email) {
+    showToast('❌ Please enter both a name and an email address', 'error');
+    return;
+  }
+
+  if (submitBtn) { submitBtn.disabled = true; submitBtn.textContent = 'Adding...'; }
+
+  try {
+    const { error } = await client
+      .from('notification_subscribers')
+      .insert({ full_name, email, province, created_by: (currentUser && currentUser.email) || null });
+
+    if (error) {
+      // 23505 is the unique index on lower(email) — this person is already on
+      // the list, which is worth saying plainly rather than as a raw error.
+      if (error.code === '23505') {
+        showToast('❌ That email address is already on the notifications list', 'error');
+      } else {
+        throw error;
+      }
+    } else {
+      showToast(`✅ ${full_name} will be notified when new RFQs are published`, 'success');
+      if (nameEl) nameEl.value = '';
+      if (emailEl) emailEl.value = '';
+      if (provinceEl) provinceEl.value = 'ALL';
+      await loadNotificationSubscribers();
+    }
+  } catch (err) {
+    console.error('Error adding notification contact:', err);
+    showToast('❌ Could not add this contact: ' + err.message, 'error');
+  } finally {
+    if (submitBtn) { submitBtn.disabled = false; submitBtn.textContent = 'Add Contact'; }
+  }
+}
+
+// Pausing keeps the person on the list but takes them out of the notifier's
+// query — useful for someone on leave, and reversible without re-typing their
+// details.
+async function toggleNotificationSubscriber(id) {
+  const row = allNotificationSubscribers.find(s => s.id === id);
+  if (!row) return;
+  const next = row.status === 'paused' ? 'active' : 'paused';
+  try {
+    const { error } = await client
+      .from('notification_subscribers')
+      .update({ status: next })
+      .eq('id', id);
+    if (error) throw error;
+    showToast(next === 'paused' ? `⏸️ ${row.full_name} paused` : `✅ ${row.full_name} resumed`, 'success');
+    await loadNotificationSubscribers();
+  } catch (err) {
+    console.error('Error updating notification contact:', err);
+    showToast('❌ Could not update this contact: ' + err.message, 'error');
+  }
+}
+
+async function removeNotificationSubscriber(id) {
+  const row = allNotificationSubscribers.find(s => s.id === id);
+  if (!row) return;
+  if (!confirm(`Remove ${row.full_name} (${row.email}) from the notifications list? They will stop receiving new-RFQ emails immediately. You can add them again later.`)) return;
+  try {
+    const { error } = await client
+      .from('notification_subscribers')
+      .delete()
+      .eq('id', id);
+    if (error) throw error;
+    showToast(`✅ ${row.full_name} removed from the notifications list`, 'success');
+    await loadNotificationSubscribers();
+  } catch (err) {
+    console.error('Error removing notification contact:', err);
+    showToast('❌ Could not remove this contact: ' + err.message, 'error');
+  }
+}
+
 function switchSuperAdminTab(tabName, button) {
   document.querySelectorAll('.super-tab').forEach(tab => tab.style.display = 'none');
   document.querySelectorAll('.super-tab-btn').forEach(btn => btn.classList.remove('active'));
@@ -5932,6 +6092,7 @@ function showSuperAdminView() {
   // registered" message behind a tab that's hidden anyway.
   loadSuperAdminCompanies();
   loadSuperAdminRFQs();
+  loadNotificationSubscribers();
   if (canViewSection('applicants')) loadSuperAdminApplicants();
 
   // "Manage Admins" is only usable by the admin-manager (see
