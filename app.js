@@ -3233,7 +3233,7 @@ async function loadRFQDetails(rfqId, isOpenAccess = false) {
 
           <div style="margin-top: 30px;">
             <h4>Upload Documents</h4>
-            <p style="color: var(--border); font-size: 14px;">Documents marked * are mandatory and must be uploaded to submit.</p>
+            <p style="color: var(--border); font-size: 14px;">Documents marked * are mandatory and must be uploaded to submit. Any file type is accepted — a clear phone photo of the document is fine.</p>
             ${rfq.required_documents.map((doc, idx) => {
               const reuseAvailable = !!(doc.supplier_doc_category && !doc.requires_expiry &&
                 currentApplicantDocuments && currentApplicantDocuments['has_' + doc.supplier_doc_category]);
@@ -3244,7 +3244,7 @@ async function loadRFQDetails(rfqId, isOpenAccess = false) {
               // data-was-required remembers the original required-ness so it can
               // be restored; a hidden `required` file input misbehaves in some
               // browsers' native validation, so it's only ever added while shown.
-              const fileInputHtml = `<input type="file" id="doc-${idx}" data-doc-name="${escapeHtmlClient(doc.name)}" accept=".pdf,.doc,.docx,.xls,.xlsx" data-was-required="${wasRequired}"${reuseAvailable ? ' data-supplier-category="' + doc.supplier_doc_category + '" style="display:none;"' : (wasRequired ? ' required' : '')}>`;
+              const fileInputHtml = `<input type="file" id="doc-${idx}" data-doc-name="${escapeHtmlClient(doc.name)}" data-was-required="${wasRequired}"${reuseAvailable ? ' data-supplier-category="' + doc.supplier_doc_category + '" style="display:none;"' : (wasRequired ? ' required' : '')}>`;
               const onFileName = reuseAvailable ? currentApplicantDocuments[doc.supplier_doc_category + '_file_name'] : '';
               return `
               <div style="margin-bottom: 15px;">
@@ -3277,8 +3277,8 @@ async function loadRFQDetails(rfqId, isOpenAccess = false) {
             <p style="color: var(--border); font-size: 14px; margin-bottom: 15px;">Upload your quotation below. This is what the RFQ issuer reviews alongside your application — attach more than one file if your quote runs to several documents.</p>
             <div style="margin-bottom: 15px;">
               <label>Quotation Document(s) *</label>
-              <input type="file" id="contractor-quote-docs" multiple required accept=".pdf,.doc,.docx,.xls,.xlsx" style="width:100%;">
-              <p style="color: var(--border); font-size: 12px; margin:6px 0 0 0;">Accepted formats: PDF, Word, Excel</p>
+              <input type="file" id="contractor-quote-docs" multiple required style="width:100%;">
+              <p style="color: var(--border); font-size: 12px; margin:6px 0 0 0;">Any file type is accepted, including a photo of a printed quote.</p>
             </div>
           </div>
 
@@ -3287,8 +3287,8 @@ async function loadRFQDetails(rfqId, isOpenAccess = false) {
             <p style="color: var(--border); font-size: 14px;">Upload any supplementary documents (e.g., technical specifications, references, case studies, certifications). You can select multiple files at once.</p>
             <div style="margin-bottom: 15px;">
               <label>Additional Documents</label>
-              <input type="file" id="contractor-optional-docs" multiple accept=".pdf,.doc,.docx,.xls,.xlsx,.jpg,.jpeg,.png" style="width:100%;">
-              <p style="color: var(--border); font-size: 12px; margin:6px 0 0 0;">Accepted formats: PDF, Word, Excel, Images (JPG, PNG)</p>
+              <input type="file" id="contractor-optional-docs" multiple style="width:100%;">
+              <p style="color: var(--border); font-size: 12px; margin:6px 0 0 0;">Any file type is accepted, including photos.</p>
             </div>
           </div>
 
