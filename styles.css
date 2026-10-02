@@ -1265,7 +1265,7 @@ textarea:focus-visible {
     grid-template-columns: 1fr;
   }
 
-  /* Sidebar nav collapses to a horizontal scrollable tab bar on narrow screens */
+  /* Sidebar nav becomes a wrapped grid so ALL tabs are visible without scrolling */
   .admin-layout {
     flex-direction: column;
     gap: 0;
@@ -1273,17 +1273,20 @@ textarea:focus-visible {
 
   .admin-sidebar {
     width: 100%;
-    flex-direction: row;
-    overflow-x: auto;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
     position: static;
-    margin-bottom: 20px;
-    gap: 8px;
-    padding-bottom: 4px;
+    margin-bottom: 16px;
+    gap: 6px;
+    padding-bottom: 0;
   }
 
   .sidebar-tab-btn {
     white-space: nowrap;
-    flex-shrink: 0;
+    font-size: 12px;
+    padding: 10px 8px;
+    text-align: center;
+    border-width: 1.5px;
   }
 
   input, textarea, select {
