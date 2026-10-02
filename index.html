@@ -790,8 +790,8 @@
           </div>
         </div>
 
-        <input type="file" id="supplier-doc-upload-input" accept="application/pdf" style="display:none;" onchange="handleSupplierDocFileSelected(event)">
-        <input type="file" id="prefs-doc-upload-input" accept="application/pdf" style="display:none;" onchange="handlePrefsDocFileSelected(event)">
+        <input type="file" id="supplier-doc-upload-input" style="display:none;" onchange="handleSupplierDocFileSelected(event)">
+        <input type="file" id="prefs-doc-upload-input" style="display:none;" onchange="handlePrefsDocFileSelected(event)">
 
         <div id="import-suppliers-modal" class="modal" style="display:none;">
           <div class="modal-content" style="max-width:600px;">
@@ -1561,38 +1561,38 @@
             </div>
 
             <h4 style="margin:20px 0 12px 0; color:var(--primary);">Document Submission</h4>
-            <p style="margin:0 0 12px 0; font-size:12px; color:var(--border);">Please upload all documents as a PDF file. Certain uploads allow for only 1 file (can be multiple pages).</p>
+            <p style="margin:0 0 12px 0; font-size:12px; color:var(--border);">You can upload a PDF, Word/Excel file, or a photo of the document (JPG/PNG/HEIC) — a clear phone photo is fine. Certain uploads allow for only 1 file (can be multiple pages).</p>
             <div style="margin-bottom:15px;">
               <label>CIPC Registration or ID for Sole Prop/NPO Certificate/Other *</label>
-              <input type="file" id="gate-doc-cipc" required accept="application/pdf" style="width:100%; box-sizing:border-box;">
+              <input type="file" id="gate-doc-cipc" required style="width:100%; box-sizing:border-box;">
             </div>
             <div style="margin-bottom:15px;">
               <label>Proof of Address *</label>
-              <input type="file" id="gate-doc-proof-address" required accept="application/pdf" style="width:100%; box-sizing:border-box;">
+              <input type="file" id="gate-doc-proof-address" required style="width:100%; box-sizing:border-box;">
             </div>
             <div style="margin-bottom:15px;">
               <label>SARS Information (Tax Clearance Certificate/PIN and/or VAT/Tax Registration Proof) *</label>
-              <input type="file" id="gate-doc-sars" required accept="application/pdf" style="width:100%; box-sizing:border-box;">
+              <input type="file" id="gate-doc-sars" required style="width:100%; box-sizing:border-box;">
             </div>
             <div style="margin-bottom:15px;">
               <label>Proof of Banking</label>
-              <input type="file" id="gate-doc-banking" accept="application/pdf" style="width:100%; box-sizing:border-box;">
+              <input type="file" id="gate-doc-banking" style="width:100%; box-sizing:border-box;">
             </div>
             <div style="margin-bottom:15px;">
               <label>B-BBEE Affidavit or Certificate <span style="font-weight:normal; color:var(--border);">(if applicable)</span></label>
-              <input type="file" id="gate-doc-bbbee" accept="application/pdf" style="width:100%; box-sizing:border-box;">
+              <input type="file" id="gate-doc-bbbee" style="width:100%; box-sizing:border-box;">
             </div>
             <div style="margin-bottom:15px;">
               <label>Valid Health and Safety Certificate <span style="font-weight:normal; color:var(--border);">(if applicable)</span></label>
-              <input type="file" id="gate-doc-health-safety" accept="application/pdf" style="width:100%; box-sizing:border-box;">
+              <input type="file" id="gate-doc-health-safety" style="width:100%; box-sizing:border-box;">
             </div>
             <div style="margin-bottom:15px;">
               <label>Any Special Permits or Registrations <span style="font-weight:normal; color:var(--border);">(as applicable)</span></label>
-              <input type="file" id="gate-doc-permits" accept="application/pdf" style="width:100%; box-sizing:border-box;">
+              <input type="file" id="gate-doc-permits" style="width:100%; box-sizing:border-box;">
             </div>
             <div style="margin-bottom:15px;">
               <label>Any Other Documents</label>
-              <input type="file" id="gate-doc-other" accept="application/pdf" multiple style="width:100%; box-sizing:border-box;">
+              <input type="file" id="gate-doc-other" multiple style="width:100%; box-sizing:border-box;">
             </div>
 
             <h4 style="margin:20px 0 12px 0; color:var(--primary);">Declarations</h4>
