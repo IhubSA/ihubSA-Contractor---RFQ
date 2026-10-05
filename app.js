@@ -1172,11 +1172,61 @@ function sanitizeStorageFileName(name) {
 }
 
 // Uploads one supplier registration document to the private
+/* ---- Image compression for mobile uploads ---- */
+function isImageFile(file){
+  if(file.type && file.type.startsWith('image/')) return true;
+  const ext = (file.name||'').split('.').pop().toLowerCase();
+  return ['jpg','jpeg','png','heic','heif','webp','bmp','tiff','tif'].includes(ext);
+}
+async function compressImage(file, maxDim, quality){
+  maxDim = maxDim || 1600;
+  quality = quality || 0.80;
+  return new Promise((resolve)=>{
+    const url = URL.createObjectURL(file);
+    const img = new Image();
+    img.onload = ()=>{
+      URL.revokeObjectURL(url);
+      let w = img.naturalWidth, h = img.naturalHeight;
+      if(w <= maxDim && h <= maxDim && file.size < 500000){
+        resolve(file); return;
+      }
+      if(w > maxDim || h > maxDim){
+        const ratio = Math.min(maxDim / w, maxDim / h);
+        w = Math.round(w * ratio);
+        h = Math.round(h * ratio);
+      }
+      const canvas = document.createElement('canvas');
+      canvas.width = w; canvas.height = h;
+      const ctx = canvas.getContext('2d');
+      ctx.drawImage(img, 0, 0, w, h);
+      canvas.toBlob((blob)=>{
+        if(!blob || blob.size >= file.size){
+          resolve(file); return;
+        }
+        const baseName = file.name.replace(/\.[^.]+$/, '');
+        const compressed = new File([blob], baseName + '.jpg', { type:'image/jpeg' });
+        resolve(compressed);
+      }, 'image/jpeg', quality);
+    };
+    img.onerror = ()=>{
+      URL.revokeObjectURL(url);
+      resolve(file);
+    };
+    img.src = url;
+  });
+}
+async function prepareFile(file){
+  if(!isImageFile(file)) return file;
+  try{ return await compressImage(file); }
+  catch(e){ return file; }
+}
+
 // 'supplier-documents' bucket, folder-scoped by the client-generated
 // applicant id so files from different registrants never collide. Returns
 // the storage path (not a public URL — the bucket is private and only
 // readable by the super admin, same trust model as the table itself).
 async function uploadSupplierDocument(applicantId, keyPrefix, file) {
+  file = await prepareFile(file);
   const filePath = `applicant-${applicantId}/${keyPrefix}-${Date.now()}-${sanitizeStorageFileName(file.name)}`;
   const { error } = await client.storage.from('supplier-documents').upload(filePath, file);
   if (error) throw error;
@@ -2823,8 +2873,9 @@ async function submitAdditionalInfoForm() {
     const fileInput = document.getElementById('info-response-files');
     let filesUploaded = 0;
     if (fileInput && fileInput.files && fileInput.files.length > 0) {
-      for (const file of fileInput.files) {
+      for (const originalFile of fileInput.files) {
         try {
+          const file = await prepareFile(originalFile);
           const filePath = `rfq-${currentInfoRequestRfqId}/sub-${resolvedSubmissionId}/${Date.now()}-${sanitizeStorageFileName(file.name)}`;
           const { error: uploadError } = await client.storage
             .from('rfq-documents')
@@ -2936,15 +2987,16 @@ function uploadOrReplacePrefsDocument(category, keyPrefix, label) {
 }
 
 async function handlePrefsDocFileSelected(e) {
-  const file = e.target.files[0];
+  const originalFile = e.target.files[0];
   const pending = pendingPrefsDocUpload;
   pendingPrefsDocUpload = null;
-  if (!file || !pending || !currentPrefsToken || !currentPrefsApplicantId) return;
+  if (!originalFile || !pending || !currentPrefsToken || !currentPrefsApplicantId) return;
 
   try {
     // Same applicant-<id>/... path convention uploadSupplierDocument()
     // uses at original registration time — the bucket allows anonymous
     // insert (no login), same trust model as the rest of this page.
+    const file = await prepareFile(originalFile);
     const filePath = `applicant-${currentPrefsApplicantId}/${pending.keyPrefix}-${Date.now()}-${sanitizeStorageFileName(file.name)}`;
     const { error: uploadError } = await client.storage.from('supplier-documents').upload(filePath, file);
     if (uploadError) throw uploadError;
@@ -3480,7 +3532,8 @@ async function submitContractorForm(token) {
     for (let input of fileInputs) {
       if (input.files[0]) {
         try {
-          const file = input.files[0];
+          const originalFile = input.files[0];
+          const file = await prepareFile(originalFile);
           const filePath = `rfq-${currentRFQId}/sub-${submissionId}/${Date.now()}-${sanitizeStorageFileName(file.name)}`;
 
           const { error: uploadError } = await client.storage
@@ -3524,8 +3577,9 @@ async function submitContractorForm(token) {
     // document_type and the form makes at least one file mandatory.
     let quotesUploaded = 0;
 
-    for (let file of quoteFiles) {
+    for (let originalQuoteFile of quoteFiles) {
       try {
+        const file = await prepareFile(originalQuoteFile);
         const timestamp = Date.now() + Math.random(); // Ensure unique names for multiple files
         const filePath = `rfq-${currentRFQId}/sub-${submissionId}/${timestamp}-${sanitizeStorageFileName(file.name)}`;
 
@@ -3562,8 +3616,9 @@ async function submitContractorForm(token) {
     // Upload optional additional documents (multiple files allowed)
     const optionalDocInput = document.getElementById('contractor-optional-docs');
     if (optionalDocInput && optionalDocInput.files && optionalDocInput.files.length > 0) {
-      for (let file of optionalDocInput.files) {
+      for (let originalOptFile of optionalDocInput.files) {
         try {
+          const file = await prepareFile(originalOptFile);
           const timestamp = Date.now() + Math.random(); // Ensure unique names for multiple files
           const filePath = `rfq-${currentRFQId}/sub-${submissionId}/${timestamp}-${sanitizeStorageFileName(file.name)}`;
 
