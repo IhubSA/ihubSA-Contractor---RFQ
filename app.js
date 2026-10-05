@@ -1300,6 +1300,7 @@ async function handleGateRegisterSubmit(e) {
         return await uploadSupplierDocument(applicantId, key, file);
       } catch (err) {
         console.warn(`⚠️ Optional document "${key}" failed to upload:`, err.message);
+        showToast(`⚠️ Optional document failed to upload — you can add it later.`, 'error');
         return null;
       }
     };
@@ -2831,6 +2832,7 @@ async function submitAdditionalInfoForm() {
 
           if (uploadError) {
             console.warn('⚠️ File upload failed:', uploadError.message);
+            showToast(`⚠️ "${file.name}" failed to upload — try a smaller file.`, 'error');
             continue;
           }
 
@@ -2844,6 +2846,7 @@ async function submitAdditionalInfoForm() {
           filesUploaded++;
         } catch (fileErr) {
           console.warn('⚠️ Error uploading file:', fileErr.message);
+          showToast(`⚠️ "${file.name}" failed to upload.`, 'error');
         }
       }
     }
@@ -3233,7 +3236,7 @@ async function loadRFQDetails(rfqId, isOpenAccess = false) {
 
           <div style="margin-top: 30px;">
             <h4>Upload Documents</h4>
-            <p style="color: var(--border); font-size: 14px;">Documents marked * are mandatory and must be uploaded to submit. Any file type is accepted — a clear phone photo of the document is fine.</p>
+            <p style="color: var(--border); font-size: 14px;">Documents marked * are mandatory and must be uploaded to submit.</p>
             ${rfq.required_documents.map((doc, idx) => {
               const reuseAvailable = !!(doc.supplier_doc_category && !doc.requires_expiry &&
                 currentApplicantDocuments && currentApplicantDocuments['has_' + doc.supplier_doc_category]);
@@ -3244,7 +3247,7 @@ async function loadRFQDetails(rfqId, isOpenAccess = false) {
               // data-was-required remembers the original required-ness so it can
               // be restored; a hidden `required` file input misbehaves in some
               // browsers' native validation, so it's only ever added while shown.
-              const fileInputHtml = `<input type="file" id="doc-${idx}" data-doc-name="${escapeHtmlClient(doc.name)}" data-was-required="${wasRequired}"${reuseAvailable ? ' data-supplier-category="' + doc.supplier_doc_category + '" style="display:none;"' : (wasRequired ? ' required' : '')}>`;
+              const fileInputHtml = `<input type="file" id="doc-${idx}" data-doc-name="${escapeHtmlClient(doc.name)}" accept=".pdf,.doc,.docx,.xls,.xlsx,.jpg,.jpeg,.png,.heic,.heif,image/*" data-was-required="${wasRequired}"${reuseAvailable ? ' data-supplier-category="' + doc.supplier_doc_category + '" style="display:none;"' : (wasRequired ? ' required' : '')}>`;
               const onFileName = reuseAvailable ? currentApplicantDocuments[doc.supplier_doc_category + '_file_name'] : '';
               return `
               <div style="margin-bottom: 15px;">
@@ -3277,8 +3280,8 @@ async function loadRFQDetails(rfqId, isOpenAccess = false) {
             <p style="color: var(--border); font-size: 14px; margin-bottom: 15px;">Upload your quotation below. This is what the RFQ issuer reviews alongside your application — attach more than one file if your quote runs to several documents.</p>
             <div style="margin-bottom: 15px;">
               <label>Quotation Document(s) *</label>
-              <input type="file" id="contractor-quote-docs" multiple required style="width:100%;">
-              <p style="color: var(--border); font-size: 12px; margin:6px 0 0 0;">Any file type is accepted, including a photo of a printed quote.</p>
+              <input type="file" id="contractor-quote-docs" multiple required accept=".pdf,.doc,.docx,.xls,.xlsx,.jpg,.jpeg,.png,.heic,.heif,image/*" style="width:100%;">
+              <p style="color: var(--border); font-size: 12px; margin:6px 0 0 0;">Accepted formats: PDF, Word, Excel, Images (JPG, PNG)</p>
             </div>
           </div>
 
@@ -3287,8 +3290,8 @@ async function loadRFQDetails(rfqId, isOpenAccess = false) {
             <p style="color: var(--border); font-size: 14px;">Upload any supplementary documents (e.g., technical specifications, references, case studies, certifications). You can select multiple files at once.</p>
             <div style="margin-bottom: 15px;">
               <label>Additional Documents</label>
-              <input type="file" id="contractor-optional-docs" multiple style="width:100%;">
-              <p style="color: var(--border); font-size: 12px; margin:6px 0 0 0;">Any file type is accepted, including photos.</p>
+              <input type="file" id="contractor-optional-docs" multiple accept=".pdf,.doc,.docx,.xls,.xlsx,.jpg,.jpeg,.png" style="width:100%;">
+              <p style="color: var(--border); font-size: 12px; margin:6px 0 0 0;">Accepted formats: PDF, Word, Excel, Images (JPG, PNG)</p>
             </div>
           </div>
 
@@ -3472,6 +3475,7 @@ async function submitContractorForm(token) {
     // validation blocks the submit event otherwise).
     const fileInputs = document.querySelectorAll('input[type="file"][id^="doc-"]');
     let filesUploaded = 0;
+    let filesFailed = 0;
 
     for (let input of fileInputs) {
       if (input.files[0]) {
@@ -3485,6 +3489,8 @@ async function submitContractorForm(token) {
 
           if (uploadError) {
             console.warn('⚠️ File upload failed:', uploadError.message);
+            filesFailed++;
+            showToast(`⚠️ "${file.name}" failed to upload — try again or use a smaller file.`, 'error');
             continue;
           }
 
@@ -3507,6 +3513,8 @@ async function submitContractorForm(token) {
           filesUploaded++;
         } catch (fileErr) {
           console.warn('⚠️ Error uploading file:', fileErr.message);
+          filesFailed++;
+          showToast(`⚠️ "${input.files[0].name}" failed to upload — please retry.`, 'error');
         }
       }
     }
@@ -3527,6 +3535,7 @@ async function submitContractorForm(token) {
 
         if (uploadError) {
           console.warn('⚠️ Quotation upload failed:', uploadError.message);
+          showToast(`⚠️ Quotation "${file.name}" failed to upload — try a smaller file or different format.`, 'error');
           continue;
         }
 
@@ -3542,6 +3551,7 @@ async function submitContractorForm(token) {
         filesUploaded++;
       } catch (quoteErr) {
         console.warn('⚠️ Error uploading quotation:', quoteErr.message);
+        showToast(`⚠️ Quotation upload error — please retry.`, 'error');
       }
     }
 
@@ -3563,6 +3573,7 @@ async function submitContractorForm(token) {
 
           if (uploadError) {
             console.warn('⚠️ Optional document upload failed:', uploadError.message);
+            showToast(`⚠️ "${file.name}" failed to upload.`, 'error');
             continue;
           }
 
@@ -3578,6 +3589,7 @@ async function submitContractorForm(token) {
           filesUploaded++;
         } catch (optErr) {
           console.warn('⚠️ Error uploading optional document:', optErr.message);
+          showToast(`⚠️ "${file.name}" failed to upload.`, 'error');
         }
       }
     }
@@ -3620,7 +3632,11 @@ async function submitContractorForm(token) {
       console.log('✅ Token marked as used');
     }
 
-    showToast('✅ Submission successful!', 'success');
+    if (filesFailed > 0) {
+      showToast(`⚠️ Submission saved but ${filesFailed} document(s) didn't upload. You may be asked to resend them.`, 'error');
+    } else {
+      showToast('✅ Submission successful!', 'success');
+    }
 
     // Best-effort confirmation email — the submission is already saved either
     // way, so a failure here (e.g. Resend hiccup) shouldn't interrupt the UX.
@@ -4914,6 +4930,7 @@ async function uploadRFQAttachments(rfqId) {
 
       if (uploadError) {
         console.warn('⚠️ Attachment upload failed:', file.name, uploadError.message);
+        showToast(`⚠️ Attachment "${file.name}" failed to upload.`, 'error');
         continue;
       }
 
@@ -4921,6 +4938,7 @@ async function uploadRFQAttachments(rfqId) {
       uploaded.push({ name: file.name, url: urlData.publicUrl });
     } catch (err) {
       console.warn('⚠️ Attachment upload error:', fileInfo.name, err.message);
+      showToast(`⚠️ Attachment "${fileInfo.name}" failed to upload.`, 'error');
     }
   }
 
