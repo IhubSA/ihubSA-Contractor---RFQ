@@ -1006,11 +1006,16 @@ let currentApplicantDocuments = null;
 // of opening the normal gate for these specific RFQs, send the visitor
 // straight to the matching application form on CNWE's own public portal.
 const CNWE_COMPANY_ID = '3a8d98c5-7c7d-43e3-b073-2c861900e9d7';
+let pendingCnweRedirectUrl = null;
 function openApplicantGateOrRedirect(rfqId, companyId, externalSourceRfqId) {
   if (companyId === CNWE_COMPANY_ID && externalSourceRfqId) {
-    window.location.href = `https://ihubsa.github.io/Public-RFQ-Hub/?apply=${encodeURIComponent(externalSourceRfqId)}`;
+    // Store the CNWE redirect — supplier must register/login first,
+    // then proceedPastGate() will redirect them to the CNWE portal.
+    pendingCnweRedirectUrl = `https://ihubsa.github.io/Public-RFQ-Hub/?apply=${encodeURIComponent(externalSourceRfqId)}`;
+    openApplicantGate(rfqId);
     return;
   }
+  pendingCnweRedirectUrl = null;
   openApplicantGate(rfqId);
 }
 
@@ -1135,10 +1140,12 @@ async function handleGateEmailSubmit(e) {
 
       if (currentApplicantStatus && currentApplicantStatus.status === 'suspended') {
         showToast('⚠️ Your supplier registration is suspended. You can view RFQs but can\'t apply — contact us for details.', 'error');
+        pendingCnweRedirectUrl = null; // Don't redirect suspended suppliers
       } else if (currentApplicantStatus && currentApplicantStatus.status === 'removed') {
         showToast('⚠️ Your supplier registration has been removed. You can view RFQs but can\'t apply — contact us for details.', 'error');
+        pendingCnweRedirectUrl = null; // Don't redirect removed suppliers
       } else {
-        showToast(pendingGateRfqId ? '👋 Welcome back! Loading RFQ...' : '👋 Welcome back! You\'re already registered.', 'success');
+        showToast(pendingCnweRedirectUrl ? '👋 Welcome back! Redirecting to the application form…' : pendingGateRfqId ? '👋 Welcome back! Loading RFQ...' : '👋 Welcome back! You\'re already registered.', 'success');
       }
       proceedPastGate();
     } else {
@@ -1450,7 +1457,7 @@ async function handleGateRegisterSubmit(e) {
     callPublicEdgeFunction('send-registration-confirmation', { email })
       .catch(err => console.error('send-registration-confirmation failed:', err));
 
-    showToast(pendingGateRfqId ? `✅ Registered! Check your email for your supplier number. Loading RFQ...` : `✅ You're registered!${supplierNumberMsg} We've emailed you a confirmation.`, 'success');
+    showToast(pendingCnweRedirectUrl ? `✅ Registered! Redirecting to the CNWE Energy application form…` : pendingGateRfqId ? `✅ Registered! Check your email for your supplier number. Loading RFQ...` : `✅ You're registered!${supplierNumberMsg} We've emailed you a confirmation.`, 'success');
     proceedPastGate();
   } catch (err) {
     console.error('Error registering applicant:', err);
@@ -1465,6 +1472,17 @@ function proceedPastGate() {
   closeModal('applicant-gate-modal');
   const rfqId = pendingGateRfqId;
   pendingGateRfqId = null;
+
+  // If the supplier was trying to apply for a CNWE RFQ, redirect them
+  // to the CNWE portal now that they're registered/logged in.
+  if (pendingCnweRedirectUrl) {
+    const dest = pendingCnweRedirectUrl;
+    pendingCnweRedirectUrl = null;
+    showToast('✅ Redirecting you to the CNWE Energy application form…', 'success');
+    setTimeout(() => { window.location.href = dest; }, 1200);
+    return;
+  }
+
   if (!rfqId) {
     // Generic "Register Free" / "Register as a Supplier" — nothing to
     // open, just take them to the listings they can now apply to.
