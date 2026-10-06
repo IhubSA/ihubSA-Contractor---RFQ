@@ -4439,7 +4439,7 @@ async function generateReport(prefix) {
       html += `
       <div style="margin-bottom:30px;">
         <h2 style="font-size:16px; color:${brandColor}; border-bottom:1px solid #eee; padding-bottom:8px; margin-top:0;">RFQ Status Distribution</h2>
-        <div style="max-width:380px; margin:0 auto;"><canvas id="${prefix}chart-status"></canvas></div>
+        <div style="max-width:380px; height:300px; margin:0 auto;"><canvas id="${prefix}chart-status" width="380" height="300"></canvas></div>
       </div>`;
     }
 
@@ -4448,7 +4448,7 @@ async function generateReport(prefix) {
       html += `
       <div style="margin-bottom:30px;">
         <h2 style="font-size:16px; color:${brandColor}; border-bottom:1px solid #eee; padding-bottom:8px; margin-top:0;">Applications per RFQ</h2>
-        <div style="max-width:700px;"><canvas id="${prefix}chart-apps"></canvas></div>
+        <div style="max-width:700px; height:300px;"><canvas id="${prefix}chart-apps" width="700" height="300"></canvas></div>
       </div>`;
     }
 
@@ -4466,7 +4466,7 @@ async function generateReport(prefix) {
               <tr><td style="padding:6px 0;">Avg. Applications per RFQ</td><td style="padding:6px 0; text-align:right; font-weight:700;">${avgAppsPerRfq}</td></tr>
             </table>
           </div>
-          <div style="max-width:300px;"><canvas id="${prefix}chart-provinces"></canvas></div>
+          <div style="max-width:300px; height:280px;"><canvas id="${prefix}chart-provinces" width="300" height="280"></canvas></div>
         </div>
       </div>`;
     }
@@ -4486,7 +4486,7 @@ async function generateReport(prefix) {
       });
       if (subStatLabels.length === 0) html += `<tr><td colspan="2" style="padding:12px; text-align:center; color:#999;">No submissions in the selected period.</td></tr>`;
       html += `</tbody></table>
-          <div style="max-width:300px;"><canvas id="${prefix}chart-sub-status"></canvas></div>
+          <div style="max-width:300px; height:280px;"><canvas id="${prefix}chart-sub-status" width="300" height="280"></canvas></div>
         </div>
       </div>`;
     }
@@ -4523,7 +4523,8 @@ async function generateReport(prefix) {
 
     outputEl.innerHTML = html;
 
-    /* ---- Render charts ---- */
+    /* ---- Render charts (delay so browser lays out the canvases first) ---- */
+    setTimeout(() => {
     if (typeof Chart !== 'undefined') {
       const chartColors = ['#1a3a5c','#F57C00','#4caf50','#f44336','#9c27b0','#009688','#ff9800','#2196f3','#795548'];
 
@@ -4535,7 +4536,7 @@ async function generateReport(prefix) {
             labels: ['Open','Closed','Draft','Withdrawn'],
             datasets: [{ data: [openRfqs, closedRfqs, draftRfqs, withdrawnRfqs], backgroundColor: ['#4caf50','#f44336','#999','#ff9800'] }]
           },
-          options: { responsive:true, plugins:{ legend:{ position:'bottom', labels:{ font:{size:11} } } } }
+          options: { responsive:true, maintainAspectRatio:false, plugins:{ legend:{ position:'bottom', labels:{ font:{size:11} } } } }
         });
       }
 
@@ -4546,7 +4547,7 @@ async function generateReport(prefix) {
         if (ctx2) new Chart(ctx2, {
           type: 'bar',
           data: { labels, datasets: [{ label:'Applications', data, backgroundColor: accentColor }] },
-          options: { responsive:true, indexAxis:'y', plugins:{ legend:{display:false} }, scales:{ x:{ beginAtZero:true, ticks:{ stepSize:1 } } } }
+          options: { responsive:true, maintainAspectRatio:false, indexAxis:'y', plugins:{ legend:{display:false} }, scales:{ x:{ beginAtZero:true, ticks:{ stepSize:1 } } } }
         });
       }
 
@@ -4557,7 +4558,7 @@ async function generateReport(prefix) {
         if (ctx3 && provLabels.length > 0) new Chart(ctx3, {
           type: 'doughnut',
           data: { labels: provLabels, datasets: [{ data: provData, backgroundColor: chartColors }] },
-          options: { responsive:true, plugins:{ legend:{ position:'bottom', labels:{ font:{size:10} } }, title:{ display:true, text:'Suppliers by Province', font:{size:13} } } }
+          options: { responsive:true, maintainAspectRatio:false, plugins:{ legend:{ position:'bottom', labels:{ font:{size:10} } }, title:{ display:true, text:'Suppliers by Province', font:{size:13} } } }
         });
       }
 
@@ -4568,10 +4569,11 @@ async function generateReport(prefix) {
         if (ctx4 && ssLabels.length > 0) new Chart(ctx4, {
           type: 'pie',
           data: { labels: ssLabels, datasets: [{ data: ssData, backgroundColor: chartColors }] },
-          options: { responsive:true, plugins:{ legend:{ position:'bottom', labels:{ font:{size:10} } } } }
+          options: { responsive:true, maintainAspectRatio:false, plugins:{ legend:{ position:'bottom', labels:{ font:{size:10} } } } }
         });
       }
     }
+    }, 100);
 
     /* Show download buttons */
     document.getElementById(prefix + 'report-download-pdf-btn').style.display = 'inline-block';
