@@ -1006,11 +1006,16 @@ let currentApplicantDocuments = null;
 // of opening the normal gate for these specific RFQs, send the visitor
 // straight to the matching application form on CNWE's own public portal.
 const CNWE_COMPANY_ID = '3a8d98c5-7c7d-43e3-b073-2c861900e9d7';
+let pendingCnweRedirectUrl = null;
 function openApplicantGateOrRedirect(rfqId, companyId, externalSourceRfqId) {
   if (companyId === CNWE_COMPANY_ID && externalSourceRfqId) {
-    window.location.href = `https://ihubsa.github.io/Public-RFQ-Hub/?apply=${encodeURIComponent(externalSourceRfqId)}`;
+    // Store the CNWE redirect — supplier must register/login first,
+    // then proceedPastGate() will redirect them to the CNWE portal.
+    pendingCnweRedirectUrl = `https://ihubsa.github.io/Public-RFQ-Hub/?apply=${encodeURIComponent(externalSourceRfqId)}`;
+    openApplicantGate(rfqId);
     return;
   }
+  pendingCnweRedirectUrl = null;
   openApplicantGate(rfqId);
 }
 
@@ -1135,10 +1140,12 @@ async function handleGateEmailSubmit(e) {
 
       if (currentApplicantStatus && currentApplicantStatus.status === 'suspended') {
         showToast('⚠️ Your supplier registration is suspended. You can view RFQs but can\'t apply — contact us for details.', 'error');
+        pendingCnweRedirectUrl = null; // Don't redirect suspended suppliers
       } else if (currentApplicantStatus && currentApplicantStatus.status === 'removed') {
         showToast('⚠️ Your supplier registration has been removed. You can view RFQs but can\'t apply — contact us for details.', 'error');
+        pendingCnweRedirectUrl = null; // Don't redirect removed suppliers
       } else {
-        showToast(pendingGateRfqId ? '👋 Welcome back! Loading RFQ...' : '👋 Welcome back! You\'re already registered.', 'success');
+        showToast(pendingCnweRedirectUrl ? '👋 Welcome back! Redirecting to the application form…' : pendingGateRfqId ? '👋 Welcome back! Loading RFQ...' : '👋 Welcome back! You\'re already registered.', 'success');
       }
       proceedPastGate();
     } else {
@@ -1172,11 +1179,61 @@ function sanitizeStorageFileName(name) {
 }
 
 // Uploads one supplier registration document to the private
+/* ---- Image compression for mobile uploads ---- */
+function isImageFile(file){
+  if(file.type && file.type.startsWith('image/')) return true;
+  const ext = (file.name||'').split('.').pop().toLowerCase();
+  return ['jpg','jpeg','png','heic','heif','webp','bmp','tiff','tif'].includes(ext);
+}
+async function compressImage(file, maxDim, quality){
+  maxDim = maxDim || 1600;
+  quality = quality || 0.80;
+  return new Promise((resolve)=>{
+    const url = URL.createObjectURL(file);
+    const img = new Image();
+    img.onload = ()=>{
+      URL.revokeObjectURL(url);
+      let w = img.naturalWidth, h = img.naturalHeight;
+      if(w <= maxDim && h <= maxDim && file.size < 500000){
+        resolve(file); return;
+      }
+      if(w > maxDim || h > maxDim){
+        const ratio = Math.min(maxDim / w, maxDim / h);
+        w = Math.round(w * ratio);
+        h = Math.round(h * ratio);
+      }
+      const canvas = document.createElement('canvas');
+      canvas.width = w; canvas.height = h;
+      const ctx = canvas.getContext('2d');
+      ctx.drawImage(img, 0, 0, w, h);
+      canvas.toBlob((blob)=>{
+        if(!blob || blob.size >= file.size){
+          resolve(file); return;
+        }
+        const baseName = file.name.replace(/\.[^.]+$/, '');
+        const compressed = new File([blob], baseName + '.jpg', { type:'image/jpeg' });
+        resolve(compressed);
+      }, 'image/jpeg', quality);
+    };
+    img.onerror = ()=>{
+      URL.revokeObjectURL(url);
+      resolve(file);
+    };
+    img.src = url;
+  });
+}
+async function prepareFile(file){
+  if(!isImageFile(file)) return file;
+  try{ return await compressImage(file); }
+  catch(e){ return file; }
+}
+
 // 'supplier-documents' bucket, folder-scoped by the client-generated
 // applicant id so files from different registrants never collide. Returns
 // the storage path (not a public URL — the bucket is private and only
 // readable by the super admin, same trust model as the table itself).
 async function uploadSupplierDocument(applicantId, keyPrefix, file) {
+  file = await prepareFile(file);
   const filePath = `applicant-${applicantId}/${keyPrefix}-${Date.now()}-${sanitizeStorageFileName(file.name)}`;
   const { error } = await client.storage.from('supplier-documents').upload(filePath, file);
   if (error) throw error;
@@ -1400,7 +1457,7 @@ async function handleGateRegisterSubmit(e) {
     callPublicEdgeFunction('send-registration-confirmation', { email })
       .catch(err => console.error('send-registration-confirmation failed:', err));
 
-    showToast(pendingGateRfqId ? `✅ Registered! Check your email for your supplier number. Loading RFQ...` : `✅ You're registered!${supplierNumberMsg} We've emailed you a confirmation.`, 'success');
+    showToast(pendingCnweRedirectUrl ? `✅ Registered! Redirecting to the CNWE Energy application form…` : pendingGateRfqId ? `✅ Registered! Check your email for your supplier number. Loading RFQ...` : `✅ You're registered!${supplierNumberMsg} We've emailed you a confirmation.`, 'success');
     proceedPastGate();
   } catch (err) {
     console.error('Error registering applicant:', err);
@@ -1415,6 +1472,17 @@ function proceedPastGate() {
   closeModal('applicant-gate-modal');
   const rfqId = pendingGateRfqId;
   pendingGateRfqId = null;
+
+  // If the supplier was trying to apply for a CNWE RFQ, redirect them
+  // to the CNWE portal now that they're registered/logged in.
+  if (pendingCnweRedirectUrl) {
+    const dest = pendingCnweRedirectUrl;
+    pendingCnweRedirectUrl = null;
+    showToast('✅ Redirecting you to the CNWE Energy application form…', 'success');
+    setTimeout(() => { window.location.href = dest; }, 1200);
+    return;
+  }
+
   if (!rfqId) {
     // Generic "Register Free" / "Register as a Supplier" — nothing to
     // open, just take them to the listings they can now apply to.
@@ -2823,8 +2891,9 @@ async function submitAdditionalInfoForm() {
     const fileInput = document.getElementById('info-response-files');
     let filesUploaded = 0;
     if (fileInput && fileInput.files && fileInput.files.length > 0) {
-      for (const file of fileInput.files) {
+      for (const originalFile of fileInput.files) {
         try {
+          const file = await prepareFile(originalFile);
           const filePath = `rfq-${currentInfoRequestRfqId}/sub-${resolvedSubmissionId}/${Date.now()}-${sanitizeStorageFileName(file.name)}`;
           const { error: uploadError } = await client.storage
             .from('rfq-documents')
@@ -2936,15 +3005,16 @@ function uploadOrReplacePrefsDocument(category, keyPrefix, label) {
 }
 
 async function handlePrefsDocFileSelected(e) {
-  const file = e.target.files[0];
+  const originalFile = e.target.files[0];
   const pending = pendingPrefsDocUpload;
   pendingPrefsDocUpload = null;
-  if (!file || !pending || !currentPrefsToken || !currentPrefsApplicantId) return;
+  if (!originalFile || !pending || !currentPrefsToken || !currentPrefsApplicantId) return;
 
   try {
     // Same applicant-<id>/... path convention uploadSupplierDocument()
     // uses at original registration time — the bucket allows anonymous
     // insert (no login), same trust model as the rest of this page.
+    const file = await prepareFile(originalFile);
     const filePath = `applicant-${currentPrefsApplicantId}/${pending.keyPrefix}-${Date.now()}-${sanitizeStorageFileName(file.name)}`;
     const { error: uploadError } = await client.storage.from('supplier-documents').upload(filePath, file);
     if (uploadError) throw uploadError;
@@ -3480,7 +3550,8 @@ async function submitContractorForm(token) {
     for (let input of fileInputs) {
       if (input.files[0]) {
         try {
-          const file = input.files[0];
+          const originalFile = input.files[0];
+          const file = await prepareFile(originalFile);
           const filePath = `rfq-${currentRFQId}/sub-${submissionId}/${Date.now()}-${sanitizeStorageFileName(file.name)}`;
 
           const { error: uploadError } = await client.storage
@@ -3524,8 +3595,9 @@ async function submitContractorForm(token) {
     // document_type and the form makes at least one file mandatory.
     let quotesUploaded = 0;
 
-    for (let file of quoteFiles) {
+    for (let originalQuoteFile of quoteFiles) {
       try {
+        const file = await prepareFile(originalQuoteFile);
         const timestamp = Date.now() + Math.random(); // Ensure unique names for multiple files
         const filePath = `rfq-${currentRFQId}/sub-${submissionId}/${timestamp}-${sanitizeStorageFileName(file.name)}`;
 
@@ -3562,8 +3634,9 @@ async function submitContractorForm(token) {
     // Upload optional additional documents (multiple files allowed)
     const optionalDocInput = document.getElementById('contractor-optional-docs');
     if (optionalDocInput && optionalDocInput.files && optionalDocInput.files.length > 0) {
-      for (let file of optionalDocInput.files) {
+      for (let originalOptFile of optionalDocInput.files) {
         try {
+          const file = await prepareFile(originalOptFile);
           const timestamp = Date.now() + Math.random(); // Ensure unique names for multiple files
           const filePath = `rfq-${currentRFQId}/sub-${submissionId}/${timestamp}-${sanitizeStorageFileName(file.name)}`;
 
@@ -3707,6 +3780,16 @@ function showAdminView() {
   document.getElementById('team-tab').style.display = 'none';
   document.getElementById('settings-tab').style.display = 'none';
 
+  // Ensure Reports tab button exists in company sidebar (self-heals if missing from cached HTML)
+  const companySidebar = document.querySelector('#admin-view .admin-sidebar');
+  if (companySidebar && !companySidebar.querySelector('[onclick*="switchAdminTab(\'reports\'"]')) {
+    const reportsBtn = document.createElement('button');
+    reportsBtn.className = 'sidebar-tab-btn company-tab-btn';
+    reportsBtn.setAttribute('onclick', "switchAdminTab('reports', this)");
+    reportsBtn.textContent = 'Reports';
+    companySidebar.appendChild(reportsBtn);
+  }
+
   document.querySelectorAll('.company-tab-btn').forEach((btn, idx) => {
     btn.classList.toggle('active', idx === 0);
   });
@@ -3727,6 +3810,11 @@ function switchAdminTab(tabName, button) {
     loadTeamMembers();
   } else if (tabName === 'settings') {
     loadSettingsTab();
+  } else if (tabName === 'reports') {
+    // Set default date range to this month if empty
+    const f = document.getElementById('report-date-from');
+    const t = document.getElementById('report-date-to');
+    if (f && !f.value) setReportRange('month');
   }
 }
 
@@ -4127,6 +4215,475 @@ function switchSuperAdminTab(tabName, button) {
   document.getElementById(tabName + '-tab').style.display = 'block';
   if (button) button.classList.add('active');
 }
+
+// ===== REPORTS =====
+
+/* ══════════════════════════════════════════════════════
+   SVG Chart Helpers (no external library needed)
+   ══════════════════════════════════════════════════════ */
+function _svgPieDonut(data, labels, colors, size, donut, title) {
+  const total = data.reduce((a, b) => a + b, 0);
+  if (total === 0) return '<div style="text-align:center;color:#999;padding:20px;">No data</div>';
+  const cx = size / 2, cy = size / 2, r = size / 2 - 10;
+  const innerR = donut ? r * 0.55 : 0;
+  let angle = -Math.PI / 2, paths = '';
+  const nonZero = data.filter(v => v > 0).length;
+  data.forEach((val, i) => {
+    if (val === 0) return;
+    const col = colors[i % colors.length];
+    if (nonZero === 1) {
+      /* full circle — arc can't draw start==end, so use two semicircles */
+      if (donut) {
+        paths += `<path d="M${cx} ${cy - r}A${r} ${r} 0 1 1 ${cx} ${cy + r}A${r} ${r} 0 1 1 ${cx} ${cy - r}Z M${cx} ${cy - innerR}A${innerR} ${innerR} 0 1 0 ${cx} ${cy + innerR}A${innerR} ${innerR} 0 1 0 ${cx} ${cy - innerR}Z" fill="${col}" fill-rule="evenodd"/>`;
+      } else {
+        paths += `<circle cx="${cx}" cy="${cy}" r="${r}" fill="${col}"/>`;
+      }
+      angle += (val / total) * 2 * Math.PI;
+      return;
+    }
+    const sweep = (val / total) * 2 * Math.PI;
+    const end = angle + sweep;
+    const lg = sweep > Math.PI ? 1 : 0;
+    const x1 = cx + r * Math.cos(angle), y1 = cy + r * Math.sin(angle);
+    const x2 = cx + r * Math.cos(end),   y2 = cy + r * Math.sin(end);
+    if (donut) {
+      const ix1 = cx + innerR * Math.cos(angle), iy1 = cy + innerR * Math.sin(angle);
+      const ix2 = cx + innerR * Math.cos(end),   iy2 = cy + innerR * Math.sin(end);
+      paths += `<path d="M${x1} ${y1}A${r} ${r} 0 ${lg} 1 ${x2} ${y2}L${ix2} ${iy2}A${innerR} ${innerR} 0 ${lg} 0 ${ix1} ${iy1}Z" fill="${col}"/>`;
+    } else {
+      paths += `<path d="M${cx} ${cy}L${x1} ${y1}A${r} ${r} 0 ${lg} 1 ${x2} ${y2}Z" fill="${col}"/>`;
+    }
+    angle = end;
+  });
+  let legend = '<div style="display:flex;flex-wrap:wrap;justify-content:center;gap:6px 14px;margin-top:8px;">';
+  labels.forEach((l, i) => {
+    if (data[i] === 0) return;
+    const pct = Math.round((data[i] / total) * 100);
+    legend += `<div style="display:flex;align-items:center;gap:4px;font-size:11px;"><span style="width:10px;height:10px;border-radius:50%;background:${colors[i % colors.length]};display:inline-block;"></span>${l} (${pct}%)</div>`;
+  });
+  legend += '</div>';
+  const ttl = title ? `<div style="text-align:center;font-size:13px;font-weight:600;margin-bottom:4px;">${title}</div>` : '';
+  return `<div style="text-align:center;">${ttl}<svg viewBox="0 0 ${size} ${size}" width="${size}" height="${size}" style="max-width:100%;">${paths}</svg>${legend}</div>`;
+}
+
+function _svgBarH(data, labels, color, width) {
+  if (data.length === 0) return '<div style="text-align:center;color:#999;padding:20px;">No data</div>';
+  const max = Math.max(...data, 1);
+  const barH = 24, gap = 6, labelW = 150, chartW = width - labelW - 50;
+  const totalH = data.length * (barH + gap) + 10;
+  let bars = '';
+  data.forEach((val, i) => {
+    const y = i * (barH + gap) + 5;
+    const bw = Math.max(2, (val / max) * chartW);
+    const lbl = labels[i].length > 22 ? labels[i].substring(0, 20) + '…' : labels[i];
+    bars += `<text x="${labelW - 6}" y="${y + barH / 2 + 4}" text-anchor="end" font-size="11" fill="#555" font-family="sans-serif">${lbl}</text>`;
+    bars += `<rect x="${labelW}" y="${y}" width="${bw}" height="${barH}" rx="3" fill="${color}"/>`;
+    bars += `<text x="${labelW + bw + 6}" y="${y + barH / 2 + 4}" font-size="11" fill="#555" font-family="sans-serif">${val}</text>`;
+  });
+  return `<svg viewBox="0 0 ${width} ${totalH}" width="${width}" style="max-width:100%;" height="${totalH}">${bars}</svg>`;
+}
+
+/* ── Date-range quick-setters ── */
+function setReportRange(preset, prefix) {
+  prefix = prefix || '';
+  const fromEl = document.getElementById(prefix + 'report-date-from');
+  const toEl   = document.getElementById(prefix + 'report-date-to');
+  const now = new Date();
+  const pad = n => String(n).padStart(2,'0');
+  const fmt = d => `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`;
+  toEl.value = fmt(now);
+  if (preset === 'week') {
+    const d = new Date(now); d.setDate(d.getDate() - d.getDay()); // Sunday
+    fromEl.value = fmt(d);
+  } else if (preset === 'month') {
+    fromEl.value = `${now.getFullYear()}-${pad(now.getMonth()+1)}-01`;
+  } else if (preset === 'quarter') {
+    const qm = Math.floor(now.getMonth() / 3) * 3;
+    fromEl.value = `${now.getFullYear()}-${pad(qm+1)}-01`;
+  } else if (preset === 'year') {
+    fromEl.value = `${now.getFullYear()}-01-01`;
+  }
+}
+
+/* ── Main report generator (works for both company admin & super admin) ── */
+async function generateReport(prefix) {
+  prefix = prefix || '';
+  const fromDate = document.getElementById(prefix + 'report-date-from').value;
+  const toDate   = document.getElementById(prefix + 'report-date-to').value;
+  if (!fromDate || !toDate) { showToast('Please select a date range.', 'error'); return; }
+  if (fromDate > toDate) { showToast('The "From" date must be before the "To" date.', 'error'); return; }
+
+  const sections = {
+    summary:     document.getElementById(prefix + 'rpt-sec-summary').checked,
+    rfqs:        document.getElementById(prefix + 'rpt-sec-rfqs').checked,
+    statusChart: document.getElementById(prefix + 'rpt-sec-status-chart').checked,
+    appsChart:   document.getElementById(prefix + 'rpt-sec-apps-chart').checked,
+    suppliers:   document.getElementById(prefix + 'rpt-sec-suppliers').checked,
+    submissions: document.getElementById(prefix + 'rpt-sec-submissions').checked,
+    questions:   document.getElementById(prefix + 'rpt-sec-questions').checked
+  };
+
+  showToast('Generating report…', 'success');
+  const outputEl = document.getElementById(prefix + 'report-output');
+  outputEl.style.display = 'block';
+  outputEl.innerHTML = '<div style="text-align:center; padding:40px; color:var(--border);">Loading data…</div>';
+
+  try {
+    /* ---- Fetch data from Supabase ---- */
+    const isSuper = prefix === 'super-';
+    const companyFilter = (!isSuper && currentCompany) ? currentCompany.id : null;
+
+    // RFQs
+    let rfqQuery = client.from('rfqs').select('id, rfq_name, is_public, is_draft, deadline, created_at, company_id, provinces, is_withdrawn, is_released, released_at, external_source_rfq_id, external_application_count');
+    if (companyFilter) rfqQuery = rfqQuery.eq('company_id', companyFilter);
+    const { data: rfqRows } = await rfqQuery;
+    const allRfqs = rfqRows || [];
+
+    // Submissions
+    let subQuery = client.from('rfq_submissions').select('id, rfq_id, status, created_at, contractor_name, contractor_email, quoted_price');
+    const { data: subRows } = await subQuery;
+    const allSubs = subRows || [];
+
+    // Suppliers (applicant_registrations)
+    let supQuery = client.from('applicant_registrations').select('id, company_name, full_name, email, phone, province, created_at, status, registration_source');
+    const { data: supRows } = await supQuery;
+    const allSuppliers = supRows || [];
+
+    // Questions
+    let qQuery = client.from('rfq_questions').select('id, rfq_id, status, created_at');
+    const { data: qRows } = await qQuery;
+    const allQuestions = qRows || [];
+
+    // Companies (for super admin labels)
+    let companiesMap = {};
+    if (isSuper) {
+      const { data: cRows } = await client.from('companies').select('id, name');
+      (cRows || []).forEach(c => { companiesMap[c.id] = c.name; });
+    }
+
+    /* ---- Filter by date range ---- */
+    const from = new Date(fromDate + 'T00:00:00');
+    const to   = new Date(toDate   + 'T23:59:59');
+    const inRange = (d) => { if (!d) return false; const dt = new Date(d); return dt >= from && dt <= to; };
+
+    const rfqs = allRfqs.filter(r => inRange(r.created_at));
+    const subs = allSubs.filter(s => inRange(s.created_at));
+    const suppliers = allSuppliers.filter(s => inRange(s.created_at));
+    const questions = allQuestions.filter(q => inRange(q.created_at));
+
+    // Also calculate subs for RFQs that were created in range (even if sub was outside range)
+    const rfqIds = new Set(rfqs.map(r => r.id));
+    const subsForRangeRfqs = allSubs.filter(s => rfqIds.has(s.rfq_id));
+
+    /* ---- Derive stats ---- */
+    const totalRfqs = rfqs.length;
+    const openRfqs = rfqs.filter(r => !r.is_draft && !r.is_withdrawn && r.deadline && new Date(r.deadline) > new Date()).length;
+    const closedRfqs = rfqs.filter(r => !r.is_draft && !r.is_withdrawn && r.deadline && new Date(r.deadline) <= new Date()).length;
+    const draftRfqs = rfqs.filter(r => r.is_draft).length;
+    const withdrawnRfqs = rfqs.filter(r => r.is_withdrawn).length;
+    const totalSubs = subs.length;
+    const totalSuppliers = allSuppliers.length; // all-time
+    const newSuppliers = suppliers.length; // in range
+    const activeSuppliers = allSuppliers.filter(s => s.status === 'active').length;
+    const totalQuestions = questions.length;
+    const answeredQuestions = questions.filter(q => q.status === 'answered').length;
+    const avgAppsPerRfq = totalRfqs > 0 ? (subsForRangeRfqs.length / totalRfqs).toFixed(1) : '0';
+
+    // Province breakdown
+    const provCounts = {};
+    allSuppliers.forEach(s => {
+      const p = s.province || 'Unknown';
+      provCounts[p] = (provCounts[p] || 0) + 1;
+    });
+
+    // Submission status breakdown
+    const subStatusCounts = {};
+    subs.forEach(s => {
+      const st = s.status || 'submitted';
+      subStatusCounts[st] = (subStatusCounts[st] || 0) + 1;
+    });
+
+    /* ---- Get branding ---- */
+    const logoUrl = isSuper
+      ? (platformSettings && platformSettings.logo_url ? platformSettings.logo_url : '')
+      : (currentCompany && currentCompany.logo_url ? currentCompany.logo_url : (platformSettings && platformSettings.logo_url ? platformSettings.logo_url : ''));
+    const orgName = isSuper
+      ? 'iHubSA — RFQ Hub'
+      : (currentCompany ? currentCompany.name : 'RFQ Hub');
+    const brandColor = '#1a3a5c'; // primary colour
+    const accentColor = '#F57C00';
+
+    const fmtDate = (d) => { if(!d) return '—'; return new Date(d).toLocaleDateString('en-ZA', {day:'numeric',month:'short',year:'numeric'}); };
+
+    /* ---- Build HTML ---- */
+    let html = `
+    <div id="${prefix}report-printable" style="background:#fff; color:#222; font-family:'IBM Plex Sans', Arial, sans-serif; padding:12px 30px 30px; border-radius:8px; border:1px solid #ddd;">
+      <!-- Header -->
+      <div style="display:flex; align-items:center; justify-content:space-between; border-bottom:3px solid ${accentColor}; padding-bottom:16px; margin-bottom:22px; flex-wrap:wrap; gap:12px;">
+        <div style="display:flex; align-items:center; gap:14px;">
+          ${logoUrl ? `<img src="${logoUrl}" alt="Logo" style="height:50px; width:auto; max-width:160px; object-fit:contain;" crossorigin="anonymous">` : ''}
+          <div>
+            <h1 style="margin:0; font-size:22px; color:${brandColor};">${orgName}</h1>
+            <p style="margin:2px 0 0; font-size:13px; color:#888;">Procurement Report</p>
+          </div>
+        </div>
+        <div style="text-align:right; font-size:13px; color:#666;">
+          <div><strong>Period:</strong> ${fmtDate(fromDate)} — ${fmtDate(toDate)}</div>
+          <div><strong>Generated:</strong> ${fmtDate(new Date())}</div>
+        </div>
+      </div>`;
+
+    /* ---- Executive Summary ---- */
+    if (sections.summary) {
+      html += `
+      <div style="margin-bottom:22px; page-break-inside:avoid;">
+        <h2 style="font-size:16px; color:${brandColor}; border-bottom:1px solid #eee; padding-bottom:6px; margin-top:0;">Executive Summary</h2>
+        <div style="display:grid; grid-template-columns:repeat(auto-fill, minmax(150px,1fr)); gap:12px;">
+          <div style="background:#f7f9fc; border-radius:8px; padding:16px; text-align:center; border-left:4px solid ${brandColor};">
+            <div style="font-size:28px; font-weight:700; color:${brandColor};">${totalRfqs}</div>
+            <div style="font-size:12px; color:#888; margin-top:4px;">RFQs Published</div>
+          </div>
+          <div style="background:#f7f9fc; border-radius:8px; padding:16px; text-align:center; border-left:4px solid #4caf50;">
+            <div style="font-size:28px; font-weight:700; color:#4caf50;">${openRfqs}</div>
+            <div style="font-size:12px; color:#888; margin-top:4px;">Open RFQs</div>
+          </div>
+          <div style="background:#f7f9fc; border-radius:8px; padding:16px; text-align:center; border-left:4px solid #f44336;">
+            <div style="font-size:28px; font-weight:700; color:#f44336;">${closedRfqs}</div>
+            <div style="font-size:12px; color:#888; margin-top:4px;">Closed RFQs</div>
+          </div>
+          <div style="background:#f7f9fc; border-radius:8px; padding:16px; text-align:center; border-left:4px solid ${accentColor};">
+            <div style="font-size:28px; font-weight:700; color:${accentColor};">${totalSubs}</div>
+            <div style="font-size:12px; color:#888; margin-top:4px;">Submissions</div>
+          </div>
+          <div style="background:#f7f9fc; border-radius:8px; padding:16px; text-align:center; border-left:4px solid #9c27b0;">
+            <div style="font-size:28px; font-weight:700; color:#9c27b0;">${totalSuppliers}</div>
+            <div style="font-size:12px; color:#888; margin-top:4px;">Total Suppliers</div>
+          </div>
+          <div style="background:#f7f9fc; border-radius:8px; padding:16px; text-align:center; border-left:4px solid #009688;">
+            <div style="font-size:28px; font-weight:700; color:#009688;">${newSuppliers}</div>
+            <div style="font-size:12px; color:#888; margin-top:4px;">New Registrations</div>
+          </div>
+        </div>
+      </div>`;
+    }
+
+    /* ---- RFQ Register table ---- */
+    if (sections.rfqs) {
+      html += `
+      <div style="margin-bottom:22px;">
+        <h2 style="font-size:16px; color:${brandColor}; border-bottom:1px solid #eee; padding-bottom:8px; margin-top:0;">RFQ Register</h2>
+        <div style="overflow-x:auto;">
+        <table style="width:100%; border-collapse:collapse; font-size:12px;">
+          <thead>
+            <tr style="background:${brandColor}; color:#fff;">
+              <th style="padding:8px 10px; text-align:left;">RFQ Name</th>
+              ${isSuper ? '<th style="padding:8px 10px; text-align:left;">Company</th>' : ''}
+              <th style="padding:8px 10px; text-align:left;">Published</th>
+              <th style="padding:8px 10px; text-align:left;">Deadline</th>
+              <th style="padding:8px 10px; text-align:center;">Status</th>
+              <th style="padding:8px 10px; text-align:center;">Applications</th>
+            </tr>
+          </thead>
+          <tbody>`;
+      if (rfqs.length === 0) {
+        html += `<tr><td colspan="${isSuper ? 6 : 5}" style="padding:12px; text-align:center; color:#999;">No RFQs in the selected period.</td></tr>`;
+      }
+      rfqs.forEach((r, i) => {
+        const appCount = allSubs.filter(s => s.rfq_id === r.id).length + (r.external_application_count || 0);
+        let status = 'Draft';
+        let statusColor = '#999';
+        if (r.is_withdrawn) { status = 'Withdrawn'; statusColor = '#f44336'; }
+        else if (!r.is_draft && r.deadline && new Date(r.deadline) <= new Date()) { status = 'Closed'; statusColor = '#f44336'; }
+        else if (!r.is_draft && r.is_released) { status = 'Open'; statusColor = '#4caf50'; }
+        else if (r.is_draft) { status = 'Draft'; statusColor = '#999'; }
+        html += `
+            <tr style="background:${i % 2 === 0 ? '#fff' : '#f9f9f9'}; border-bottom:1px solid #eee;">
+              <td style="padding:8px 10px;">${r.rfq_name || '—'}</td>
+              ${isSuper ? `<td style="padding:8px 10px;">${companiesMap[r.company_id] || '—'}</td>` : ''}
+              <td style="padding:8px 10px;">${fmtDate(r.released_at || r.created_at)}</td>
+              <td style="padding:8px 10px;">${fmtDate(r.deadline)}</td>
+              <td style="padding:8px 10px; text-align:center;"><span style="background:${statusColor}; color:#fff; padding:2px 10px; border-radius:10px; font-size:11px; font-weight:600;">${status}</span></td>
+              <td style="padding:8px 10px; text-align:center; font-weight:600;">${appCount}</td>
+            </tr>`;
+      });
+      html += `</tbody></table></div></div>`;
+    }
+
+    /* ---- RFQ Status Chart ---- */
+    if (sections.statusChart) {
+      const statusChartSvg = _svgPieDonut(
+        [openRfqs, closedRfqs, draftRfqs, withdrawnRfqs],
+        ['Open','Closed','Draft','Withdrawn'],
+        ['#4caf50','#f44336','#999','#ff9800'], 220, true
+      );
+      html += `
+      <div style="margin-bottom:22px; page-break-inside:avoid;">
+        <h2 style="font-size:16px; color:${brandColor}; border-bottom:1px solid #eee; padding-bottom:6px; margin-top:0;">RFQ Status Distribution</h2>
+        <div style="max-width:320px; margin:0 auto;">${statusChartSvg}</div>
+      </div>`;
+    }
+
+    /* ---- Applications per RFQ chart ---- */
+    if (sections.appsChart) {
+      const appLabels = rfqs.map(r => (r.rfq_name || '—').substring(0, 30));
+      const appData = rfqs.map(r => allSubs.filter(s => s.rfq_id === r.id).length + (r.external_application_count || 0));
+      const appsChartSvg = _svgBarH(appData, appLabels, accentColor, 600);
+      html += `
+      <div style="margin-bottom:22px;">
+        <h2 style="font-size:16px; color:${brandColor}; border-bottom:1px solid #eee; padding-bottom:6px; margin-top:0;">Applications per RFQ</h2>
+        <div style="max-width:650px;">${appsChartSvg}</div>
+      </div>`;
+    }
+
+    /* ---- Supplier Overview ---- */
+    if (sections.suppliers) {
+      html += `
+      <div style="margin-bottom:22px; page-break-inside:avoid;">
+        <h2 style="font-size:16px; color:${brandColor}; border-bottom:1px solid #eee; padding-bottom:6px; margin-top:0;">Supplier Overview</h2>
+        <div style="display:grid; grid-template-columns:1fr 1fr; gap:16px; align-items:start;">
+          <div>
+            <table style="width:100%; border-collapse:collapse; font-size:13px;">
+              <tr style="border-bottom:1px solid #eee;"><td style="padding:6px 0;">Total Registered Suppliers</td><td style="padding:6px 0; text-align:right; font-weight:700;">${totalSuppliers}</td></tr>
+              <tr style="border-bottom:1px solid #eee;"><td style="padding:6px 0;">Active</td><td style="padding:6px 0; text-align:right; font-weight:700; color:#4caf50;">${activeSuppliers}</td></tr>
+              <tr style="border-bottom:1px solid #eee;"><td style="padding:6px 0;">New in Period</td><td style="padding:6px 0; text-align:right; font-weight:700; color:${accentColor};">${newSuppliers}</td></tr>
+              <tr><td style="padding:6px 0;">Avg. Applications per RFQ</td><td style="padding:6px 0; text-align:right; font-weight:700;">${avgAppsPerRfq}</td></tr>
+            </table>
+          </div>
+          <div style="max-width:260px;">${_svgPieDonut(Object.values(provCounts), Object.keys(provCounts), ['#1a3a5c','#F57C00','#4caf50','#f44336','#9c27b0','#009688','#ff9800','#2196f3','#795548'], 200, true, 'Suppliers by Province')}</div>
+        </div>
+      </div>`;
+    }
+
+    /* ---- Submission Status ---- */
+    if (sections.submissions) {
+      const subStatLabels = Object.keys(subStatusCounts);
+      html += `
+      <div style="margin-bottom:22px; page-break-inside:avoid;">
+        <h2 style="font-size:16px; color:${brandColor}; border-bottom:1px solid #eee; padding-bottom:6px; margin-top:0;">Submission Status Breakdown</h2>
+        <div style="display:grid; grid-template-columns:1fr 1fr; gap:16px; align-items:start;">
+          <table style="width:100%; border-collapse:collapse; font-size:13px;">
+            <thead><tr style="border-bottom:2px solid ${brandColor};"><th style="text-align:left; padding:6px 0;">Status</th><th style="text-align:right; padding:6px 0;">Count</th></tr></thead>
+            <tbody>`;
+      subStatLabels.forEach(s => {
+        html += `<tr style="border-bottom:1px solid #eee;"><td style="padding:6px 0; text-transform:capitalize;">${s}</td><td style="padding:6px 0; text-align:right; font-weight:700;">${subStatusCounts[s]}</td></tr>`;
+      });
+      if (subStatLabels.length === 0) html += `<tr><td colspan="2" style="padding:12px; text-align:center; color:#999;">No submissions in the selected period.</td></tr>`;
+      html += `</tbody></table>
+          <div style="max-width:260px;">${_svgPieDonut(Object.values(subStatusCounts), Object.keys(subStatusCounts), ['#1a3a5c','#F57C00','#4caf50','#f44336','#9c27b0','#009688','#ff9800','#2196f3','#795548'], 200, false)}</div>
+        </div>
+      </div>`;
+    }
+
+    /* ---- Questions ---- */
+    if (sections.questions) {
+      html += `
+      <div style="margin-bottom:22px; page-break-inside:avoid;">
+        <h2 style="font-size:16px; color:${brandColor}; border-bottom:1px solid #eee; padding-bottom:6px; margin-top:0;">Questions &amp; Clarifications</h2>
+        <div style="display:grid; grid-template-columns:repeat(auto-fill, minmax(150px,1fr)); gap:12px;">
+          <div style="background:#f7f9fc; border-radius:8px; padding:16px; text-align:center; border-left:4px solid ${brandColor};">
+            <div style="font-size:28px; font-weight:700; color:${brandColor};">${totalQuestions}</div>
+            <div style="font-size:12px; color:#888; margin-top:4px;">Total Questions</div>
+          </div>
+          <div style="background:#f7f9fc; border-radius:8px; padding:16px; text-align:center; border-left:4px solid #4caf50;">
+            <div style="font-size:28px; font-weight:700; color:#4caf50;">${answeredQuestions}</div>
+            <div style="font-size:12px; color:#888; margin-top:4px;">Answered</div>
+          </div>
+          <div style="background:#f7f9fc; border-radius:8px; padding:16px; text-align:center; border-left:4px solid ${accentColor};">
+            <div style="font-size:28px; font-weight:700; color:${accentColor};">${totalQuestions - answeredQuestions}</div>
+            <div style="font-size:12px; color:#888; margin-top:4px;">Pending</div>
+          </div>
+        </div>
+      </div>`;
+    }
+
+    /* ---- Footer ---- */
+    html += `
+      <div style="border-top:2px solid ${accentColor}; padding-top:12px; margin-top:20px; display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px;">
+        <div style="font-size:11px; color:#aaa;">Confidential — ${orgName}</div>
+        <div style="font-size:11px; color:#aaa;">Powered by iHubSA RFQ Hub</div>
+      </div>
+    </div>`;
+
+    outputEl.innerHTML = html;
+
+    /* Show download buttons */
+    document.getElementById(prefix + 'report-download-pdf-btn').style.display = 'inline-block';
+    document.getElementById(prefix + 'report-download-word-btn').style.display = 'inline-block';
+    showToast('Report generated.', 'success');
+
+  } catch (err) {
+    console.error('Report generation error:', err);
+    outputEl.innerHTML = '<div style="text-align:center; padding:40px; color:#f44336;">Error generating report. Please try again.</div>';
+    showToast('Error generating report.', 'error');
+  }
+}
+
+/* ── PDF download via html2pdf ── */
+function downloadReportPDF(prefix) {
+  prefix = prefix || '';
+  const el = document.getElementById(prefix + 'report-printable');
+  if (!el) { showToast('Generate the report first.', 'error'); return; }
+  const fromDate = document.getElementById(prefix + 'report-date-from').value;
+  const toDate   = document.getElementById(prefix + 'report-date-to').value;
+  const orgName  = (prefix === 'super-') ? 'iHubSA_Platform' : (currentCompany ? currentCompany.name.replace(/[^a-zA-Z0-9]/g,'_') : 'RFQ_Hub');
+  const filename = `${orgName}_Report_${fromDate}_to_${toDate}.pdf`;
+
+  if (typeof html2pdf === 'undefined') { showToast('PDF library not loaded.', 'error'); return; }
+  showToast('Preparing PDF…', 'success');
+  html2pdf().set({
+    margin: [5, 10, 10, 10],
+    filename: filename,
+    image: { type: 'jpeg', quality: 0.95 },
+    html2canvas: { scale: 2, useCORS: true, logging: false },
+    jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' },
+    pagebreak: { mode: ['css', 'legacy'] }
+  }).from(el).save().then(() => {
+    showToast('PDF downloaded.', 'success');
+  });
+}
+
+/* ── Word download (HTML-blob as .doc) ── */
+function downloadReportWord(prefix) {
+  prefix = prefix || '';
+  const el = document.getElementById(prefix + 'report-printable');
+  if (!el) { showToast('Generate the report first.', 'error'); return; }
+  const fromDate = document.getElementById(prefix + 'report-date-from').value;
+  const toDate   = document.getElementById(prefix + 'report-date-to').value;
+  const orgName  = (prefix === 'super-') ? 'iHubSA_Platform' : (currentCompany ? currentCompany.name.replace(/[^a-zA-Z0-9]/g,'_') : 'RFQ_Hub');
+  const filename = `${orgName}_Report_${fromDate}_to_${toDate}.doc`;
+
+  const clone = el.cloneNode(true);
+
+  const htmlContent = `
+    <html xmlns:o="urn:schemas-microsoft-com:office:office"
+          xmlns:w="urn:schemas-microsoft-com:office:word"
+          xmlns="http://www.w3.org/TR/REC-html40">
+    <head><meta charset="utf-8">
+    <style>
+      body { font-family: Calibri, Arial, sans-serif; font-size: 11pt; color: #222; }
+      table { border-collapse: collapse; width: 100%; }
+      td, th { padding: 4pt 6pt; border: 1px solid #ddd; }
+      img { max-width: 100%; }
+    </style></head>
+    <body>${clone.innerHTML}</body></html>`;
+
+  const blob = new Blob(['﻿', htmlContent], { type: 'application/msword' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = filename;
+  document.body.appendChild(a); a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+  showToast('Word document downloaded.', 'success');
+}
+
+/* ── Ensure report functions are on window (belt-and-suspenders for caching issues) ── */
+window.setReportRange     = setReportRange;
+window.generateReport     = generateReport;
+window.downloadReportPDF  = downloadReportPDF;
+window.downloadReportWord = downloadReportWord;
+window._svgPieDonut       = _svgPieDonut;
+window._svgBarH           = _svgBarH;
 
 // ===== SETTINGS =====
 function loadSettingsTab() {
@@ -6121,6 +6678,22 @@ function showSuperAdminView() {
   if (manageAdminsBtn) manageAdminsBtn.style.display = isAdminManager ? '' : 'none';
   if (isAdminManager) loadSuperAdminsList();
 
+  // Ensure Reports tab button exists in the sidebar (self-heals if missing from cached HTML)
+  const superSidebar = document.querySelector('#super-admin-view .admin-sidebar');
+  if (superSidebar && !superSidebar.querySelector('[onclick*="super-reports"]')) {
+    const reportsBtn = document.createElement('button');
+    reportsBtn.className = 'sidebar-tab-btn super-tab-btn';
+    reportsBtn.setAttribute('onclick', "switchSuperAdminTab('super-reports', this)");
+    reportsBtn.textContent = 'Reports';
+    // Insert after Supplier Database
+    const supplierBtn = document.getElementById('super-applicants-tab-btn');
+    if (supplierBtn && supplierBtn.nextSibling) {
+      superSidebar.insertBefore(reportsBtn, supplierBtn.nextSibling);
+    } else {
+      superSidebar.appendChild(reportsBtn);
+    }
+  }
+
   // Hide/show each gate-able tab per this admin's permissions and land on
   // the first one they can actually see (see applySuperAdminPermissionsToUI).
   applySuperAdminPermissionsToUI();
@@ -7227,3 +7800,6 @@ window.addEventListener('DOMContentLoaded', () => {
     footerYear.textContent = new Date().getFullYear();
   }
 });
+
+/* Diagnostic: confirm report functions loaded (check browser console) */
+console.log('[app.js v2] Report functions loaded:', typeof setReportRange === 'function', typeof generateReport === 'function');
