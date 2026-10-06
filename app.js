@@ -4208,6 +4208,71 @@ function switchSuperAdminTab(tabName, button) {
 
 // ===== REPORTS =====
 
+/* ══════════════════════════════════════════════════════
+   SVG Chart Helpers (no external library needed)
+   ══════════════════════════════════════════════════════ */
+function _svgPieDonut(data, labels, colors, size, donut, title) {
+  const total = data.reduce((a, b) => a + b, 0);
+  if (total === 0) return '<div style="text-align:center;color:#999;padding:20px;">No data</div>';
+  const cx = size / 2, cy = size / 2, r = size / 2 - 10;
+  const innerR = donut ? r * 0.55 : 0;
+  let angle = -Math.PI / 2, paths = '';
+  const nonZero = data.filter(v => v > 0).length;
+  data.forEach((val, i) => {
+    if (val === 0) return;
+    const col = colors[i % colors.length];
+    if (nonZero === 1) {
+      /* full circle — arc can't draw start==end, so use two semicircles */
+      if (donut) {
+        paths += `<path d="M${cx} ${cy - r}A${r} ${r} 0 1 1 ${cx} ${cy + r}A${r} ${r} 0 1 1 ${cx} ${cy - r}Z M${cx} ${cy - innerR}A${innerR} ${innerR} 0 1 0 ${cx} ${cy + innerR}A${innerR} ${innerR} 0 1 0 ${cx} ${cy - innerR}Z" fill="${col}" fill-rule="evenodd"/>`;
+      } else {
+        paths += `<circle cx="${cx}" cy="${cy}" r="${r}" fill="${col}"/>`;
+      }
+      angle += (val / total) * 2 * Math.PI;
+      return;
+    }
+    const sweep = (val / total) * 2 * Math.PI;
+    const end = angle + sweep;
+    const lg = sweep > Math.PI ? 1 : 0;
+    const x1 = cx + r * Math.cos(angle), y1 = cy + r * Math.sin(angle);
+    const x2 = cx + r * Math.cos(end),   y2 = cy + r * Math.sin(end);
+    if (donut) {
+      const ix1 = cx + innerR * Math.cos(angle), iy1 = cy + innerR * Math.sin(angle);
+      const ix2 = cx + innerR * Math.cos(end),   iy2 = cy + innerR * Math.sin(end);
+      paths += `<path d="M${x1} ${y1}A${r} ${r} 0 ${lg} 1 ${x2} ${y2}L${ix2} ${iy2}A${innerR} ${innerR} 0 ${lg} 0 ${ix1} ${iy1}Z" fill="${col}"/>`;
+    } else {
+      paths += `<path d="M${cx} ${cy}L${x1} ${y1}A${r} ${r} 0 ${lg} 1 ${x2} ${y2}Z" fill="${col}"/>`;
+    }
+    angle = end;
+  });
+  let legend = '<div style="display:flex;flex-wrap:wrap;justify-content:center;gap:6px 14px;margin-top:8px;">';
+  labels.forEach((l, i) => {
+    if (data[i] === 0) return;
+    const pct = Math.round((data[i] / total) * 100);
+    legend += `<div style="display:flex;align-items:center;gap:4px;font-size:11px;"><span style="width:10px;height:10px;border-radius:50%;background:${colors[i % colors.length]};display:inline-block;"></span>${l} (${pct}%)</div>`;
+  });
+  legend += '</div>';
+  const ttl = title ? `<div style="text-align:center;font-size:13px;font-weight:600;margin-bottom:4px;">${title}</div>` : '';
+  return `<div style="text-align:center;">${ttl}<svg viewBox="0 0 ${size} ${size}" width="${size}" height="${size}" style="max-width:100%;">${paths}</svg>${legend}</div>`;
+}
+
+function _svgBarH(data, labels, color, width) {
+  if (data.length === 0) return '<div style="text-align:center;color:#999;padding:20px;">No data</div>';
+  const max = Math.max(...data, 1);
+  const barH = 24, gap = 6, labelW = 150, chartW = width - labelW - 50;
+  const totalH = data.length * (barH + gap) + 10;
+  let bars = '';
+  data.forEach((val, i) => {
+    const y = i * (barH + gap) + 5;
+    const bw = Math.max(2, (val / max) * chartW);
+    const lbl = labels[i].length > 22 ? labels[i].substring(0, 20) + '…' : labels[i];
+    bars += `<text x="${labelW - 6}" y="${y + barH / 2 + 4}" text-anchor="end" font-size="11" fill="#555" font-family="sans-serif">${lbl}</text>`;
+    bars += `<rect x="${labelW}" y="${y}" width="${bw}" height="${barH}" rx="3" fill="${color}"/>`;
+    bars += `<text x="${labelW + bw + 6}" y="${y + barH / 2 + 4}" font-size="11" fill="#555" font-family="sans-serif">${val}</text>`;
+  });
+  return `<svg viewBox="0 0 ${width} ${totalH}" width="${width}" style="max-width:100%;" height="${totalH}">${bars}</svg>`;
+}
+
 /* ── Date-range quick-setters ── */
 function setReportRange(preset, prefix) {
   prefix = prefix || '';
@@ -4436,19 +4501,27 @@ async function generateReport(prefix) {
 
     /* ---- RFQ Status Chart ---- */
     if (sections.statusChart) {
+      const statusChartSvg = _svgPieDonut(
+        [openRfqs, closedRfqs, draftRfqs, withdrawnRfqs],
+        ['Open','Closed','Draft','Withdrawn'],
+        ['#4caf50','#f44336','#999','#ff9800'], 260, true
+      );
       html += `
       <div style="margin-bottom:30px;">
         <h2 style="font-size:16px; color:${brandColor}; border-bottom:1px solid #eee; padding-bottom:8px; margin-top:0;">RFQ Status Distribution</h2>
-        <div style="max-width:380px; height:300px; margin:0 auto;"><canvas id="${prefix}chart-status" width="380" height="300"></canvas></div>
+        <div style="max-width:380px; margin:0 auto;">${statusChartSvg}</div>
       </div>`;
     }
 
     /* ---- Applications per RFQ chart ---- */
     if (sections.appsChart) {
+      const appLabels = rfqs.map(r => (r.rfq_name || '—').substring(0, 30));
+      const appData = rfqs.map(r => allSubs.filter(s => s.rfq_id === r.id).length + (r.external_application_count || 0));
+      const appsChartSvg = _svgBarH(appData, appLabels, accentColor, 650);
       html += `
       <div style="margin-bottom:30px;">
         <h2 style="font-size:16px; color:${brandColor}; border-bottom:1px solid #eee; padding-bottom:8px; margin-top:0;">Applications per RFQ</h2>
-        <div style="max-width:700px; height:300px;"><canvas id="${prefix}chart-apps" width="700" height="300"></canvas></div>
+        <div style="max-width:700px;">${appsChartSvg}</div>
       </div>`;
     }
 
@@ -4466,7 +4539,7 @@ async function generateReport(prefix) {
               <tr><td style="padding:6px 0;">Avg. Applications per RFQ</td><td style="padding:6px 0; text-align:right; font-weight:700;">${avgAppsPerRfq}</td></tr>
             </table>
           </div>
-          <div style="max-width:300px; height:280px;"><canvas id="${prefix}chart-provinces" width="300" height="280"></canvas></div>
+          <div style="max-width:300px;">${_svgPieDonut(Object.values(provCounts), Object.keys(provCounts), ['#1a3a5c','#F57C00','#4caf50','#f44336','#9c27b0','#009688','#ff9800','#2196f3','#795548'], 240, true, 'Suppliers by Province')}</div>
         </div>
       </div>`;
     }
@@ -4486,7 +4559,7 @@ async function generateReport(prefix) {
       });
       if (subStatLabels.length === 0) html += `<tr><td colspan="2" style="padding:12px; text-align:center; color:#999;">No submissions in the selected period.</td></tr>`;
       html += `</tbody></table>
-          <div style="max-width:300px; height:280px;"><canvas id="${prefix}chart-sub-status" width="300" height="280"></canvas></div>
+          <div style="max-width:300px;">${_svgPieDonut(Object.values(subStatusCounts), Object.keys(subStatusCounts), ['#1a3a5c','#F57C00','#4caf50','#f44336','#9c27b0','#009688','#ff9800','#2196f3','#795548'], 240, false)}</div>
         </div>
       </div>`;
     }
@@ -4522,58 +4595,6 @@ async function generateReport(prefix) {
     </div>`;
 
     outputEl.innerHTML = html;
-
-    /* ---- Render charts (delay so browser lays out the canvases first) ---- */
-    setTimeout(() => {
-    if (typeof Chart !== 'undefined') {
-      const chartColors = ['#1a3a5c','#F57C00','#4caf50','#f44336','#9c27b0','#009688','#ff9800','#2196f3','#795548'];
-
-      if (sections.statusChart) {
-        const ctx1 = document.getElementById(prefix + 'chart-status');
-        if (ctx1) new Chart(ctx1, {
-          type: 'doughnut',
-          data: {
-            labels: ['Open','Closed','Draft','Withdrawn'],
-            datasets: [{ data: [openRfqs, closedRfqs, draftRfqs, withdrawnRfqs], backgroundColor: ['#4caf50','#f44336','#999','#ff9800'] }]
-          },
-          options: { responsive:true, maintainAspectRatio:false, plugins:{ legend:{ position:'bottom', labels:{ font:{size:11} } } } }
-        });
-      }
-
-      if (sections.appsChart && rfqs.length > 0) {
-        const labels = rfqs.map(r => (r.rfq_name||'').substring(0,30));
-        const data = rfqs.map(r => allSubs.filter(s=>s.rfq_id===r.id).length + (r.external_application_count||0));
-        const ctx2 = document.getElementById(prefix + 'chart-apps');
-        if (ctx2) new Chart(ctx2, {
-          type: 'bar',
-          data: { labels, datasets: [{ label:'Applications', data, backgroundColor: accentColor }] },
-          options: { responsive:true, maintainAspectRatio:false, indexAxis:'y', plugins:{ legend:{display:false} }, scales:{ x:{ beginAtZero:true, ticks:{ stepSize:1 } } } }
-        });
-      }
-
-      if (sections.suppliers) {
-        const provLabels = Object.keys(provCounts);
-        const provData = Object.values(provCounts);
-        const ctx3 = document.getElementById(prefix + 'chart-provinces');
-        if (ctx3 && provLabels.length > 0) new Chart(ctx3, {
-          type: 'doughnut',
-          data: { labels: provLabels, datasets: [{ data: provData, backgroundColor: chartColors }] },
-          options: { responsive:true, maintainAspectRatio:false, plugins:{ legend:{ position:'bottom', labels:{ font:{size:10} } }, title:{ display:true, text:'Suppliers by Province', font:{size:13} } } }
-        });
-      }
-
-      if (sections.submissions) {
-        const ssLabels = Object.keys(subStatusCounts);
-        const ssData = Object.values(subStatusCounts);
-        const ctx4 = document.getElementById(prefix + 'chart-sub-status');
-        if (ctx4 && ssLabels.length > 0) new Chart(ctx4, {
-          type: 'pie',
-          data: { labels: ssLabels, datasets: [{ data: ssData, backgroundColor: chartColors }] },
-          options: { responsive:true, maintainAspectRatio:false, plugins:{ legend:{ position:'bottom', labels:{ font:{size:10} } } } }
-        });
-      }
-    }
-    }, 100);
 
     /* Show download buttons */
     document.getElementById(prefix + 'report-download-pdf-btn').style.display = 'inline-block';
@@ -4621,21 +4642,7 @@ function downloadReportWord(prefix) {
   const orgName  = (prefix === 'super-') ? 'iHubSA_Platform' : (currentCompany ? currentCompany.name.replace(/[^a-zA-Z0-9]/g,'_') : 'RFQ_Hub');
   const filename = `${orgName}_Report_${fromDate}_to_${toDate}.doc`;
 
-  // Clone and remove canvases (replace with images)
   const clone = el.cloneNode(true);
-  const canvases = el.querySelectorAll('canvas');
-  const cloneCanvases = clone.querySelectorAll('canvas');
-  canvases.forEach((c, i) => {
-    try {
-      const img = document.createElement('img');
-      img.src = c.toDataURL('image/png');
-      img.style.cssText = c.style.cssText || '';
-      img.style.maxWidth = '100%';
-      if (cloneCanvases[i] && cloneCanvases[i].parentNode) {
-        cloneCanvases[i].parentNode.replaceChild(img, cloneCanvases[i]);
-      }
-    } catch (e) { /* cross-origin canvas — skip */ }
-  });
 
   const htmlContent = `
     <html xmlns:o="urn:schemas-microsoft-com:office:office"
