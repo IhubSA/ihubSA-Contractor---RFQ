@@ -4407,9 +4407,9 @@ async function generateReport(prefix) {
 
     /* ---- Build HTML ---- */
     let html = `
-    <div id="${prefix}report-printable" style="background:#fff; color:#222; font-family:'IBM Plex Sans', Arial, sans-serif; padding:40px; border-radius:8px; border:1px solid #ddd;">
+    <div id="${prefix}report-printable" style="background:#fff; color:#222; font-family:'IBM Plex Sans', Arial, sans-serif; padding:30px; border-radius:8px; border:1px solid #ddd;">
       <!-- Header -->
-      <div style="display:flex; align-items:center; justify-content:space-between; border-bottom:3px solid ${accentColor}; padding-bottom:16px; margin-bottom:30px; flex-wrap:wrap; gap:12px;">
+      <div style="display:flex; align-items:center; justify-content:space-between; border-bottom:3px solid ${accentColor}; padding-bottom:16px; margin-bottom:22px; flex-wrap:wrap; gap:12px;">
         <div style="display:flex; align-items:center; gap:14px;">
           ${logoUrl ? `<img src="${logoUrl}" alt="Logo" style="height:50px; width:auto; max-width:160px; object-fit:contain;" crossorigin="anonymous">` : ''}
           <div>
@@ -4426,9 +4426,9 @@ async function generateReport(prefix) {
     /* ---- Executive Summary ---- */
     if (sections.summary) {
       html += `
-      <div style="margin-bottom:30px;">
-        <h2 style="font-size:16px; color:${brandColor}; border-bottom:1px solid #eee; padding-bottom:8px; margin-top:0;">Executive Summary</h2>
-        <div style="display:grid; grid-template-columns:repeat(auto-fill, minmax(150px,1fr)); gap:14px;">
+      <div style="margin-bottom:22px; page-break-inside:avoid;">
+        <h2 style="font-size:16px; color:${brandColor}; border-bottom:1px solid #eee; padding-bottom:6px; margin-top:0;">Executive Summary</h2>
+        <div style="display:grid; grid-template-columns:repeat(auto-fill, minmax(150px,1fr)); gap:12px;">
           <div style="background:#f7f9fc; border-radius:8px; padding:16px; text-align:center; border-left:4px solid ${brandColor};">
             <div style="font-size:28px; font-weight:700; color:${brandColor};">${totalRfqs}</div>
             <div style="font-size:12px; color:#888; margin-top:4px;">RFQs Published</div>
@@ -4460,7 +4460,7 @@ async function generateReport(prefix) {
     /* ---- RFQ Register table ---- */
     if (sections.rfqs) {
       html += `
-      <div style="margin-bottom:30px;">
+      <div style="margin-bottom:22px;">
         <h2 style="font-size:16px; color:${brandColor}; border-bottom:1px solid #eee; padding-bottom:8px; margin-top:0;">RFQ Register</h2>
         <div style="overflow-x:auto;">
         <table style="width:100%; border-collapse:collapse; font-size:12px;">
@@ -4504,12 +4504,12 @@ async function generateReport(prefix) {
       const statusChartSvg = _svgPieDonut(
         [openRfqs, closedRfqs, draftRfqs, withdrawnRfqs],
         ['Open','Closed','Draft','Withdrawn'],
-        ['#4caf50','#f44336','#999','#ff9800'], 260, true
+        ['#4caf50','#f44336','#999','#ff9800'], 220, true
       );
       html += `
-      <div style="margin-bottom:30px;">
-        <h2 style="font-size:16px; color:${brandColor}; border-bottom:1px solid #eee; padding-bottom:8px; margin-top:0;">RFQ Status Distribution</h2>
-        <div style="max-width:380px; margin:0 auto;">${statusChartSvg}</div>
+      <div style="margin-bottom:22px; page-break-inside:avoid;">
+        <h2 style="font-size:16px; color:${brandColor}; border-bottom:1px solid #eee; padding-bottom:6px; margin-top:0;">RFQ Status Distribution</h2>
+        <div style="max-width:320px; margin:0 auto;">${statusChartSvg}</div>
       </div>`;
     }
 
@@ -4517,20 +4517,20 @@ async function generateReport(prefix) {
     if (sections.appsChart) {
       const appLabels = rfqs.map(r => (r.rfq_name || '—').substring(0, 30));
       const appData = rfqs.map(r => allSubs.filter(s => s.rfq_id === r.id).length + (r.external_application_count || 0));
-      const appsChartSvg = _svgBarH(appData, appLabels, accentColor, 650);
+      const appsChartSvg = _svgBarH(appData, appLabels, accentColor, 600);
       html += `
-      <div style="margin-bottom:30px;">
-        <h2 style="font-size:16px; color:${brandColor}; border-bottom:1px solid #eee; padding-bottom:8px; margin-top:0;">Applications per RFQ</h2>
-        <div style="max-width:700px;">${appsChartSvg}</div>
+      <div style="margin-bottom:22px;">
+        <h2 style="font-size:16px; color:${brandColor}; border-bottom:1px solid #eee; padding-bottom:6px; margin-top:0;">Applications per RFQ</h2>
+        <div style="max-width:650px;">${appsChartSvg}</div>
       </div>`;
     }
 
     /* ---- Supplier Overview ---- */
     if (sections.suppliers) {
       html += `
-      <div style="margin-bottom:30px;">
-        <h2 style="font-size:16px; color:${brandColor}; border-bottom:1px solid #eee; padding-bottom:8px; margin-top:0;">Supplier Overview</h2>
-        <div style="display:grid; grid-template-columns:1fr 1fr; gap:20px; align-items:start;">
+      <div style="margin-bottom:22px; page-break-inside:avoid;">
+        <h2 style="font-size:16px; color:${brandColor}; border-bottom:1px solid #eee; padding-bottom:6px; margin-top:0;">Supplier Overview</h2>
+        <div style="display:grid; grid-template-columns:1fr 1fr; gap:16px; align-items:start;">
           <div>
             <table style="width:100%; border-collapse:collapse; font-size:13px;">
               <tr style="border-bottom:1px solid #eee;"><td style="padding:6px 0;">Total Registered Suppliers</td><td style="padding:6px 0; text-align:right; font-weight:700;">${totalSuppliers}</td></tr>
@@ -4539,7 +4539,7 @@ async function generateReport(prefix) {
               <tr><td style="padding:6px 0;">Avg. Applications per RFQ</td><td style="padding:6px 0; text-align:right; font-weight:700;">${avgAppsPerRfq}</td></tr>
             </table>
           </div>
-          <div style="max-width:300px;">${_svgPieDonut(Object.values(provCounts), Object.keys(provCounts), ['#1a3a5c','#F57C00','#4caf50','#f44336','#9c27b0','#009688','#ff9800','#2196f3','#795548'], 240, true, 'Suppliers by Province')}</div>
+          <div style="max-width:260px;">${_svgPieDonut(Object.values(provCounts), Object.keys(provCounts), ['#1a3a5c','#F57C00','#4caf50','#f44336','#9c27b0','#009688','#ff9800','#2196f3','#795548'], 200, true, 'Suppliers by Province')}</div>
         </div>
       </div>`;
     }
@@ -4548,9 +4548,9 @@ async function generateReport(prefix) {
     if (sections.submissions) {
       const subStatLabels = Object.keys(subStatusCounts);
       html += `
-      <div style="margin-bottom:30px;">
-        <h2 style="font-size:16px; color:${brandColor}; border-bottom:1px solid #eee; padding-bottom:8px; margin-top:0;">Submission Status Breakdown</h2>
-        <div style="display:grid; grid-template-columns:1fr 1fr; gap:20px; align-items:start;">
+      <div style="margin-bottom:22px; page-break-inside:avoid;">
+        <h2 style="font-size:16px; color:${brandColor}; border-bottom:1px solid #eee; padding-bottom:6px; margin-top:0;">Submission Status Breakdown</h2>
+        <div style="display:grid; grid-template-columns:1fr 1fr; gap:16px; align-items:start;">
           <table style="width:100%; border-collapse:collapse; font-size:13px;">
             <thead><tr style="border-bottom:2px solid ${brandColor};"><th style="text-align:left; padding:6px 0;">Status</th><th style="text-align:right; padding:6px 0;">Count</th></tr></thead>
             <tbody>`;
@@ -4559,7 +4559,7 @@ async function generateReport(prefix) {
       });
       if (subStatLabels.length === 0) html += `<tr><td colspan="2" style="padding:12px; text-align:center; color:#999;">No submissions in the selected period.</td></tr>`;
       html += `</tbody></table>
-          <div style="max-width:300px;">${_svgPieDonut(Object.values(subStatusCounts), Object.keys(subStatusCounts), ['#1a3a5c','#F57C00','#4caf50','#f44336','#9c27b0','#009688','#ff9800','#2196f3','#795548'], 240, false)}</div>
+          <div style="max-width:260px;">${_svgPieDonut(Object.values(subStatusCounts), Object.keys(subStatusCounts), ['#1a3a5c','#F57C00','#4caf50','#f44336','#9c27b0','#009688','#ff9800','#2196f3','#795548'], 200, false)}</div>
         </div>
       </div>`;
     }
@@ -4567,9 +4567,9 @@ async function generateReport(prefix) {
     /* ---- Questions ---- */
     if (sections.questions) {
       html += `
-      <div style="margin-bottom:30px;">
-        <h2 style="font-size:16px; color:${brandColor}; border-bottom:1px solid #eee; padding-bottom:8px; margin-top:0;">Questions &amp; Clarifications</h2>
-        <div style="display:grid; grid-template-columns:repeat(auto-fill, minmax(150px,1fr)); gap:14px;">
+      <div style="margin-bottom:22px; page-break-inside:avoid;">
+        <h2 style="font-size:16px; color:${brandColor}; border-bottom:1px solid #eee; padding-bottom:6px; margin-top:0;">Questions &amp; Clarifications</h2>
+        <div style="display:grid; grid-template-columns:repeat(auto-fill, minmax(150px,1fr)); gap:12px;">
           <div style="background:#f7f9fc; border-radius:8px; padding:16px; text-align:center; border-left:4px solid ${brandColor};">
             <div style="font-size:28px; font-weight:700; color:${brandColor};">${totalQuestions}</div>
             <div style="font-size:12px; color:#888; margin-top:4px;">Total Questions</div>
