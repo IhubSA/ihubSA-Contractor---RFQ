@@ -4630,6 +4630,16 @@ function downloadReportPDF(prefix) {
 
   if (typeof html2pdf === 'undefined') { showToast('PDF library not loaded.', 'error'); return; }
   showToast('Preparing PDF…', 'success');
+
+  /* Clone the report into a temporary off-screen container so html2canvas
+     renders it at the top of the page — not pushed down by the controls above. */
+  const clone = el.cloneNode(true);
+  clone.removeAttribute('id');
+  const wrapper = document.createElement('div');
+  wrapper.style.cssText = 'position:fixed; left:-9999px; top:0; width:800px; background:#fff;';
+  wrapper.appendChild(clone);
+  document.body.appendChild(wrapper);
+
   html2pdf().set({
     margin: [5, 10, 10, 10],
     filename: filename,
@@ -4637,8 +4647,11 @@ function downloadReportPDF(prefix) {
     html2canvas: { scale: 2, useCORS: true, logging: false },
     jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' },
     pagebreak: { mode: ['css', 'legacy'] }
-  }).from(el).save().then(() => {
+  }).from(clone).save().then(() => {
+    document.body.removeChild(wrapper);
     showToast('PDF downloaded.', 'success');
+  }).catch(() => {
+    document.body.removeChild(wrapper);
   });
 }
 
