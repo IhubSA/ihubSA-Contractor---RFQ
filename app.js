@@ -688,6 +688,7 @@ function showLandingView() {
 const ICON_CALENDAR = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></svg>';
 const ICON_PIN = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0z"/><circle cx="12" cy="10" r="3"/></svg>';
 const ICON_TAG = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20.59 13.41L11 3.83A2 2 0 0 0 9.59 3.24L4 3v5.59a2 2 0 0 0 .59 1.41l9.58 9.58a2 2 0 0 0 2.83 0l3.59-3.59a2 2 0 0 0 0-2.83z"/><circle cx="8" cy="8" r="1.5"/></svg>';
+const ICON_CONTACT = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>';
 
 // Computes {days, hrs, mins} remaining until an ISO deadline, clamped to
 // zero once it has passed (the public list only ever fetches future
@@ -819,7 +820,7 @@ async function loadPublicRFQList() {
     if (companyIds.length > 0) {
       const { data: companies } = await client
         .from('companies')
-        .select('id, name, logo_url, logo_scale')
+        .select('id, name, logo_url, logo_scale, contact_email')
         .in('id', companyIds);
       companiesById = Object.fromEntries((companies || []).map(c => [c.id, c]));
     }
@@ -890,6 +891,7 @@ async function loadPublicRFQList() {
               <div class="opportunity-meta-row">${ICON_CALENDAR}<div><span class="opportunity-meta-label">Closing Date</span>${deadlineDate.toLocaleDateString()} at ${deadlineDate.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</div></div>
               ${locationText ? `<div class="opportunity-meta-row">${ICON_PIN}<div><span class="opportunity-meta-label">Location</span>${locationText}</div></div>` : ''}
               <div class="opportunity-meta-row">${ICON_TAG}<div><span class="opportunity-meta-label">Project</span>${rfq.project_name}</div></div>
+              ${company ? `<div class="opportunity-meta-row">${ICON_CONTACT}<div><span class="opportunity-meta-label">Issued By</span>${company.name}${company.contact_email ? `<br><a href="mailto:${company.contact_email}" style="color:var(--accent); font-size:13px; text-decoration:none;" onclick="event.stopPropagation();">${company.contact_email}</a>` : ''}</div></div>` : ''}
             </div>
             <div class="opportunity-col-countdown">
               <div class="countdown-box">
@@ -3232,6 +3234,14 @@ async function loadRFQDetails(rfqId, isOpenAccess = false) {
       <div class="card">
         <h2 style="margin-top:0;">${rfq.rfq_name}</h2>
         <p style="color: var(--border); margin-bottom: 20px;">${rfq.description}</p>
+
+        ${company ? `
+          <div style="margin-bottom:16px; padding:12px 16px; background:var(--bg-2); border-radius:6px; border-left:3px solid var(--accent);">
+            <p style="margin:0 0 4px 0; font-size:12px; text-transform:uppercase; color:var(--border); font-weight:600; letter-spacing:0.05em;">Issued By</p>
+            <p style="margin:0; font-weight:600; color:var(--ink);">${company.name}</p>
+            ${company.contact_email ? `<p style="margin:4px 0 0 0;"><a href="mailto:${company.contact_email}" style="color:var(--accent); font-size:14px; text-decoration:none;">${company.contact_email}</a></p>` : ''}
+          </div>
+        ` : ''}
 
         ${(rfq.location_area || (rfq.provinces && rfq.provinces.length > 0)) ? `<p><strong>Location:</strong> ${[rfq.location_area, ...(rfq.provinces || [])].filter(Boolean).join(', ')}</p>` : ''}
         ${rfq.budget ? `<p><strong>Budget:</strong> R${rfq.budget.toLocaleString()}</p>` : ''}
@@ -5694,6 +5704,12 @@ function buildRFQPreviewCardHtml(values) {
 
       <h2 style="margin-top:0;">${name ? escapeHtmlClient(name) : '<span style="color:var(--border); font-style:italic;">(RFQ Name not yet entered)</span>'}</h2>
       <p style="color: var(--border); margin-bottom: 20px; white-space:pre-wrap;">${description ? escapeHtmlClient(description) : '<span style="font-style:italic;">(No description yet)</span>'}</p>
+
+      <div style="margin-bottom:16px; padding:12px 16px; background:var(--bg-2); border-radius:6px; border-left:3px solid var(--accent);">
+        <p style="margin:0 0 4px 0; font-size:12px; text-transform:uppercase; color:var(--border); font-weight:600; letter-spacing:0.05em;">Issued By</p>
+        <p style="margin:0; font-weight:600; color:var(--ink);">${escapeHtmlClient(companyName)}</p>
+        ${currentCompany && currentCompany.contact_email ? `<p style="margin:4px 0 0 0;"><a href="mailto:${currentCompany.contact_email}" style="color:var(--accent); font-size:14px; text-decoration:none;">${escapeHtmlClient(currentCompany.contact_email)}</a></p>` : ''}
+      </div>
 
       ${(locationArea || (provinces && provinces.length > 0)) ? `<p><strong>Location:</strong> ${[locationArea, ...(provinces || [])].filter(Boolean).map(escapeHtmlClient).join(', ')}</p>` : ''}
       ${budget ? `<p><strong>Budget:</strong> R${escapeHtmlClient(String(budget))}</p>` : ''}
