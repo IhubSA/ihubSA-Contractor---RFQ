@@ -803,7 +803,7 @@ async function loadPublicRFQList() {
       // containment operator, so this matches any RFQ whose province list
       // includes the one the visitor picked, regardless of how many others
       // it also covers.
-      query = query.contains('provinces', [province]);
+      query = query.contains('provinces', JSON.stringify([province]));
     }
 
     const { data: fetchedRfqs, error } = await query;
