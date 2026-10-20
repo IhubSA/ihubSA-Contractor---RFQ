@@ -1048,6 +1048,11 @@
           <p id="submission-info-response-text" style="margin:0 0 6px 0; white-space:pre-wrap;"></p>
           <p id="submission-info-response-date" style="margin:0; font-size:12px; color:var(--border);"></p>
         </div>
+        <!-- Display stored rejection reason for rejected submissions -->
+        <div id="submission-rejection-reason-box" style="display:none; margin-top:20px; padding:15px; background:#FFF3F3; border-radius:4px; border-left:3px solid #DC3545;">
+          <h4 style="margin:0 0 8px 0; color:#721c24;">Rejection Reason</h4>
+          <p id="submission-rejection-reason-text" style="margin:0; white-space:pre-wrap; color:#721c24;"></p>
+        </div>
         <div style="margin-top:30px; padding-top:20px; border-top:1px solid var(--border);">
           <h4>Uploaded Documents</h4>
           <div id="submission-documents-list"></div>
@@ -1056,6 +1061,11 @@
       <div id="submission-info-request-form" style="display:none; padding:0 24px 20px 24px;">
         <label style="font-weight:bold; font-size:12px; text-transform:uppercase; color:var(--ink);">What information do you need from the contractor?</label>
         <textarea id="submission-info-request-message" rows="3" style="width:100%; margin-top:6px; padding:10px; border:1px solid var(--border); border-radius:4px; font-family:inherit;" placeholder="e.g. Please upload your latest B-BBEE certificate and confirm your VAT number."></textarea>
+      </div>
+      <!-- Rejection reason textarea (mandatory when rejecting) -->
+      <div id="submission-rejection-reason-form" style="display:none; padding:0 24px 20px 24px;">
+        <label style="font-weight:bold; font-size:12px; text-transform:uppercase; color:var(--ink);">Reason for Rejection <span style="color:#DC3545;">*</span></label>
+        <textarea id="submission-rejection-reason" rows="3" style="width:100%; margin-top:6px; padding:10px; border:1px solid var(--border); border-radius:4px; font-family:inherit;" placeholder="Please provide a reason for rejecting this submission..."></textarea>
       </div>
       <p id="submission-status-no-access-note" style="display:none; margin:0 24px 12px 24px; font-size:12px; color:var(--border); text-align:right;">🔒 You don't have permission to change this submission's status. Ask your company owner to grant you access from the Team tab.</p>
       <div class="modal-foot">
