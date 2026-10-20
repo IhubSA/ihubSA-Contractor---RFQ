@@ -6377,6 +6377,17 @@ async function openSubmissionDetail(id) {
       }
     }
 
+    // Show the stored rejection reason if this submission was previously rejected
+    const rejectionReasonBox = document.getElementById('submission-rejection-reason-box');
+    if (rejectionReasonBox) {
+      if (submission.rejection_reason) {
+        rejectionReasonBox.style.display = 'block';
+        document.getElementById('submission-rejection-reason-text').textContent = submission.rejection_reason;
+      } else {
+        rejectionReasonBox.style.display = 'none';
+      }
+    }
+
     const statusSelect = document.getElementById('submission-status-update');
     if (statusSelect) {
       statusSelect.value = submission.status;
@@ -6384,6 +6395,8 @@ async function openSubmissionDetail(id) {
     }
     const messageBox = document.getElementById('submission-info-request-message');
     if (messageBox) messageBox.value = '';
+    const rejReasonBox = document.getElementById('submission-rejection-reason');
+    if (rejReasonBox) rejReasonBox.value = '';
     applySubmissionStagePermissionsToStatusSelect();
     onSubmissionStatusSelectChange();
 
@@ -6398,19 +6411,22 @@ async function openSubmissionDetail(id) {
   }
 }
 
-// Toggles the "what do you need?" message box and relabels the action
-// button based on which status is currently selected — Request More
-// Information needs a message + triggers an email, everything else is a
-// plain status write.
+// Toggles the "what do you need?" message box and the rejection-reason
+// box based on which status is currently selected — Request More
+// Information needs a message + triggers an email, Rejected needs a
+// mandatory reason, everything else is a plain status write.
 function onSubmissionStatusSelectChange() {
   const statusSelect = document.getElementById('submission-status-update');
   const formBox = document.getElementById('submission-info-request-form');
+  const rejectionBox = document.getElementById('submission-rejection-reason-form');
   const actionBtn = document.getElementById('submission-status-action-btn');
   if (!statusSelect || !formBox || !actionBtn) return;
 
   const isInfoRequest = statusSelect.value === 'info_requested';
+  const isRejected = statusSelect.value === 'rejected';
   formBox.style.display = isInfoRequest ? 'block' : 'none';
-  actionBtn.textContent = isInfoRequest ? 'Send Request' : 'Update Status';
+  if (rejectionBox) rejectionBox.style.display = isRejected ? 'block' : 'none';
+  actionBtn.textContent = isInfoRequest ? 'Send Request' : (isRejected ? 'Reject Submission' : 'Update Status');
 }
 
 // Disables any status option this team member doesn't have "edit" access to
@@ -6451,6 +6467,33 @@ async function handleSubmissionStatusAction() {
 
   if (newStatus === 'info_requested') {
     await sendSubmissionInfoRequest(id);
+    return;
+  }
+
+  // Rejection requires a mandatory reason — mirrors the info-request
+  // pattern (must type something before proceeding). The reason is stored
+  // in rfq_submissions.rejection_reason for audit / reporting.
+  if (newStatus === 'rejected') {
+    const rejReasonBox = document.getElementById('submission-rejection-reason');
+    const reason = rejReasonBox ? rejReasonBox.value.trim() : '';
+    if (!reason) {
+      showToast('Please provide a reason for the rejection', 'error');
+      if (rejReasonBox) rejReasonBox.focus();
+      return;
+    }
+    try {
+      const { error } = await client
+        .from('rfq_submissions')
+        .update({ status: 'rejected', rejection_reason: reason, updated_at: new Date().toISOString() })
+        .eq('id', id);
+      if (error) throw error;
+      showToast('✅ Submission rejected', 'success');
+      closeModal('submission-detail-modal');
+      loadSubmissions();
+    } catch (err) {
+      console.error('Error:', err);
+      showToast('Error: ' + err.message, 'error');
+    }
     return;
   }
 
