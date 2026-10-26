@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>RFQ Hub</title>
-  <link rel="stylesheet" href="styles.css?v=3">
+  <link rel="stylesheet" href="styles.css">
 </head>
 <body>
   <!-- DYNAMIC BRANDING HEADER -->
@@ -352,7 +352,6 @@
             <button class="sidebar-tab-btn company-tab-btn" onclick="switchAdminTab('submissions', this)">Review Submissions</button>
             <button class="sidebar-tab-btn company-tab-btn" onclick="switchAdminTab('team', this)">Team</button>
             <button class="sidebar-tab-btn company-tab-btn" onclick="switchAdminTab('settings', this)">Settings</button>
-            <button class="sidebar-tab-btn company-tab-btn" onclick="switchAdminTab('reports', this)">Reports</button>
           </div>
 
           <div class="admin-content">
@@ -609,48 +608,6 @@
             </form>
           </div>
         </div>
-
-        <!-- REPORTS TAB -->
-        <div id="reports-tab" class="admin-tab" style="display:none;">
-          <div class="card">
-            <h2 style="margin-top:0;">Generate Report</h2>
-            <p style="color:var(--border); font-size:14px; margin-bottom:20px;">Select a date range and the sections you want, then generate a branded report you can download as PDF or Word.</p>
-            <div style="display:flex; flex-wrap:wrap; gap:16px; align-items:flex-end; margin-bottom:20px;">
-              <div>
-                <label style="font-weight:bold; display:block; margin-bottom:6px; font-size:13px;">From</label>
-                <input type="date" id="report-date-from" style="padding:8px 12px; border:1px solid var(--border); border-radius:4px; font-size:14px;">
-              </div>
-              <div>
-                <label style="font-weight:bold; display:block; margin-bottom:6px; font-size:13px;">To</label>
-                <input type="date" id="report-date-to" style="padding:8px 12px; border:1px solid var(--border); border-radius:4px; font-size:14px;">
-              </div>
-              <div style="display:flex; gap:8px;">
-                <button class="btn secondary" style="padding:8px 14px; font-size:13px;" onclick="setReportRange('week')">This Week</button>
-                <button class="btn secondary" style="padding:8px 14px; font-size:13px;" onclick="setReportRange('month')">This Month</button>
-                <button class="btn secondary" style="padding:8px 14px; font-size:13px;" onclick="setReportRange('quarter')">This Quarter</button>
-                <button class="btn secondary" style="padding:8px 14px; font-size:13px;" onclick="setReportRange('year')">This Year</button>
-              </div>
-            </div>
-            <div style="margin-bottom:20px;">
-              <label style="font-weight:bold; display:block; margin-bottom:8px; font-size:13px;">Include in Report:</label>
-              <div style="display:flex; flex-wrap:wrap; gap:12px;">
-                <label style="display:flex; align-items:center; gap:6px; font-size:13px; cursor:pointer;"><input type="checkbox" id="rpt-sec-summary" checked> Executive Summary</label>
-                <label style="display:flex; align-items:center; gap:6px; font-size:13px; cursor:pointer;"><input type="checkbox" id="rpt-sec-rfqs" checked> RFQ Register</label>
-                <label style="display:flex; align-items:center; gap:6px; font-size:13px; cursor:pointer;"><input type="checkbox" id="rpt-sec-status-chart" checked> RFQ Status Chart</label>
-                <label style="display:flex; align-items:center; gap:6px; font-size:13px; cursor:pointer;"><input type="checkbox" id="rpt-sec-apps-chart" checked> Applications per RFQ</label>
-                <label style="display:flex; align-items:center; gap:6px; font-size:13px; cursor:pointer;"><input type="checkbox" id="rpt-sec-suppliers" checked> Supplier Overview</label>
-                <label style="display:flex; align-items:center; gap:6px; font-size:13px; cursor:pointer;"><input type="checkbox" id="rpt-sec-submissions" checked> Submission Status</label>
-                <label style="display:flex; align-items:center; gap:6px; font-size:13px; cursor:pointer;"><input type="checkbox" id="rpt-sec-questions" checked> Questions &amp; Clarifications</label>
-              </div>
-            </div>
-            <div style="display:flex; gap:10px; flex-wrap:wrap;">
-              <button class="btn gold" style="padding:10px 24px;" onclick="generateReport()">Generate Report</button>
-              <button class="btn secondary" id="report-download-pdf-btn" style="padding:10px 24px; display:none;" onclick="downloadReportPDF()">Download PDF</button>
-              <button class="btn secondary" id="report-download-word-btn" style="padding:10px 24px; display:none;" onclick="downloadReportWord()">Download Word</button>
-            </div>
-          </div>
-          <div id="report-output" style="display:none; margin-top:20px;"></div>
-        </div>
           </div>
         </div>
       </div>
@@ -677,7 +634,6 @@
             <button id="super-rfqs-tab-btn" class="sidebar-tab-btn super-tab-btn" onclick="switchSuperAdminTab('super-rfqs', this)">All RFQs</button>
             <button id="super-notify-tab-btn" class="sidebar-tab-btn super-tab-btn" onclick="switchSuperAdminTab('super-notify', this)">Notifications Only</button>
             <button id="super-applicants-tab-btn" class="sidebar-tab-btn super-tab-btn" onclick="switchSuperAdminTab('super-applicants', this)">Supplier Database</button>
-            <button class="sidebar-tab-btn super-tab-btn" onclick="switchSuperAdminTab('super-reports', this)">Reports</button>
             <button id="super-manage-admins-tab-btn" class="sidebar-tab-btn super-tab-btn" style="display:none;" onclick="switchSuperAdminTab('super-manage-admins', this)">Manage Admins</button>
             <button class="sidebar-tab-btn super-tab-btn" onclick="switchSuperAdminTab('super-password', this)">Change Password</button>
           </div>
@@ -947,48 +903,6 @@
             </form>
           </div>
         </div>
-
-        <!-- SUPER ADMIN REPORTS TAB -->
-        <div id="super-reports-tab" class="super-tab" style="display:none;">
-          <div class="card">
-            <h2 style="margin-top:0;">Platform Report</h2>
-            <p style="color:var(--border); font-size:14px; margin-bottom:20px;">Select a date range and the sections you want, then generate a branded report you can download as PDF or Word.</p>
-            <div style="display:flex; flex-wrap:wrap; gap:16px; align-items:flex-end; margin-bottom:20px;">
-              <div>
-                <label style="font-weight:bold; display:block; margin-bottom:6px; font-size:13px;">From</label>
-                <input type="date" id="super-report-date-from" style="padding:8px 12px; border:1px solid var(--border); border-radius:4px; font-size:14px;">
-              </div>
-              <div>
-                <label style="font-weight:bold; display:block; margin-bottom:6px; font-size:13px;">To</label>
-                <input type="date" id="super-report-date-to" style="padding:8px 12px; border:1px solid var(--border); border-radius:4px; font-size:14px;">
-              </div>
-              <div style="display:flex; gap:8px;">
-                <button class="btn secondary" style="padding:8px 14px; font-size:13px;" onclick="setReportRange('week','super-')">This Week</button>
-                <button class="btn secondary" style="padding:8px 14px; font-size:13px;" onclick="setReportRange('month','super-')">This Month</button>
-                <button class="btn secondary" style="padding:8px 14px; font-size:13px;" onclick="setReportRange('quarter','super-')">This Quarter</button>
-                <button class="btn secondary" style="padding:8px 14px; font-size:13px;" onclick="setReportRange('year','super-')">This Year</button>
-              </div>
-            </div>
-            <div style="margin-bottom:20px;">
-              <label style="font-weight:bold; display:block; margin-bottom:8px; font-size:13px;">Include in Report:</label>
-              <div style="display:flex; flex-wrap:wrap; gap:12px;">
-                <label style="display:flex; align-items:center; gap:6px; font-size:13px; cursor:pointer;"><input type="checkbox" id="super-rpt-sec-summary" checked> Executive Summary</label>
-                <label style="display:flex; align-items:center; gap:6px; font-size:13px; cursor:pointer;"><input type="checkbox" id="super-rpt-sec-rfqs" checked> RFQ Register</label>
-                <label style="display:flex; align-items:center; gap:6px; font-size:13px; cursor:pointer;"><input type="checkbox" id="super-rpt-sec-status-chart" checked> RFQ Status Chart</label>
-                <label style="display:flex; align-items:center; gap:6px; font-size:13px; cursor:pointer;"><input type="checkbox" id="super-rpt-sec-apps-chart" checked> Applications per RFQ</label>
-                <label style="display:flex; align-items:center; gap:6px; font-size:13px; cursor:pointer;"><input type="checkbox" id="super-rpt-sec-suppliers" checked> Supplier Overview</label>
-                <label style="display:flex; align-items:center; gap:6px; font-size:13px; cursor:pointer;"><input type="checkbox" id="super-rpt-sec-submissions" checked> Submission Status</label>
-                <label style="display:flex; align-items:center; gap:6px; font-size:13px; cursor:pointer;"><input type="checkbox" id="super-rpt-sec-questions" checked> Questions &amp; Clarifications</label>
-              </div>
-            </div>
-            <div style="display:flex; gap:10px; flex-wrap:wrap;">
-              <button class="btn gold" style="padding:10px 24px;" onclick="generateReport('super-')">Generate Report</button>
-              <button class="btn secondary" id="super-report-download-pdf-btn" style="padding:10px 24px; display:none;" onclick="downloadReportPDF('super-')">Download PDF</button>
-              <button class="btn secondary" id="super-report-download-word-btn" style="padding:10px 24px; display:none;" onclick="downloadReportWord('super-')">Download Word</button>
-            </div>
-          </div>
-          <div id="super-report-output" style="display:none; margin-top:20px;"></div>
-        </div>
           </div>
         </div>
       </div>
@@ -1013,6 +927,10 @@
           <h5>Legal</h5>
           <a href="#" onclick="openModal('popia-modal'); return false;">Privacy Policy</a>
           <a href="#" onclick="navGoTerms(); return false;">Terms &amp; Conditions</a>
+        </div>
+        <div class="footer-col">
+          <h5>Contact</h5>
+          <a href="mailto:ihubsa@gmail.com">ihubsa@gmail.com</a>
         </div>
       </div>
       <div class="footer-bottom">
@@ -1048,11 +966,6 @@
           <p id="submission-info-response-text" style="margin:0 0 6px 0; white-space:pre-wrap;"></p>
           <p id="submission-info-response-date" style="margin:0; font-size:12px; color:var(--border);"></p>
         </div>
-        <!-- Display stored rejection reason for rejected submissions -->
-        <div id="submission-rejection-reason-box" style="display:none; margin-top:20px; padding:15px; background:#FFF3F3; border-radius:4px; border-left:3px solid #DC3545;">
-          <h4 style="margin:0 0 8px 0; color:#721c24;">Rejection Reason</h4>
-          <p id="submission-rejection-reason-text" style="margin:0; white-space:pre-wrap; color:#721c24;"></p>
-        </div>
         <div style="margin-top:30px; padding-top:20px; border-top:1px solid var(--border);">
           <h4>Uploaded Documents</h4>
           <div id="submission-documents-list"></div>
@@ -1061,11 +974,6 @@
       <div id="submission-info-request-form" style="display:none; padding:0 24px 20px 24px;">
         <label style="font-weight:bold; font-size:12px; text-transform:uppercase; color:var(--ink);">What information do you need from the contractor?</label>
         <textarea id="submission-info-request-message" rows="3" style="width:100%; margin-top:6px; padding:10px; border:1px solid var(--border); border-radius:4px; font-family:inherit;" placeholder="e.g. Please upload your latest B-BBEE certificate and confirm your VAT number."></textarea>
-      </div>
-      <!-- Rejection reason textarea (mandatory when rejecting) -->
-      <div id="submission-rejection-reason-form" style="display:none; padding:0 24px 20px 24px;">
-        <label style="font-weight:bold; font-size:12px; text-transform:uppercase; color:var(--ink);">Reason for Rejection <span style="color:#DC3545;">*</span></label>
-        <textarea id="submission-rejection-reason" rows="3" style="width:100%; margin-top:6px; padding:10px; border:1px solid var(--border); border-radius:4px; font-family:inherit;" placeholder="Please provide a reason for rejecting this submission..."></textarea>
       </div>
       <p id="submission-status-no-access-note" style="display:none; margin:0 24px 12px 24px; font-size:12px; color:var(--border); text-align:right;">🔒 You don't have permission to change this submission's status. Ask your company owner to grant you access from the Team tab.</p>
       <div class="modal-foot">
@@ -1935,13 +1843,11 @@
   <!-- SheetJS: reads .csv/.xlsx/.xls files client-side for the Supplier Database "Import Suppliers" feature -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 
-
-
-  <!-- html2pdf.js for PDF download -->
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.2/html2pdf.bundle.min.js"></script>
-
   <!-- Application Scripts -->
-  <script src="app.js?v=3"></script>
+  <script src="app.js"></script>
+
+  <!-- Guided Tour & What's New (standalone – no changes to app.js) -->
+  <script src="guide.js?v=1"></script>
 
   <script>
     // Initialize app on page load
