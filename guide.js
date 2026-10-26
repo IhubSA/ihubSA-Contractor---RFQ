@@ -17,9 +17,10 @@
   const STYLE = document.createElement('style');
   STYLE.textContent = `
     /* ---------- Tour overlay & spotlight ---------- */
-    #tour-overlay{position:fixed;inset:0;z-index:90000;pointer-events:none;transition:opacity .25s}
-    #tour-overlay.active{pointer-events:auto}
+    #tour-overlay{position:fixed;inset:0;z-index:90000;pointer-events:none;opacity:0;transition:opacity .25s}
+    #tour-overlay.active{pointer-events:auto;opacity:1}
     #tour-spotlight{position:absolute;border-radius:8px;box-shadow:0 0 0 9999px rgba(0,0,0,.62);transition:all .35s ease;z-index:90001;pointer-events:none}
+    #tour-overlay:not(.active) #tour-spotlight{box-shadow:none}
 
     /* ---------- Tooltip ---------- */
     #tour-tooltip{position:absolute;z-index:90002;background:#fff;color:#1a1a1a;border-radius:12px;
@@ -89,6 +90,17 @@
 
     /* ---------- Footer link ---------- */
     .wn-footer-link{cursor:pointer;color:inherit;opacity:.85;transition:opacity .15s}.wn-footer-link:hover{opacity:1;text-decoration:underline}
+
+    /* ---------- Header action buttons ---------- */
+    .guide-header-btn{display:inline-flex;align-items:center;gap:6px;padding:8px 16px;border-radius:20px;
+      font-size:13px;font-weight:600;cursor:pointer;border:none;transition:background .15s,transform .1s;
+      font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;
+      background:#1a3a5c;color:#fff;margin-right:8px}
+    .guide-header-btn:hover{background:#244a70;transform:translateY(-1px)}
+    .guide-header-btn:active{transform:translateY(0)}
+    .guide-header-btn .gh-icon{font-size:14px;line-height:1}
+    .guide-header-btn .gh-badge{background:#C7A94E;color:#fff;font-size:10px;font-weight:700;
+      padding:1px 6px;border-radius:8px;min-width:16px;text-align:center;line-height:1.4}
   `;
   document.head.appendChild(STYLE);
 
@@ -229,6 +241,7 @@
     if (tourSteps.length === 0) return;
     tourActive = true;
     tourIdx = 0;
+    spotlight.style.boxShadow = '0 0 0 9999px rgba(0,0,0,.62)';
     overlay.classList.add('active');
     goStep(0);
   }
@@ -238,6 +251,7 @@
     overlay.classList.remove('active');
     spotlight.style.width = '0';
     spotlight.style.height = '0';
+    spotlight.style.boxShadow = 'none';
     tooltip.classList.add('hidden');
 
     if (completed) {
@@ -434,6 +448,8 @@
     pill.style.display = (wnUpdates.length > 0) ? 'flex' : 'none';
     // Hide badge dot when all seen
     if (badge) badge.style.display = n > 0 ? 'inline-block' : 'none';
+    // Also update header badge
+    updateHeaderBadge();
   }
 
   async function markSeen() {
@@ -690,17 +706,65 @@
   }
 
   /* ==========================================================
+     §7b  HEADER BUTTONS  –  "What's New" & "Tour" next to Logout
+     ========================================================== */
+  function injectHeaderButtons() {
+    // Find the logout button in the admin header
+    const logoutBtn = qs('#admin-view button[onclick="logoutAdmin()"]')
+                   || qs('#admin-view [onclick*="logoutAdmin"]');
+    if (!logoutBtn) return;
+    const parent = logoutBtn.parentElement;
+    if (!parent) return;
+
+    // Don't inject twice
+    if (parent.querySelector('.guide-header-btn')) return;
+
+    // "What's New" button
+    const wnBtn = document.createElement('button');
+    wnBtn.className = 'guide-header-btn';
+    wnBtn.id = 'header-wn-btn';
+    wnBtn.innerHTML = '<span class="gh-icon">✨</span> What\'s new <span class="gh-badge" id="header-wn-badge" style="display:none">0</span>';
+    wnBtn.onclick = (e) => { e.stopPropagation(); openWhatsNewPopup(); };
+
+    // "Tour" button
+    const tourBtn = document.createElement('button');
+    tourBtn.className = 'guide-header-btn';
+    tourBtn.id = 'header-tour-btn';
+    tourBtn.innerHTML = '<span class="gh-icon">🧭</span> Tour';
+    tourBtn.onclick = (e) => {
+      e.stopPropagation();
+      // Reset tour_done so steps actually run, then start
+      startTour();
+    };
+
+    // Insert before the logout button
+    parent.insertBefore(wnBtn, logoutBtn);
+    parent.insertBefore(tourBtn, logoutBtn);
+  }
+
+  // Update the header badge count when pill updates
+  function updateHeaderBadge() {
+    const badge = qs('#header-wn-badge');
+    if (!badge) return;
+    const n = countUnseen();
+    badge.textContent = n;
+    badge.style.display = n > 0 ? 'inline-block' : 'none';
+  }
+
+  /* ==========================================================
      §8  HOOKS  –  wrap existing functions
      These intercepts run guide logic AFTER the original
      function, so nothing in app.js is changed.
      ========================================================== */
 
-  // ── showAdminView → maybe show tour ──
+  // ── showAdminView → inject header buttons + maybe show tour ──
   const _showAdminView = showAdminView;
   showAdminView = function () {
     _showAdminView.apply(this, arguments);
-    // After admin view loads, check if tour should start
+    // Inject header buttons and check tour
     setTimeout(() => {
+      injectHeaderButtons();
+      updateHeaderBadge();
       if (currentUser && !currentUser.user_metadata?.rfqhub_tour_done && !tourActive) {
         showWelcomeModal();
       }
@@ -753,6 +817,7 @@
     pill.style.display = 'none';
     tourActive = false;
     overlay.classList.remove('active');
+    spotlight.style.boxShadow = 'none';
     tooltip.classList.add('hidden');
     return _logoutAdmin.apply(this, arguments);
   };
