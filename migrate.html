@@ -1,0 +1,210 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Migrate Your Profile - RFQ Hub</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;background:#f4f5f7;color:#333;min-height:100vh;display:flex;align-items:center;justify-content:center;padding:24px}
+.card{background:#fff;border-radius:12px;box-shadow:0 2px 12px rgba(0,0,0,.08);max-width:520px;width:100%;overflow:hidden}
+.hdr{background:linear-gradient(135deg,#1B3A5C,#2c5a8a);padding:24px 28px;text-align:center}
+.hdr h1{color:#fff;font-size:20px;font-weight:800;letter-spacing:-.02em}
+.hdr p{color:#AFC4DB;font-size:12px;margin-top:4px}
+.body{padding:28px}
+.body p{font-size:15px;line-height:1.6;margin-bottom:14px}
+.docs{background:#f8f9fa;border-radius:8px;padding:14px 18px;margin:16px 0;list-style:none}
+.docs li{font-size:14px;line-height:1.8;color:#555;padding-left:20px;position:relative}
+.docs li::before{content:'\2713';position:absolute;left:0;color:#27AE60;font-weight:700}
+.btn{display:block;background:#27AE60;color:#fff;font-size:16px;font-weight:700;text-decoration:none;padding:14px 32px;border-radius:8px;border:none;cursor:pointer;box-shadow:0 2px 8px rgba(39,174,96,.3);text-align:center;width:100%;margin-top:8px}
+.btn:hover{background:#219a52}
+.btn:disabled{background:#95a5a6;box-shadow:none;cursor:wait}
+.btn-outline{display:block;background:transparent;color:#1B3A5C;font-size:15px;font-weight:700;text-decoration:none;padding:12px 28px;border-radius:8px;border:2px solid #1B3A5C;box-shadow:none;margin-top:12px;text-align:center}
+.btn-outline:hover{background:#1B3A5C;color:#fff}
+.btn-site{background:#E67E22;box-shadow:0 2px 8px rgba(230,126,34,.3)}
+.btn-site:hover{background:#d35400}
+.success{color:#27AE60;font-weight:600}
+.error{color:#e74c3c;font-weight:600}
+.loading{text-align:center;padding:40px 0}
+.spinner{width:36px;height:36px;border:4px solid #e0e0e0;border-top-color:#1B3A5C;border-radius:50%;animation:spin .8s linear infinite;margin:0 auto 16px}
+@keyframes spin{to{transform:rotate(360deg)}}
+.foot{padding:16px 28px;background:#f8f9fa;border-top:1px solid #eee;text-align:center}
+.foot p{font-size:11px;color:#999}
+.hidden{display:none}
+</style>
+</head>
+<body>
+<div class="card">
+  <div class="hdr"><h1>RFQ Hub</h1><p>Public Procurement Platform</p></div>
+  <div class="body">
+
+    <!-- Loading state -->
+    <div id="state-loading" class="loading">
+      <div class="spinner"></div>
+      <p>Loading your profile...</p>
+    </div>
+
+    <!-- Confirmation state -->
+    <div id="state-confirm" class="hidden">
+      <p>Hi <strong id="supplier-name"></strong>,</p>
+      <p>We're ready to transfer your supplier profile<span id="doc-count-text"></span> to the new <strong>RFQ Hub</strong> at <a href="https://rfqhub.co.za/" style="color:#2980B9;">rfqhub.co.za</a>.</p>
+      <div id="doc-list-section">
+        <p style="font-weight:600;margin-bottom:6px;">Documents that will be transferred:</p>
+        <ul class="docs" id="doc-list"></ul>
+      </div>
+      <p style="font-size:13px;color:#666;">Your existing profile on the old platform will not be affected.</p>
+      <button id="migrate-btn" class="btn" onclick="doMigrate()">Migrate My Profile &amp; Documents &#8594;</button>
+      <a href="https://rfqhub.co.za/" class="btn-outline">No thanks, I'll register manually</a>
+    </div>
+
+    <!-- Already registered state -->
+    <div id="state-already" class="hidden">
+      <p>Hi <strong id="already-name"></strong>,</p>
+      <p class="success">Good news &mdash; your profile is already on the new RFQ Hub!</p>
+      <p>You can browse open opportunities and apply right away.</p>
+      <a href="https://rfqhub.co.za/" class="btn btn-site">Go to RFQ Hub &#8594;</a>
+    </div>
+
+    <!-- Success state -->
+    <div id="state-success" class="hidden">
+      <p class="success" style="font-size:18px;margin-bottom:16px;">Welcome aboard, <span id="success-name"></span>!</p>
+      <p>Your supplier profile has been transferred to the new RFQ Hub.</p>
+      <div id="success-docs"></div>
+      <div id="failed-docs"></div>
+      <p>You can now browse open RFQ opportunities and apply directly.</p>
+      <a href="https://rfqhub.co.za/" class="btn btn-site">Go to RFQ Hub &#8594;</a>
+    </div>
+
+    <!-- Error state -->
+    <div id="state-error" class="hidden">
+      <p class="error">Something went wrong.</p>
+      <p id="error-message">We couldn't load your profile right now.</p>
+      <p>Please try again, or <a href="https://wa.me/27608995215" style="color:#25D366;font-weight:600;">chat with us on WhatsApp</a> for help.</p>
+      <button class="btn-outline" onclick="location.reload()">Try Again</button>
+      <a href="https://rfqhub.co.za/" class="btn-outline" style="margin-top:8px;">Go to RFQ Hub</a>
+    </div>
+
+  </div>
+  <div class="foot"><p>iHubSA &mdash; Turning Business Problems Into Digital Solutions</p></div>
+</div>
+
+<script>
+var API = "https://rszmmtqsxszchywpydrz.supabase.co/functions/v1/migrate-supplier";
+var params = new URLSearchParams(window.location.search);
+var token = params.get("token") || "";
+
+function show(id) {
+  var states = ["state-loading","state-confirm","state-already","state-success","state-error"];
+  for (var i = 0; i < states.length; i++) {
+    document.getElementById(states[i]).className = (states[i] === id) ? "" : "hidden";
+  }
+}
+
+function esc(s) {
+  var d = document.createElement("div");
+  d.textContent = s;
+  return d.innerHTML;
+}
+
+// Load supplier data
+function loadSupplier() {
+  if (!token) {
+    document.getElementById("error-message").textContent = "This migration link is invalid.";
+    show("state-error");
+    return;
+  }
+
+  fetch(API + "?token=" + encodeURIComponent(token))
+    .then(function(r) { return r.json(); })
+    .then(function(data) {
+      if (data.error === "not_found") {
+        document.getElementById("error-message").textContent = "We couldn't find your supplier profile. The link may have expired.";
+        show("state-error");
+        return;
+      }
+      if (data.error) {
+        document.getElementById("error-message").textContent = data.message || "Something went wrong.";
+        show("state-error");
+        return;
+      }
+      if (data.already_registered) {
+        document.getElementById("already-name").textContent = data.name;
+        show("state-already");
+        return;
+      }
+
+      // Show confirmation
+      document.getElementById("supplier-name").textContent = data.name;
+      var total = data.total_documents || 0;
+      if (total > 0) {
+        document.getElementById("doc-count-text").innerHTML = " and <strong>" + total + " document" + (total > 1 ? "s" : "") + "</strong>";
+      }
+      var allDocs = (data.documents || []).concat(data.other_documents || []);
+      if (allDocs.length > 0) {
+        var ul = document.getElementById("doc-list");
+        for (var i = 0; i < allDocs.length; i++) {
+          var li = document.createElement("li");
+          li.textContent = allDocs[i];
+          ul.appendChild(li);
+        }
+      } else {
+        document.getElementById("doc-list-section").innerHTML = '<p style="color:#888;font-size:14px;">No documents on file yet &mdash; you can upload them after joining.</p>';
+        document.getElementById("migrate-btn").textContent = "Migrate My Profile →";
+      }
+      show("state-confirm");
+    })
+    .catch(function() {
+      document.getElementById("error-message").textContent = "Could not connect to the server. Please try again.";
+      show("state-error");
+    });
+}
+
+// Perform migration
+function doMigrate() {
+  var btn = document.getElementById("migrate-btn");
+  btn.disabled = true;
+  btn.textContent = "Migrating...";
+
+  fetch(API + "?token=" + encodeURIComponent(token), {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ token: token })
+  })
+    .then(function(r) { return r.json(); })
+    .then(function(data) {
+      if (data.error === "already_registered") {
+        document.getElementById("already-name").textContent = data.name || "";
+        show("state-already");
+        return;
+      }
+      if (data.error) {
+        document.getElementById("error-message").textContent = data.message || "Migration failed.";
+        show("state-error");
+        return;
+      }
+      if (data.success) {
+        document.getElementById("success-name").textContent = data.name || "";
+        if (data.copied_docs && data.copied_docs.length > 0) {
+          var html = "<p><strong>" + data.copied_docs.length + " document" + (data.copied_docs.length > 1 ? "s" : "") + "</strong> transferred successfully:</p><ul class=\"docs\">";
+          for (var i = 0; i < data.copied_docs.length; i++) {
+            html += "<li>" + esc(data.copied_docs[i]) + "</li>";
+          }
+          html += "</ul>";
+          document.getElementById("success-docs").innerHTML = html;
+        }
+        if (data.failed_docs && data.failed_docs.length > 0) {
+          document.getElementById("failed-docs").innerHTML = '<p style="color:#e67e22;font-size:14px;">' + data.failed_docs.length + ' document' + (data.failed_docs.length > 1 ? 's' : '') + ' could not be transferred &mdash; you can re-upload ' + (data.failed_docs.length > 1 ? 'them' : 'it') + ' on the new platform.</p>';
+        }
+        show("state-success");
+      }
+    })
+    .catch(function() {
+      document.getElementById("error-message").textContent = "Could not connect to the server. Please try again.";
+      show("state-error");
+    });
+}
+
+loadSupplier();
+</script>
+</body>
+</html>
