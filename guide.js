@@ -54,7 +54,7 @@
     @keyframes confettiFall{0%{opacity:1;transform:translateY(0) rotate(0)}100%{opacity:0;transform:translateY(110vh) rotate(720deg)}}
 
     /* ---------- What's New pill ---------- */
-    #whats-new-pill{position:fixed;bottom:24px;right:24px;z-index:80000;background:#0F3557;color:#fff;
+    #whats-new-pill{position:fixed;bottom:85px;right:24px;z-index:80000;background:#0F3557;color:#fff;
       padding:10px 18px;border-radius:28px;font-size:13px;font-weight:600;cursor:pointer;box-shadow:0 4px 18px rgba(0,0,0,.2);
       display:none;align-items:center;gap:8px;transition:transform .15s,box-shadow .15s;
       font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif}
