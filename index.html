@@ -979,6 +979,11 @@
         <label style="font-weight:bold; font-size:12px; text-transform:uppercase; color:var(--ink);">What information do you need from the contractor?</label>
         <textarea id="submission-info-request-message" rows="3" style="width:100%; margin-top:6px; padding:10px; border:1px solid var(--border); border-radius:4px; font-family:inherit;" placeholder="e.g. Please upload your latest B-BBEE certificate and confirm your VAT number."></textarea>
       </div>
+      <div id="submission-rejection-form" style="display:none; padding:0 24px 20px 24px;">
+        <label style="font-weight:bold; font-size:12px; text-transform:uppercase; color:var(--ink);">Reason for rejection <span style="color:#D8452B;">*</span></label>
+        <textarea id="submission-rejection-reason" rows="3" style="width:100%; margin-top:6px; padding:10px; border:1px solid var(--border); border-radius:4px; font-family:inherit;" placeholder="e.g. Missing required B-BBEE certificate, or documents have expired." required></textarea>
+        <p style="margin:6px 0 0 0; font-size:11px; color:var(--border);">This reason will be included in the rejection email sent to the contractor.</p>
+      </div>
       <p id="submission-status-no-access-note" style="display:none; margin:0 24px 12px 24px; font-size:12px; color:var(--border); text-align:right;">🔒 You don't have permission to change this submission's status. Ask your company owner to grant you access from the Team tab.</p>
       <div class="modal-foot">
         <button type="button" class="btn secondary" onclick="closeModal('submission-detail-modal')">Close</button>
