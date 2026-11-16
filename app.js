@@ -5830,12 +5830,19 @@ async function openSubmissionDetail(id) {
 function onSubmissionStatusSelectChange() {
   const statusSelect = document.getElementById('submission-status-update');
   const formBox = document.getElementById('submission-info-request-form');
+  const rejectionBox = document.getElementById('submission-rejection-form');
   const actionBtn = document.getElementById('submission-status-action-btn');
-  if (!statusSelect || !formBox || !actionBtn) return;
+  if (!statusSelect || !actionBtn) return;
 
   const isInfoRequest = statusSelect.value === 'info_requested';
-  formBox.style.display = isInfoRequest ? 'block' : 'none';
-  actionBtn.textContent = isInfoRequest ? 'Send Request' : 'Update Status';
+  const isRejected = statusSelect.value === 'rejected';
+
+  if (formBox) formBox.style.display = isInfoRequest ? 'block' : 'none';
+  if (rejectionBox) rejectionBox.style.display = isRejected ? 'block' : 'none';
+
+  actionBtn.textContent = isInfoRequest ? 'Send Request'
+                        : isRejected    ? 'Send Rejection'
+                        : 'Update Status';
 }
 
 // Disables any status option this team member doesn't have "edit" access to
@@ -5879,6 +5886,11 @@ async function handleSubmissionStatusAction() {
     return;
   }
 
+  if (newStatus === 'rejected') {
+    await sendSubmissionRejection(id);
+    return;
+  }
+
   try {
     const { error } = await client
       .from('rfq_submissions')
@@ -5918,6 +5930,31 @@ async function sendSubmissionInfoRequest(submissionId) {
     loadSubmissions();
   } catch (err) {
     console.error('Error sending info request:', err);
+    showToast('Error: ' + err.message, 'error');
+  }
+}
+
+// Rejects a submission — requires a reason and emails the contractor
+// via the send-rejection-email Edge Function (mirrors the
+// request-submission-info pattern).
+async function sendSubmissionRejection(submissionId) {
+  const reasonBox = document.getElementById('submission-rejection-reason');
+  const reason = reasonBox ? reasonBox.value.trim() : '';
+
+  if (!reason) {
+    showToast('Please provide a reason for the rejection', 'error');
+    if (reasonBox) reasonBox.focus();
+    return;
+  }
+
+  try {
+    showToast('Sending rejection...', 'info');
+    await callEdgeFunction('send-rejection-email', { submissionId, reason });
+    showToast('✅ Submission rejected — email sent to the contractor', 'success');
+    closeModal('submission-detail-modal');
+    loadSubmissions();
+  } catch (err) {
+    console.error('Error sending rejection:', err);
     showToast('Error: ' + err.message, 'error');
   }
 }
@@ -7079,6 +7116,42 @@ function copyAllLinks() {
   });
 }
 
+// When an admin downloads submission documents, automatically advance the
+// status from "submitted" → "under_review" so the supplier (and the rest
+// of the team) can see that someone has started looking at the application.
+// Only fires when the current status is exactly "submitted"; any later
+// stage is left untouched.
+async function _autoMoveToUnderReview() {
+  if (!_currentSubmissionDetail) return;
+  const { submission } = _currentSubmissionDetail;
+  if (!submission || submission.status !== 'submitted') return;
+
+  try {
+    const { error } = await client
+      .from('rfq_submissions')
+      .update({ status: 'under_review', updated_at: new Date().toISOString() })
+      .eq('id', submission.id);
+
+    if (error) throw error;
+
+    // Keep the in-memory object in sync so the next download in the same
+    // modal session doesn't fire the update a second time.
+    submission.status = 'under_review';
+
+    // Also update the status dropdown if it's still showing "submitted"
+    const statusSelect = document.getElementById('submission-status-update');
+    if (statusSelect && statusSelect.value === 'submitted') {
+      statusSelect.value = 'under_review';
+      onSubmissionStatusSelectChange();
+    }
+
+    showToast('Status moved to Under Review', 'info');
+  } catch (err) {
+    console.error('Auto-status update error:', err);
+    // Non-critical — don't block the download
+  }
+}
+
 async function downloadDocument(path, name) {
   try {
     const { data, error } = await client.storage.from('rfq-documents').createSignedUrl(path, 120);
@@ -7090,6 +7163,8 @@ async function downloadDocument(path, name) {
       link.target = '_blank';
       link.click();
       showToast('✅ Download started', 'success');
+      // Auto-advance status from Submitted → Under Review
+      _autoMoveToUnderReview();
     }
   } catch (err) {
     console.error('Download error:', err);
@@ -7160,6 +7235,8 @@ async function downloadAllSubmissionDocs() {
     link.click();
     URL.revokeObjectURL(link.href);
     showToast(`✅ Downloaded ${completed} documents as ZIP`, 'success');
+    // Auto-advance status from Submitted → Under Review
+    _autoMoveToUnderReview();
   } catch (err) {
     console.error('Bulk download error:', err);
     showToast('Error creating ZIP: ' + err.message, 'error');
