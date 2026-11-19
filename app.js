@@ -706,12 +706,20 @@ function computeCountdownParts(deadlineIso) {
 
 // Buckets remaining time into an urgency status so cards can visually
 // communicate how soon an RFQ closes, not just show raw numbers.
+// Compares calendar dates (local time) so "Closing Today" only shows
+// when the deadline actually falls on today's date.
 function computeUrgency(deadlineIso) {
-  const diffMs = new Date(deadlineIso).getTime() - Date.now();
-  const hrsRemaining = diffMs / 3600000;
+  const now = new Date();
+  const deadline = new Date(deadlineIso);
+  const diffMs = deadline.getTime() - now.getTime();
   if (diffMs <= 0) return { status: 'closed', label: 'Closed', badgeClass: 'badge-closed' };
-  if (hrsRemaining < 24) return { status: 'closing-today', label: 'Closing Today', badgeClass: 'badge-closing-today' };
-  if (hrsRemaining < 48) return { status: 'closing-soon', label: 'Closing Soon', badgeClass: 'badge-closing-soon' };
+  // Strip time to compare calendar dates in the visitor's local timezone
+  const todayMidnight = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const deadlineMidnight = new Date(deadline.getFullYear(), deadline.getMonth(), deadline.getDate());
+  const calendarDaysAway = Math.round((deadlineMidnight - todayMidnight) / 86400000);
+  if (calendarDaysAway === 0) return { status: 'closing-today', label: 'Closing Today', badgeClass: 'badge-closing-today' };
+  if (calendarDaysAway === 1) return { status: 'closing-today', label: 'Closing Tomorrow', badgeClass: 'badge-closing-today' };
+  if (calendarDaysAway <= 3) return { status: 'closing-soon', label: 'Closing Soon', badgeClass: 'badge-closing-soon' };
   return { status: 'open', label: 'Open', badgeClass: 'badge-open' };
 }
 
