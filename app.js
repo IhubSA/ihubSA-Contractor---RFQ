@@ -5810,6 +5810,19 @@ async function openSubmissionDetail(id) {
       }
     }
 
+    const rejectionDisplayBox = document.getElementById('submission-rejection-box');
+    if (rejectionDisplayBox) {
+      if (submission.rejection_reason) {
+        rejectionDisplayBox.style.display = 'block';
+        document.getElementById('submission-rejection-text').textContent = submission.rejection_reason;
+        document.getElementById('submission-rejection-date').textContent = submission.rejected_at
+          ? `Rejected ${new Date(submission.rejected_at).toLocaleString()}`
+          : '';
+      } else {
+        rejectionDisplayBox.style.display = 'none';
+      }
+    }
+
     const statusSelect = document.getElementById('submission-status-update');
     if (statusSelect) {
       statusSelect.value = submission.status;
@@ -5817,6 +5830,9 @@ async function openSubmissionDetail(id) {
     }
     const messageBox = document.getElementById('submission-info-request-message');
     if (messageBox) messageBox.value = '';
+    // Pre-fill the rejection textarea if a reason was already stored
+    const rejectionTextarea = document.getElementById('submission-rejection-reason');
+    if (rejectionTextarea) rejectionTextarea.value = submission.rejection_reason || '';
     applySubmissionStagePermissionsToStatusSelect();
     onSubmissionStatusSelectChange();
 
