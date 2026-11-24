@@ -5973,7 +5973,7 @@ async function sendSubmissionRejection(submissionId) {
 
   try {
     showToast('Sending rejection...', 'info');
-    await callEdgeFunction('send-rejection-email', { submissionId, reason });
+    await callEdgeFunction('send_rejection_email', { submissionId, reason });
     showToast('✅ Submission rejected — email sent to the contractor', 'success');
     closeModal('submission-detail-modal');
     loadSubmissions();
